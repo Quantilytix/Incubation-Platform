@@ -6,15 +6,11 @@
 },
   "private": true,
   "type": "module",
-  "scripts": {
-    "build": "refine build",
-    "codegen": "graphql-codegen",
-    "dev": "refine dev",
-    "format": "prettier --write src",
-    "lint": "eslint src --fix",
-    "refine": "refine",
-    "start": "refine start"
-  },
+"scripts": {
+  "build": "vite build",
+  "dev": "refine dev",
+  "start": "vite preview"
+},
   "dependencies": {
     "@ant-design/cssinjs": "^1.17.2",
     "@ant-design/icons": "^5.5.1",
