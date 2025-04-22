@@ -33,6 +33,8 @@ import { FeedbackWorkspace } from "@/routes/consultants/feedback/FeedbackWorkspa
 import { ProjectAnalytics } from "@/routes/consultants/analytics/ProjectAnalytics";
 import { AuditTools } from "@/routes/consultants/audit/AuditTools";
 
+import { DirectorDashboard } from "@/routes/directors/directorDashboard";
+
 import { OperationsDashboard } from "@/routes/operations/OperationsDashboard";
 import OperationsFormsManagement from "@/routes/operations/forms"
 import OperationsParticipantsManagement from "@/routes/operations/participants";
@@ -76,6 +78,12 @@ const App = () => {
                     <Route index element={<AdminDashboard />} />
                     <Route path="forms" element={<FormManagement />} />
                   </Route>
+
+                       {/* Director routes */}
+                  <Route path="director">
+                    <Route index element={<DirectorDashboard />} />
+                  </Route>
+
 
                   {/* Funder routes */}
                   <Route path="funder">
