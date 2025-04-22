@@ -1,4 +1,3 @@
-// src/providers/authProvider.ts
 import type { AuthProvider } from "@refinedev/core";
 import {
   signInWithEmailAndPassword,
@@ -6,14 +5,17 @@ import {
   onAuthStateChanged,
   User,
 } from "firebase/auth";
-import { auth } from "@/firebase"; // path to your firebase.ts
+import { auth } from "@/firebase"; // ensure this file doesn't break SSR
 
 export const authProvider: AuthProvider = {
   login: async ({ email, password }) => {
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
       const token = await result.user.getIdToken();
-      localStorage.setItem("access_token", token);
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem("access_token", token);
+      }
 
       return {
         success: true,
@@ -32,7 +34,9 @@ export const authProvider: AuthProvider = {
 
   logout: async () => {
     await signOut(auth);
-    localStorage.removeItem("access_token");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("access_token");
+    }
 
     return {
       success: true,
@@ -41,6 +45,10 @@ export const authProvider: AuthProvider = {
   },
 
   check: async () => {
+    if (typeof window === "undefined") {
+      return { authenticated: false, redirectTo: "/login" };
+    }
+
     return new Promise((resolve) => {
       onAuthStateChanged(auth, (user) => {
         if (user) {
