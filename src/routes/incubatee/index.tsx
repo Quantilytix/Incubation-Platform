@@ -22,7 +22,7 @@ import { Area } from "@ant-design/plots";
 
 const { Title } = Typography;
 
-export const ParticipantDashboard: React.FC = () => {
+export const IncubateeDashboard: React.FC = () => {
   const notifications = [
     { id: 1, message: "New mentoring session added for Lepharo incubation." },
     { id: 2, message: "Performance benchmark updated for your cohort." },
