@@ -16,8 +16,8 @@ import { Layout } from "@/components";
 import { resources } from "@/config/resources";
 import { authProvider, dataProvider, liveProvider } from "@/providers";
 
-import AdminDashboard from "@/routes/admin/AdminDashboard";
-import FormManagement from "@/routes/admin/forms/FormManagement";
+import { AdminDashboard } from "@/routes/admin/AdminDashboard";
+import FormManagement from "@/routes/admin/forms";
 import { LoginPage } from "@/routes/login";
 import { RegisterPage } from "@/routes/registration";
 import { FunderDashboard } from "@/routes/funder/funderDashboard";
