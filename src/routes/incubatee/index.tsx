@@ -17,12 +17,17 @@ import {
   RiseOutlined,
   SmileOutlined,
   PlusOutlined,
+  FileTextOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 import { Area } from "@ant-design/plots";
+import { useNavigate } from "react-router-dom";
 
 const { Title } = Typography;
 
 export const IncubateeDashboard: React.FC = () => {
+  const navigate = useNavigate();
+
   const notifications = [
     { id: 1, message: "New mentoring session added for Lepharo incubation." },
     { id: 2, message: "Performance benchmark updated for your cohort." },
@@ -104,17 +109,17 @@ export const IncubateeDashboard: React.FC = () => {
         ))}
 
         <Col span={16}>
-          <Card title='Pending Interventions'>
+          <Card title="Pending Interventions">
             <List
-              itemLayout='horizontal'
+              itemLayout="horizontal"
               dataSource={pendingInterventions}
               renderItem={(item) => (
                 <List.Item
                   actions={[
-                    <Button type='primary' key='accept'>
+                    <Button type="primary" key="accept">
                       Accept
                     </Button>,
-                    <Button danger key='decline'>
+                    <Button danger key="decline">
                       Decline
                     </Button>,
                   ]}
@@ -130,12 +135,38 @@ export const IncubateeDashboard: React.FC = () => {
         </Col>
 
         <Col span={8}>
-          <Card title='Lepharo Notifications'>
+          <Card title="Lepharo Notifications">
             {notifications.map((note) => (
-              <Tag color='blue' key={note.id} style={{ marginBottom: 8 }}>
+              <Tag color="blue" key={note.id} style={{ marginBottom: 8 }}>
                 {note.message}
               </Tag>
             ))}
+          </Card>
+
+          <Card title="Quick Actions" style={{ marginTop: 16 }}>
+            <Button
+              icon={<FileTextOutlined />}
+              block
+              onClick={() => navigate("/incubatee/projects")}
+              style={{ marginBottom: 8 }}
+            >
+              Submit Project
+            </Button>
+            <Button
+              icon={<FolderOpenOutlined />}
+              block
+              onClick={() => navigate("/incubatee/documents")}
+              style={{ marginBottom: 8 }}
+            >
+              Document Hub
+            </Button>
+            <Button
+              icon={<BarChartOutlined />}
+              block
+              onClick={() => navigate("/incubatee/reports")}
+            >
+              View Reports
+            </Button>
           </Card>
         </Col>
       </Row>
