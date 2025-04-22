@@ -3,8 +3,14 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import routerProvider from "@refinedev/react-router-v6";
 
 const App = () => {
+  console.log("Rendering App component...");
+
   return (
     <BrowserRouter>
+      <div style={{ padding: "2rem", textAlign: "center", fontSize: "2rem" }}>
+        <p>App mounted before Refine</p>
+      </div>
+
       <Refine
         routerProvider={routerProvider}
         options={{
@@ -12,7 +18,7 @@ const App = () => {
         }}
       >
         <Routes>
-          <Route path="/" element={<h1 style={{ padding: "3rem" }}>Refine is rendering!</h1>} />
+          <Route path="/" element={<h1>Refine is working!</h1>} />
         </Routes>
       </Refine>
     </BrowserRouter>
@@ -20,4 +26,3 @@ const App = () => {
 };
 
 export default App;
-
