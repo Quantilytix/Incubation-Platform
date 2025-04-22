@@ -26,7 +26,7 @@ import { ProjectSubmission } from "@/routes/incubatee/projects/projectSubmission
 import { ConsultantDashboard } from "@/routes/consultants/ConsultantDashboard";
 import { FeedbackWorkspace } from "@/routes/consultants/feedback/FeedbackWorkspace";
 import { ProjectAnalytics } from "@/routes/consultants/analytics/ProjectAnalytics";
-import { AuditTools } from "@/routes/consultant/audit/AuditTools";
+import { AuditTools } from "@/routes/consultants/audit/AuditTools";
 
 import "@refinedev/antd/dist/reset.css";
 
