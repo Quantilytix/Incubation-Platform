@@ -166,7 +166,7 @@ export const RegisterPage: React.FC = () => {
               label='Name'
               rules={[
                 { required: true, message: "Please enter your full name" },
-                { type: "email", message: "Enter a valid name" },
+                { type: "name", message: "Enter a valid name" },
               ]}
             >
               <Input placeholder='Daniel Rumona' />
