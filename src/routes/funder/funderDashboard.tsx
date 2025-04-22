@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+ import React, { useEffect, useState } from "react";
 import { Card, Col, Row, Statistic, Table, Tag, Typography, Button, Tabs } from "antd";
 import {
   DollarOutlined,
@@ -10,9 +10,23 @@ import {
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase";
 import { ApprovalQueue } from "./approvals/approvalQueue";
+import { FundDisbursement } from "./disbursement/fundDisbursement";
+import { FunderAnalytics } from "./analytics/funderAnalytics";
 
 const { Title } = Typography;
 const { TabPane } = Tabs;
+
+  return (
+    <div>
+      {dummyAnalytics.map((item, index) => (
+        <Card key={index} style={{ marginBottom: 16 }}>
+          <Title level={5}>{item.metric}</Title>
+          <p>{item.value}</p>
+        </Card>
+      ))}
+    </div>
+  );
+};
 
 export const FunderDashboard: React.FC = () => {
   const [smes, setSMEs] = useState<any[]>([]);
@@ -130,6 +144,12 @@ export const FunderDashboard: React.FC = () => {
               </TabPane>
               <TabPane tab="Reports" key="3">
                 <p>Reports content coming soon...</p>
+              </TabPane>
+              <TabPane tab="Disbursements" key="4">
+                <FundDisbursement />
+              </TabPane>
+              <TabPane tab="Analytics" key="5">
+                <FunderAnalytics />
               </TabPane>
             </Tabs>
           </Card>
