@@ -5,10 +5,11 @@ import {
   UserOutlined,
   FileTextOutlined,
   EyeOutlined,
-  DownloadOutlined
+  DownloadOutlined,
 } from "@ant-design/icons";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase";
+import { ApprovalQueue } from "./approvals";
 
 const { Title } = Typography;
 const { TabPane } = Tabs;
@@ -125,7 +126,7 @@ export const FunderDashboard: React.FC = () => {
                 {renderSMETable()}
               </TabPane>
               <TabPane tab="Interventions" key="2">
-                <p>Interventions content coming soon...</p>
+                <ApprovalQueue />
               </TabPane>
               <TabPane tab="Reports" key="3">
                 <p>Reports content coming soon...</p>
