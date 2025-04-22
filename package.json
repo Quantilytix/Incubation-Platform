@@ -7,9 +7,9 @@
   "private": true,
   "type": "module",
 "scripts": {
+  "dev": "vite",
   "build": "vite build",
-  "dev": "refine dev",
-  "start": "vite preview"
+  "preview": "vite preview"
 },
   "dependencies": {
     "@ant-design/cssinjs": "^1.17.2",
