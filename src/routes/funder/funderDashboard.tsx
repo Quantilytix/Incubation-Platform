@@ -16,18 +16,6 @@ import { FunderAnalytics } from "./analytics/funderAnalytics";
 const { Title } = Typography;
 const { TabPane } = Tabs;
 
-  return (
-    <div>
-      {dummyAnalytics.map((item, index) => (
-        <Card key={index} style={{ marginBottom: 16 }}>
-          <Title level={5}>{item.metric}</Title>
-          <p>{item.value}</p>
-        </Card>
-      ))}
-    </div>
-  );
-};
-
 export const FunderDashboard: React.FC = () => {
   const [smes, setSMEs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
