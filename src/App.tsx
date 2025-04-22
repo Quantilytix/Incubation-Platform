@@ -20,9 +20,13 @@ import { DashboardPage } from "@/routes/dashboard";
 import { LoginPage } from "@/routes/login";
 import { RegisterPage } from "@/routes/registration";
 import { FunderDashboard } from "@/routes/funder/funderDashboard";
+import { ApprovalQueue } from "@/routes/funder/approvals/approvalQueue";
 import { IncubateeDashboard } from "@/routes/incubatee";
 import { ProjectSubmission } from "@/routes/incubatee/projects/projectSubmission";
-import { ApprovalQueue } from "@/routes/funder/approvals/approvalQueue";
+import { ConsultantDashboard } from "@/routes/consultant";
+import { FeedbackWorkspace } from "@/routes/consultant/feedback";
+import { ProjectAnalytics } from "@/routes/consultant/analytics";
+import { AuditTools } from "@/routes/consultant/audit";
 
 import "@refinedev/antd/dist/reset.css";
 
@@ -66,14 +70,20 @@ const App = () => {
                     <Route index element={<FunderDashboard />} />
                     <Route path="approvals" element={<ApprovalQueue />} />
                   </Route>
-   {/* Incubatee routes */}
+
+                  {/* Incubatee routes */}
                   <Route path="incubatee">
                     <Route index element={<IncubateeDashboard />} />
                     <Route path="projects" element={<ProjectSubmission />} />
                   </Route>
 
-
-                  {/* Add more roles here as needed */}
+                  {/* Consultant routes */}
+                  <Route path="consultant">
+                    <Route index element={<ConsultantDashboard />} />
+                    <Route path="feedback" element={<FeedbackWorkspace />} />
+                    <Route path="analytics" element={<ProjectAnalytics />} />
+                    <Route path="audit" element={<AuditTools />} />
+                  </Route>
                 </Route>
 
                 {/* Public routes */}
