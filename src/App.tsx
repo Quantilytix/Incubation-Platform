@@ -1,29 +1,30 @@
 import { Refine } from "@refinedev/core";
 import { BrowserRouter, Route, Routes, Outlet } from "react-router-dom";
-import routerProvider from "@refinedev/react-router-v6";
-import { Authenticated } from "@refinedev/core";
-
-import { DashboardPage, LoginPage, RegisterPage } from "@/routes";
-import { Layout } from "@/components";
-import { resources } from "@/config/resources";
-import { authProvider, dataProvider, liveProvider } from "@/providers";
-import { useNotificationProvider } from "@refinedev/antd";
-
-import { ConfigProvider, App as AntdApp } from "antd";
-import { RefineThemes } from "@refinedev/antd";
-import { DevtoolsProvider } from "@refinedev/devtools";
-import {
+import routerProvider, {
   CatchAllNavigate,
   NavigateToResource,
   UnsavedChangesNotifier,
   DocumentTitleHandler,
 } from "@refinedev/react-router-v6";
+import { Authenticated } from "@refinedev/core";
+import { useNotificationProvider } from "@refinedev/antd";
+import { ConfigProvider, App as AntdApp } from "antd";
+import { RefineThemes } from "@refinedev/antd";
+import { DevtoolsProvider } from "@refinedev/devtools";
+
+import { Layout } from "@/components";
+import { resources } from "@/config/resources";
+import { authProvider, dataProvider, liveProvider } from "@/providers";
+
+import { DashboardPage } from "@/routes/dashboard";
+import { LoginPage } from "@/routes/login";
+import { RegisterPage } from "@/routes/registration";
+import { FunderDashboard } from "@/routes/funder/funderDashboard";
+import { ApprovalQueue } from "@/routes/funder/approvals";
 
 import "@refinedev/antd/dist/reset.css";
 
 const App = () => {
-  console.log("Rendering App.tsx");
-
   return (
     <BrowserRouter>
       <ConfigProvider theme={RefineThemes.Blue}>
@@ -44,7 +45,7 @@ const App = () => {
               }}
             >
               <Routes>
-                {/* Protected routes */}
+                {/* Authenticated routes */}
                 <Route
                   element={
                     <Authenticated fallback={<CatchAllNavigate to="/login" />}>
@@ -54,15 +55,24 @@ const App = () => {
                     </Authenticated>
                   }
                 >
+                  {/* Global dashboard route */}
                   <Route index element={<DashboardPage />} />
                   <Route path="dashboard" element={<DashboardPage />} />
+
+                  {/* Funder routes */}
+                  <Route path="funder">
+                    <Route index element={<FunderDashboard />} />
+                    <Route path="approvals" element={<ApprovalQueue />} />
+                  </Route>
+
+                  {/* Add more roles here as needed */}
                 </Route>
 
-                {/* Auth routes */}
+                {/* Public routes */}
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
 
-                {/* Catch-all fallback */}
+                {/* 404 fallback */}
                 <Route path="*" element={<h1>Page Not Found</h1>} />
               </Routes>
 
