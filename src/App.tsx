@@ -27,7 +27,7 @@ import { FunderAnalytics } from "@/routes/funder/analytics/funderAnalytics";
 import { IncubateeDashboard } from "@/routes/incubatee";
 import { ProjectSubmission } from "@/routes/incubatee/projects/projectSubmission";
 
-import { ConsultantDashboard } from "@/routes/consultants";
+import { ConsultantDashboard } from "@/routes/consultants/ConsultantDashboard";
 import { FeedbackWorkspace } from "@/routes/consultants/feedback/FeedbackWorkspace";
 import { ProjectAnalytics } from "@/routes/consultants/analytics/ProjectAnalytics";
 import { AuditTools } from "@/routes/consultants/audit/AuditTools";
