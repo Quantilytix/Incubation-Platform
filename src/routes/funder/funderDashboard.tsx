@@ -9,7 +9,7 @@ import {
 } from "@ant-design/icons";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase";
-import { ApprovalQueue } from "./approvals";
+import { ApprovalQueue } from "./approvals/approvalQueue";
 
 const { Title } = Typography;
 const { TabPane } = Tabs;
