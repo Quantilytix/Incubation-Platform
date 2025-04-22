@@ -10,7 +10,7 @@ import {
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase";
 import { ApprovalQueue } from "./approvals/approvalQueue";
-import { FundDisbursement } from "./disbursement/fundDisbursement";
+import { FundDisbursement } from "./disbursements/fundDisbursement";
 import { FunderAnalytics } from "./analytics/funderAnalytics";
 
 const { Title } = Typography;
