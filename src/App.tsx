@@ -20,6 +20,8 @@ import { DashboardPage } from "@/routes/dashboard";
 import { LoginPage } from "@/routes/login";
 import { RegisterPage } from "@/routes/registration";
 import { FunderDashboard } from "@/routes/funder/funderDashboard";
+import { IncubateeDashboard } from "@/routes/incubatee";
+import { ProjectSubmission } from "@/routes/incubatee/projects/projectSubmission";
 import { ApprovalQueue } from "@/routes/funder/approvals/approvalQueue";
 
 import "@refinedev/antd/dist/reset.css";
@@ -64,6 +66,12 @@ const App = () => {
                     <Route index element={<FunderDashboard />} />
                     <Route path="approvals" element={<ApprovalQueue />} />
                   </Route>
+   {/* Incubatee routes */}
+                  <Route path="incubatee">
+                    <Route index element={<IncubateeDashboard />} />
+                    <Route path="projects" element={<ProjectSubmission />} />
+                  </Route>
+
 
                   {/* Add more roles here as needed */}
                 </Route>
