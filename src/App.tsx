@@ -73,11 +73,16 @@ const App = () => {
                   }
                 >
                 
-                  {/* Admin routes */}
-                  <Route path="admin">
-                    <Route index element={<AdminDashboard />} />
-                    <Route path="forms" element={<FormManagement />} />
-                  </Route>
+                 {/* Root path */}
+  <Route path="/" element={<AdminDashboard />} />
+
+  {/* Admin routes */}
+  <Route path="admin">
+    <Route index element={<AdminDashboard />} />
+    <Route path="forms" element={<FormManagement />} />
+  </Route>
+
+  {/* ...other routes */}
 
                        {/* Director routes */}
                   <Route path="director">
