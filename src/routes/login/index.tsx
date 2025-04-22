@@ -57,7 +57,7 @@ export const LoginPage: React.FC = () => {
       setRedirecting(true);
 
       setTimeout(() => {
-        navigate(`/${role}`);
+        navigate(`/${role.toLowerCase()}`);
       }, 2000);
     } catch (error: any) {
       console.error(error);
