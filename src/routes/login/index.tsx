@@ -3,7 +3,14 @@ import {
   EyeTwoTone,
   GoogleOutlined,
 } from "@ant-design/icons";
-import { Button, Form, Input, Typography, message, Spin } from "antd";
+import {
+  Button,
+  Form,
+  Input,
+  Typography,
+  message,
+  Spin,
+} from "antd";
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemedTitleV2 } from "@refinedev/antd";
@@ -12,8 +19,8 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { auth } from "@/firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { auth, db } from "@/firebase";
 
 const { Title } = Typography;
 
@@ -28,50 +35,65 @@ export const LoginPage: React.FC = () => {
     document.title = "Login • Incubation Platform";
   }, []);
 
-  
+  const handleLogin = async (values: any) => {
+    try {
+      setLoading(true);
+      const userCred = await signInWithEmailAndPassword(
+        auth,
+        values.email,
+        values.password
+      );
+      const user = userCred.user;
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
 
-const handleLogin = async (values: any) => {
-  try {
-    setLoading(true);
-    const userCred = await signInWithEmailAndPassword(auth, values.email, values.password);
-    const user = userCred.user;
+      if (!userSnap.exists()) {
+        message.error("No user record found in Firestore.");
+        return;
+      }
 
-    const docRef = doc(db, "users", user.uid);
-    const docSnap = await getDoc(docRef);
+      const role = userSnap.data()?.role;
+      message.success("🎉 Login successful! Redirecting...", 2);
+      setRedirecting(true);
 
-    if (!docSnap.exists()) {
-      message.error("User record not found in database.");
-      return;
+      setTimeout(() => {
+        navigate(`/${role}`);
+      }, 2000);
+    } catch (error: any) {
+      console.error(error);
+      message.error("Invalid email or password.");
+    } finally {
+      setLoading(false);
     }
-
-    const role = docSnap.data().role;
-
-    message.success("🎉 Login successful! Redirecting...", 2);
-    setRedirecting(true);
-
-    setTimeout(() => {
-      navigate(`/${role}`);
-    }, 2000);
-
-  } catch (error: any) {
-    console.error(error);
-    message.error("Invalid email or password.");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const handleGoogleLogin = async () => {
     try {
       setGoogleLoading(true);
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        await setDoc(userRef, {
+          uid: user.uid,
+          email: user.email,
+          name: user.displayName || "",
+          role: "participants",
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      const role = userSnap.exists() ? userSnap.data()?.role : "participants";
 
       message.success("✅ Google login successful! Redirecting...", 2);
       setRedirecting(true);
 
       setTimeout(() => {
-        navigate("/");
+        navigate(`/${role}`);
       }, 2000);
     } catch (error: any) {
       console.error(error);
@@ -82,7 +104,7 @@ const handleLogin = async (values: any) => {
   };
 
   return (
-    <Spin spinning={loading || googleLoading || redirecting} size='large'>
+    <Spin spinning={loading || googleLoading || redirecting} size="large">
       <div
         style={{
           minHeight: "100vh",
@@ -129,47 +151,29 @@ const handleLogin = async (values: any) => {
             backdropFilter: "blur(5px)",
           }}
         >
-          <Form
-            layout='vertical'
-            form={form}
-            onFinish={handleLogin}
-            requiredMark={false}
-          >
-            <Title
-              level={4}
-              style={{ textAlign: "center", marginTop: 16, color: "#1677ff" }}
-            >
+          <Form layout="vertical" form={form} onFinish={handleLogin} requiredMark={false}>
+            <Title level={4} style={{ textAlign: "center", marginTop: 16, color: "#1677ff" }}>
               Welcome back
             </Title>
 
             <Form.Item
-              name='email'
-              label='Email'
-              rules={[
-                { required: true, message: "Please enter your email" },
-                { type: "email", message: "Enter a valid email" },
-              ]}
+              name="email"
+              label="Email"
+              rules={[{ required: true, message: "Please enter your email" }, { type: "email", message: "Enter a valid email" }]}
             >
-              <Input placeholder='you@example.com' />
+              <Input placeholder="you@example.com" />
             </Form.Item>
 
             <Form.Item
-              name='password'
-              label='Password'
-              rules={[
-                { required: true, message: "Please enter your password" },
-              ]}
+              name="password"
+              label="Password"
+              rules={[{ required: true, message: "Please enter your password" }]}
             >
-              <Input.Password
-                placeholder='Enter your password'
-                iconRender={(visible) =>
-                  visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
-                }
-              />
+              <Input.Password placeholder="Enter your password" iconRender={(visible) => (visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />)} />
             </Form.Item>
 
             <Form.Item>
-              <Button type='primary' htmlType='submit' block loading={loading}>
+              <Button type="primary" htmlType="submit" block loading={loading}>
                 Log In
               </Button>
             </Form.Item>
@@ -187,31 +191,17 @@ const handleLogin = async (values: any) => {
           </Form>
 
           <div style={{ marginTop: 24, textAlign: "center" }}>
-            Don’t have an account?{" "}
-            <a
-              onClick={() => navigate("/register")}
-              style={{ fontWeight: 500 }}
-            >
-              Register
-            </a>
+            Don’t have an account? <a onClick={() => navigate("/register")} style={{ fontWeight: 500 }}>Register</a>
           </div>
         </div>
 
-        {/* Floating Quantilytix logo */}
         <img
-          src='/assets/images/QuantilytixO.png'
-          alt='Quantilytix Logo'
-          style={{
-            position: "absolute",
-            bottom: 24,
-            right: 15,
-            height: 50,
-            opacity: 0.9,
-          }}
+          src="/assets/images/QuantilytixO.png"
+          alt="Quantilytix Logo"
+          style={{ position: "absolute", bottom: 24, right: 15, height: 50, opacity: 0.9 }}
         />
       </div>
 
-      {/* Animation Styles */}
       <style>
         {`
           @keyframes fadeIn {
