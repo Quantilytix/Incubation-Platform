@@ -16,7 +16,7 @@ import { Layout } from "@/components";
 import { resources } from "@/config/resources";
 import { authProvider, dataProvider, liveProvider } from "@/providers";
 
-import { AdminDashboard } from "@/routes/admin/AdminDashboard";
+import { AdminDashboard } from "@/routes/admin/adminDashboard";
 import FormManagement from "@/routes/admin/forms";
 import { LoginPage } from "@/routes/login";
 import { RegisterPage } from "@/routes/registration";
@@ -70,8 +70,12 @@ const App = () => {
                     </Authenticated>
                   }
                 >
-                  <Route index element={<AdminDashboard />} />
-                  <Route path="forms" element={<FormManagement />} />
+                
+                  {/* Admin routes */}
+                  <Route path="admin">
+                    <Route index element={<AdminDashboard />} />
+                    <Route path="forms" element={<FormManagement />} />
+                  </Route>
 
                   {/* Funder routes */}
                   <Route path="funder">
