@@ -20,7 +20,7 @@ import { DashboardPage } from "@/routes/dashboard";
 import { LoginPage } from "@/routes/login";
 import { RegisterPage } from "@/routes/registration";
 import { FunderDashboard } from "@/routes/funder/funderDashboard";
-import { ApprovalQueue } from "@/routes/funder/approvals";
+import { ApprovalQueue } from "@/routes/funder/approvals/approvalQueue";
 
 import "@refinedev/antd/dist/reset.css";
 
