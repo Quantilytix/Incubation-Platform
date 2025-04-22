@@ -23,10 +23,10 @@ import { FunderDashboard } from "@/routes/funder/funderDashboard";
 import { ApprovalQueue } from "@/routes/funder/approvals/approvalQueue";
 import { IncubateeDashboard } from "@/routes/incubatee";
 import { ProjectSubmission } from "@/routes/incubatee/projects/projectSubmission";
-import { ConsultantDashboard } from "@/routes/consultants";
-import { FeedbackWorkspace } from "@/routes/consultants/feedback";
-import { ProjectAnalytics } from "@/routes/consultants/analytics";
-import { AuditTools } from "@/routes/consultant/audit";
+import { ConsultantDashboard } from "@/routes/consultants/ConsultantDashboard";
+import { FeedbackWorkspace } from "@/routes/consultants/feedback/FeedbackWorkspace";
+import { ProjectAnalytics } from "@/routes/consultants/analytics/ProjectAnalytics";
+import { AuditTools } from "@/routes/consultant/audit/AuditTools";
 
 import "@refinedev/antd/dist/reset.css";
 
