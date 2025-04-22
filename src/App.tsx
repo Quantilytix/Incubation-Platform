@@ -33,9 +33,9 @@ import { ProjectAnalytics } from "@/routes/consultants/analytics/ProjectAnalytic
 import { AuditTools } from "@/routes/consultants/audit/AuditTools";
 
 import { OperationsDashboard } from "@/routes/operations/OperationsDashboard";
-import { OperationsFormsManagement } from "@/routes/operations/forms"
-import { OperationsParticipantsManagement } from "@/routes/operations/participants";
-import { OperationsResourceManagement } from "@/routes/operations/resources";
+import OperationsFormsManagement from "@/routes/operations/forms"
+import OperationsParticipantsManagement from "@/routes/operations/participants";
+import OperationsResourceManagement from "@/routes/operations/resources";
 
 import "@refinedev/antd/dist/reset.css";
 
