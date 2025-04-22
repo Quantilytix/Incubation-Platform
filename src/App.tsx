@@ -29,7 +29,7 @@ const App = () => {
               routerProvider={routerProvider}
               dataProvider={dataProvider}
               liveProvider={liveProvider}
-              notificationProvider={useNotificationProvider}
+              notificationProvider={useNotificationProvider()}
               authProvider={authProvider}
               resources={resources}
               options={{
