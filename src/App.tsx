@@ -21,12 +21,21 @@ import { LoginPage } from "@/routes/login";
 import { RegisterPage } from "@/routes/registration";
 import { FunderDashboard } from "@/routes/funder/funderDashboard";
 import { ApprovalQueue } from "@/routes/funder/approvals/approvalQueue";
+import { FundDisbursement } from "@/routes/funder/disbursements/fundDisbursement";
+import { FunderAnalytics } from "@/routes/funder/analytics/funderAnalytics";
+
 import { IncubateeDashboard } from "@/routes/incubatee";
 import { ProjectSubmission } from "@/routes/incubatee/projects/projectSubmission";
-import { ConsultantDashboard } from "@/routes/consultants/ConsultantDashboard";
-import { FeedbackWorkspace } from "@/routes/consultants/feedback/FeedbackWorkspace";
-import { ProjectAnalytics } from "@/routes/consultants/analytics/ProjectAnalytics";
-import { AuditTools } from "@/routes/consultants/audit/AuditTools";
+
+import { ConsultantDashboard } from "@/routes/consultant";
+import { FeedbackWorkspace } from "@/routes/consultant/feedback";
+import { ProjectAnalytics } from "@/routes/consultant/analytics";
+import { AuditTools } from "@/routes/consultant/audit";
+
+import { OperationsDashboard } from "@/routes/operations/OperationsDashboard";
+import { OperationsFormsManagement } from "@/routes/operations/forms"
+import { OperationsParticipantsManagement } from "@/routes/operations/participants";
+import { OperationsResourceManagement } from "@/routes/operations/resources";
 
 import "@refinedev/antd/dist/reset.css";
 
@@ -51,7 +60,6 @@ const App = () => {
               }}
             >
               <Routes>
-                {/* Authenticated routes */}
                 <Route
                   element={
                     <Authenticated fallback={<CatchAllNavigate to="/login" />}>
@@ -61,7 +69,6 @@ const App = () => {
                     </Authenticated>
                   }
                 >
-                  {/* Global dashboard route */}
                   <Route index element={<DashboardPage />} />
                   <Route path="dashboard" element={<DashboardPage />} />
 
@@ -69,6 +76,8 @@ const App = () => {
                   <Route path="funder">
                     <Route index element={<FunderDashboard />} />
                     <Route path="approvals" element={<ApprovalQueue />} />
+                    <Route path="disbursements" element={<FundDisbursement />} />
+                    <Route path="analytics" element={<FunderAnalytics />} />
                   </Route>
 
                   {/* Incubatee routes */}
@@ -83,6 +92,14 @@ const App = () => {
                     <Route path="feedback" element={<FeedbackWorkspace />} />
                     <Route path="analytics" element={<ProjectAnalytics />} />
                     <Route path="audit" element={<AuditTools />} />
+                  </Route>
+
+                  {/* Operations routes */}
+                  <Route path="operations">
+                    <Route index element={<OperationsDashboard />} />
+                    <Route path="forms" element={<OperationsFormsManagement />} />
+                    <Route path="participants" element={<OperationsParticipantsManagement />} />
+                    <Route path="resources" element={<OperationsResourceManagement />} />
                   </Route>
                 </Route>
 
