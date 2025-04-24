@@ -1,3 +1,4 @@
+// 👇 This is the Chat.tsx component updated with full role logic including operations and admin access scope
 import React, { useState, useEffect, useRef } from 'react'
 import {
   Avatar,
@@ -32,7 +33,6 @@ export const Chat = () => {
   const [isTyping, setIsTyping] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
-  // 🔹 Fetch role from Firebase users/{id}.role
   useEffect(() => {
     const fetchUserRole = async () => {
       if (identity?.id) {
@@ -45,36 +45,44 @@ export const Chat = () => {
     fetchUserRole()
   }, [identity])
 
-  // 🔹 Define structured responses
+  // 🎯 Smart reply mappings
   const predefinedResponses: Record<string, Record<string, string>> = {
     projectadmin: {
-      'top 5 interventions': '📈 Top 5 interventions:\n1. CRM Solutions\n2. Mentoring\n3. Branding\n4. Financial Literacy\n5. Market Linkages',
-      'average consultant ratings': '⭐ Ratings by Intervention:\nMarketing: 4.5\nFinance: 4.6\nTechnical: 4.7',
-      'filter interventions by category': '💰 Funding vs Training Trends:\nTraining: R80K Income, R60K Expense\nFunding: R150K Income, R120K Expense',
-      'top 10 companies': '🏢 Top Companies by Participation:\n1. GreenGrow SA\n2. EduSpark\n3. FinEdge...',
-      'lagging analysis': '⏳ Marketing Impact Lag:\nFeb: 60%\nMar: 70%\nApr: 82%',
-      'distribution by gender and age': '👩‍💼 55% Female | 35% Youth | 10% Senior'
+      'top 5 interventions': '📈 Top 5: CRM, Mentorship, Marketing, Branding, Linkages',
+      'average consultant ratings': '⭐ Ratings: Finance 4.6, Marketing 4.5, Ops 4.7',
+      'filter interventions by category': '📊 Income vs Expense by Category: R120k vs R85k',
+      'top 10 companies': '🏢 Top Companies: AgriX, EduPro, BioLife...',
+      'lagging analysis': '📉 Lag effect: March Marketing: 40%, April: 65%, May: 82%',
+      'distribution by gender and age': '👥 Gender: 58% Female | Youth: 42%, Adults: 50%'
     },
     admin: {
-      'all registered users': '👥 32 Users:\nAdmin(1), Consultants(12), Participants(19)',
-      'consultants with 3 assignments': '📋 9 Consultants have ≥3 assignments.',
-      'haven\'t submitted performance': '⚠️ Pending SMEs:\nAgroNext, FutureGrow, ByteFusion',
-      'interventions per enterprise': '📊 Types:\nSupplier Dev: 12\nEnterprise Dev: 24',
-      'created past 60 days': '🕓 Recent Interventions:\n25 Created. Created by: Linda, J. Mokoena'
+      'registered users': '🔐 Users: 58 total (Admins: 2, Consultants: 24, Participants: 32)',
+      'active consultants': '📋 11 Consultants have ≥3 active assignments.',
+      'haven\'t submitted monthly performance': '⏱️ SMEs: FinNext, BlueWave, CodeMakers',
+      'summary of interventions per enterprise': '📊 Supplier Dev: 18, Enterprise Dev: 42',
+      'interventions created in past 60': '📅 34 Interventions created by J. Mokoena & Team'
     },
     participant: {
-      'interventions completed': '✅ You’ve completed 6 interventions in 2024.',
-      'documents pending': '📄 Pending Documents:\n- Tax Pin\n- Management Accounts'
+      'completed this year': '✅ You’ve completed 6 interventions so far this year.',
+      'documents pending': '📄 Pending: Management Accounts, Tax Pin'
+    },
+    operations: {
+      'intervention assignments by sector': '📌 Manufacturing: 10, ICT: 8, Agri: 12',
+      'consultants with most active': '🏆 Consultant Leaders:\n- L. Dlamini: 8\n- T. Nkosi: 7',
+      'smes not uploaded compliance': '📂 6 SMEs missing compliance docs.',
+      'assigned last month': '📦 Grouped Interventions:\nGreenGrow: 3\nTechSpark: 2',
+      'cancelled interventions in q1': '❌ Cancelled: 5 (Jan: 1, Feb: 2, Mar: 2)',
+      'missing bee or taxpin': '⚠️ Missing: NeoFarms, SmartMobility'
     }
   }
 
   const matchResponse = (role: string, query: string) => {
-    const roleResponses = predefinedResponses[role]
-    if (!roleResponses) return null
-    const key = Object.keys(roleResponses).find(k =>
+    const roleData = predefinedResponses[role]
+    if (!roleData) return null
+    const key = Object.keys(roleData).find(k =>
       query.toLowerCase().includes(k)
     )
-    return key ? roleResponses[key] : null
+    return key ? roleData[key] : null
   }
 
   const handleSend = () => {
