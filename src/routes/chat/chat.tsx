@@ -76,14 +76,28 @@ export const Chat = () => {
     }
   }
 
-  const matchResponse = (role: string, query: string) => {
-    const roleData = predefinedResponses[role]
-    if (!roleData) return null
-    const key = Object.keys(roleData).find(k =>
-      query.toLowerCase().includes(k)
+// 🔄 Normalize function (removes punctuation, lowercases, trims)
+const normalize = (str: string) =>
+  str.toLowerCase().replace(/[^\w\s]/gi, '').trim()
+
+// 🎯 Updated matcher
+const matchResponse = (role: string, query: string) => {
+  const roleData = predefinedResponses[role]
+  if (!roleData) return null
+
+  const normalizedQuery = normalize(query)
+
+  const key = Object.keys(roleData).find(rawKey => {
+    const normalizedKey = normalize(rawKey)
+    return (
+      normalizedQuery.includes(normalizedKey) ||
+      normalizedKey.includes(normalizedQuery)
     )
-    return key ? roleData[key] : null
-  }
+  })
+
+  return key ? roleData[key] : null
+}
+
 
   const handleSend = () => {
     if (!input.trim()) return
