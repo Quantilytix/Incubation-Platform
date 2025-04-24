@@ -36,6 +36,81 @@ const productivity = [1.2, 1.3, 1.5, 1.6, 1.7];
 const outstandingDocs = [5, 4, 3, 2, 1];
 const avgRevenue = [12000, 12500, 13000, 13500, 14000];
 
+// 🔹 Revenue + Workers Mixed Chart
+const revenueWorkersChart: Highcharts.Options = {
+  chart: { zoomType: 'xy' },
+  title: { text: 'Revenue vs Workforce' },
+  xAxis: [{ categories: months }],
+  yAxis: [
+    {
+      title: { text: 'Revenue (R)' },
+      labels: {
+        formatter: function () {
+          return 'R' + Number(this.value).toLocaleString();
+        },
+      },
+    },
+    {
+      title: { text: 'Number of Workers' },
+      opposite: true,
+    },
+  ],
+  tooltip: { shared: true },
+  series: [
+    {
+      name: 'Permanent Workers',
+      type: 'column',
+      data: headPerm,
+      yAxis: 1,
+    },
+    {
+      name: 'Temporary Workers',
+      type: 'column',
+      data: headTemp,
+      yAxis: 1,
+    },
+    {
+      name: 'Revenue',
+      type: 'spline',
+      data: revenue,
+      tooltip: { valuePrefix: 'R' },
+    },
+  ],
+};
+
+// 🔹 Total vs Avg Revenue Chart
+const totalVsAvgRevenueChart: Highcharts.Options = {
+  chart: { type: 'spline' },
+  title: { text: 'Total Revenue vs Avg Revenue' },
+  xAxis: {
+    categories: months,
+    title: { text: 'Month' },
+  },
+  yAxis: {
+    title: { text: 'Revenue (R)' },
+    labels: {
+      formatter: function () {
+        return 'R' + Number(this.value).toLocaleString();
+      },
+    },
+  },
+  tooltip: { shared: true },
+  series: [
+    {
+      name: 'Total Revenue',
+      type: 'spline',
+      data: revenue,
+      color: '#52c41a',
+    },
+    {
+      name: 'Avg Revenue',
+      type: 'spline',
+      data: avgRevenue,
+      color: '#faad14',
+    },
+  ],
+};
+
 // Sample Notifications Data
 const initialNotifications = [
   { id: 1, message: 'New mentoring session added for Smart Incubation.', type: 'info' },
@@ -69,7 +144,6 @@ export const IncubateeDashboard: React.FC = () => {
   };
 
   const handleRateAndComment = () => {
-    // Handle submission of rating and comment
     console.log('Rating submitted:', selectedNotification);
     setSelectedNotification(null);
   };
@@ -81,13 +155,11 @@ export const IncubateeDashboard: React.FC = () => {
   };
 
   const handleAcceptIntervention = (id) => {
-    // Simulate accepting an intervention
     console.log(`Accepted Intervention ID: ${id}`);
     setPendingInterventions((prev) => prev.filter((item) => item.id !== id));
   };
 
   const handleDeclineIntervention = (id) => {
-    // Simulate declining an intervention
     console.log(`Declined Intervention ID: ${id}`);
     setPendingInterventions((prev) => prev.filter((item) => item.id !== id));
   };
