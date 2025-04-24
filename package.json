@@ -33,11 +33,14 @@
     "graphql": "^15.6.1",
     "graphql-tag": "^2.12.6",
     "graphql-ws": "^5.9.1",
+    "highcharts": "^12.2.0",
+    "highcharts-react-official": "^3.2.1",
     "react": "^18.0.0",
     "react-beautiful-dnd": "^13.1.1",
     "react-csv": "^2.2.2",
     "react-dom": "^18.0.0",
-    "react-router-dom": "^6.8.1"
+    "react-router-dom": "^6.8.1",
+    "styled-components": "^6.1.17"
   },
   "devDependencies": {
     "@graphql-codegen/cli": "^5.0.0",
