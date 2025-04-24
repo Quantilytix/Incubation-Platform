@@ -1,148 +1,231 @@
- import React, { useEffect, useState } from "react";
-import { Card, Col, Row, Statistic, Table, Tag, Typography, Button, Tabs } from "antd";
+import React, { useEffect, useState } from 'react'
+import {
+  Card,
+  Col,
+  Row,
+  Statistic,
+  Table,
+  Tag,
+  Typography,
+  Button,
+  Tabs,
+  Select
+} from 'antd'
 import {
   DollarOutlined,
   UserOutlined,
   FileTextOutlined,
   EyeOutlined,
   DownloadOutlined,
-} from "@ant-design/icons";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "@/firebase";
-import { ApprovalQueue } from "./approvals/approvalQueue";
-import { FundDisbursement } from "./disbursements/fundDisbursement";
-import { FunderAnalytics } from "./analytics/funderAnalytics";
+  GlobalOutlined
+} from '@ant-design/icons'
 
-const { Title } = Typography;
-const { TabPane } = Tabs;
+const { Title } = Typography
+const { TabPane } = Tabs
+const { Option } = Select
+
+const allSMEsByYear = {
+  2024: [
+    {
+      id: 1,
+      name: 'BrightTech',
+      sector: 'ICT',
+      developmentType: 'Enterprise Development',
+      revenue: 150000,
+      headcount: 10,
+      interventions: 5,
+      participation: 'Excellent'
+    },
+    {
+      id: 2,
+      name: 'Green Farms',
+      sector: 'Agriculture',
+      developmentType: 'Supplier Development',
+      revenue: 80000,
+      headcount: 6,
+      interventions: 3,
+      participation: 'Moderate'
+    },
+    {
+      id: 3,
+      name: 'SolarPlus',
+      sector: 'Energy',
+      developmentType: 'Enterprise Development',
+      revenue: 220000,
+      headcount: 14,
+      interventions: 6,
+      participation: 'Good'
+    },
+    {
+      id: 4,
+      name: 'EduNext',
+      sector: 'Education',
+      developmentType: 'Supplier Development',
+      revenue: 40000,
+      headcount: 3,
+      interventions: 1,
+      participation: 'Poor'
+    }
+  ]
+}
 
 export const FunderDashboard: React.FC = () => {
-  const [smes, setSMEs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [selectedYear, setSelectedYear] = useState('2024')
+  const [devFilter, setDevFilter] = useState('All')
+  const [filteredSMEs, setFilteredSMEs] = useState<any[]>([])
 
   useEffect(() => {
-    const fetchSMEs = async () => {
-      try {
-        const snapshot = await getDocs(collection(db, "smelist"));
-        const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setSMEs(data);
-      } catch (error) {
-        console.warn("Using fallback dummy SMEs due to error:", error);
-        setSMEs([
-          { id: 1, name: "BrightTech", sector: "ICT", performance: "Good" },
-          { id: 2, name: "Green Farms", sector: "Agriculture", performance: "Average" },
-        ]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchSMEs();
-  }, []);
+    const data = allSMEsByYear[selectedYear] || []
+    if (devFilter === 'All') {
+      setFilteredSMEs(data)
+    } else {
+      setFilteredSMEs(data.filter(sme => sme.developmentType === devFilter))
+    }
+  }, [selectedYear, devFilter])
 
   const renderSMETable = () => (
     <Table
-      loading={loading}
-      dataSource={smes}
-      rowKey="id"
+      dataSource={filteredSMEs}
+      rowKey='id'
       columns={[
+        { title: 'Name', dataIndex: 'name' },
+        { title: 'Sector', dataIndex: 'sector' },
+        { title: 'Development Type', dataIndex: 'developmentType' },
         {
-          title: "Name",
-          dataIndex: "name",
+          title: 'Cumulative Revenue (R)',
+          dataIndex: 'revenue',
+          render: val => `R${val.toLocaleString()}`
         },
         {
-          title: "Sector",
-          dataIndex: "sector",
+          title: 'Head Count',
+          dataIndex: 'headcount'
         },
         {
-          title: "Performance",
-          dataIndex: "performance",
-          render: (text) => (
-            <Tag color={text === "Good" ? "green" : "orange"}>{text}</Tag>
-          ),
+          title: 'Participation Rate',
+          dataIndex: 'participation',
+          render: text => {
+            const colors = {
+              Excellent: 'green',
+              Good: 'blue',
+              Moderate: 'orange',
+              Poor: 'volcano',
+              Bad: 'red'
+            }
+            return <Tag color={colors[text] || 'default'}>{text}</Tag>
+          }
         },
         {
-          title: "Actions",
+          title: 'Interventions Completed',
+          dataIndex: 'interventions'
+        },
+        {
+          title: 'Actions',
           render: (_, record) => (
             <>
               <Button
-                type="link"
+                type='link'
                 icon={<EyeOutlined />}
-                onClick={() => console.log("View SME", record.id)}
+                onClick={() => console.log('View SME', record.id)}
               >
                 View
               </Button>
               <Button
-                type="link"
+                type='link'
                 icon={<DownloadOutlined />}
-                onClick={() => console.log("Download Document for", record.id)}
+                onClick={() => console.log('Download for', record.id)}
               >
                 Download
               </Button>
             </>
-          ),
-        },
+          )
+        }
       ]}
     />
-  );
+  )
 
   return (
     <div style={{ padding: 24 }}>
-      <Title level={3}>Funder Dashboard</Title>
+      <Title level={3}>Sponsor Dashboard</Title>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col>
+          <Select value={selectedYear} onChange={setSelectedYear}>
+            <Option value='2024'>2024</Option>
+          </Select>
+        </Col>
+        <Col>
+          <Select value={devFilter} onChange={setDevFilter}>
+            <Option value='All'>All Types</Option>
+            <Option value='Enterprise Development'>
+              Enterprise Development
+            </Option>
+            <Option value='Supplier Development'>Supplier Development</Option>
+          </Select>
+        </Col>
+      </Row>
 
       <Row gutter={[16, 16]}>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="Total SMEs"
-              value={smes.length}
+              title='Total SMEs'
+              value={filteredSMEs.length}
               prefix={<UserOutlined />}
             />
           </Card>
         </Col>
-
-        <Col span={8}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="Interventions Completed"
-              value={12}
+              title='Interventions Completed'
+              value={filteredSMEs.reduce(
+                (acc, sme) => acc + (sme.interventions || 0),
+                0
+              )}
               prefix={<FileTextOutlined />}
             />
           </Card>
         </Col>
-
-        <Col span={8}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="Funds Allocated"
-              value={"R1,200,000"}
+              title='Cumulative Revenue'
+              value={
+                'R' +
+                filteredSMEs
+                  .reduce((acc, sme) => acc + (sme.revenue || 0), 0)
+                  .toLocaleString()
+              }
               prefix={<DollarOutlined />}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card>
+            <Statistic
+              title='Market Linkages'
+              value={filteredSMEs.reduce(
+                (acc, sme) => acc + (sme.headcount || 0),
+                0
+              )}
+              prefix={<GlobalOutlined />}
             />
           </Card>
         </Col>
 
         <Col span={24}>
           <Card>
-            <Tabs defaultActiveKey="1">
-              <TabPane tab="SMEs" key="1">
+            <Tabs defaultActiveKey='1'>
+              <TabPane tab='SMEs' key='1'>
                 {renderSMETable()}
               </TabPane>
-              <TabPane tab="Interventions" key="2">
-                <ApprovalQueue />
-              </TabPane>
-              <TabPane tab="Reports" key="3">
+              <TabPane tab='Reports' key='2'>
                 <p>Reports content coming soon...</p>
-              </TabPane>
-              <TabPane tab="Disbursements" key="4">
-                <FundDisbursement />
-              </TabPane>
-              <TabPane tab="Analytics" key="5">
-                <FunderAnalytics />
               </TabPane>
             </Tabs>
           </Card>
         </Col>
       </Row>
     </div>
-  );
-};
+  )
+}
