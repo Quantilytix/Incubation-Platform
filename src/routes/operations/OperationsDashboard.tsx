@@ -463,43 +463,6 @@ export const OperationsDashboard: React.FC = () => {
                 </Button>
               </Card>
               
-              {/* Quick Actions */}
-              <Card title="Quick Actions">
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Button 
-                    block 
-                    icon={<FormOutlined />} 
-                    onClick={goToFormManagement}
-                    style={{ textAlign: 'left', marginBottom: '10px' }}
-                  >
-                    Manage Forms & Templates
-                  </Button>
-                  <Button 
-                    block 
-                    icon={<FileTextOutlined />} 
-                    onClick={goToFormResponses}
-                    style={{ textAlign: 'left', marginBottom: '10px' }}
-                  >
-                    Review Form Submissions
-                  </Button>
-                  <Button 
-                    block 
-                    icon={<ApartmentOutlined />} 
-                    onClick={goToResourceManagement}
-                    style={{ textAlign: 'left', marginBottom: '10px' }}
-                  >
-                    Manage Resources
-                  </Button>
-                  <Button 
-                    block 
-                    icon={<TeamOutlined />} 
-                    onClick={goToParticipantManagement}
-                    style={{ textAlign: 'left' }}
-                  >
-                    Participant Management
-                  </Button>
-                </Space>
-              </Card>
             </Col>
           </Row>
         </TabPane>
