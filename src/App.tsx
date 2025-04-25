@@ -1,51 +1,102 @@
-import { Refine } from '@refinedev/core'
+// ───────────────────────────────────────────────────────────
+// 🔹 Core Libraries
+// ───────────────────────────────────────────────────────────
 import { BrowserRouter, Route, Routes, Outlet } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+// ───────────────────────────────────────────────────────────
+// 🔹 Refine Core & Utilities
+// ───────────────────────────────────────────────────────────
+import { Refine, Authenticated } from '@refinedev/core'
 import routerProvider, {
   CatchAllNavigate,
   UnsavedChangesNotifier,
   DocumentTitleHandler
 } from '@refinedev/react-router-v6'
-import { Authenticated } from '@refinedev/core'
 import { useNotificationProvider } from '@refinedev/antd'
-import { ConfigProvider, App as AntdApp } from 'antd'
-import { RefineThemes } from '@refinedev/antd'
 import { DevtoolsProvider } from '@refinedev/devtools'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { RefineThemes } from '@refinedev/antd'
 
-import { CustomLayout } from '@/components/layout' 
+// ───────────────────────────────────────────────────────────
+// 🔹 Ant Design
+// ───────────────────────────────────────────────────────────
+import { ConfigProvider, App as AntdApp } from 'antd'
+import '@refinedev/antd/dist/reset.css'
 
+// ───────────────────────────────────────────────────────────
+// 🔹 App Providers
+// ───────────────────────────────────────────────────────────
 import { authProvider, dataProvider, liveProvider } from '@/providers'
 
-import { AdminDashboard } from '@/routes/operations/admin/adminDashboard'
-import FormManagement from '@/routes/admin/forms'
-import MonitoringEvaluationSection from '@/routes/projectadmin/monitoring'
+// ───────────────────────────────────────────────────────────
+// 🔹 Layout
+// ───────────────────────────────────────────────────────────
+import { CustomLayout } from '@/components/layout'
+
+// ───────────────────────────────────────────────────────────
+// 🔹 Public Pages
+// ───────────────────────────────────────────────────────────
 import { LoginPage } from '@/routes/login'
-import Chat from '@/routes/chat/chat'
 import { RegisterPage } from '@/routes/registration'
-import { FunderDashboard } from '@/routes/funder/funderDashboard'
-import { ApprovalQueue } from '@/routes/funder/approvals/approvalQueue'
-import { FundDisbursement } from '@/routes/funder/disbursements/fundDisbursement'
-import { FunderAnalytics } from '@/routes/funder/analytics/funderAnalytics'
-import { IncubateeDashboard } from '@/routes/incubatee'
-import { MonthlyPerformanceForm } from '@/routes/incubatee/projects/projectSubmission'
-import { ConsultantDashboard } from '@/routes/consultants/ConsultantDashboard'
-import { AssignedInterventions } from '@/routes/consultants/allocated'
-import { InterventionTrack } from '@/routes/consultants/allocated/intervention'
-import { FeedbackWorkspace } from '@/routes/consultants/feedback/FeedbackWorkspace'
-import { ProjectAnalytics } from '@/routes/consultants/analytics/ProjectAnalytics'
+
+// ───────────────────────────────────────────────────────────
+// 🔹 Admin & Operations Dashboards
+// ───────────────────────────────────────────────────────────
+import { AdminDashboard } from '@/routes/operations/admin/adminDashboard'
 import { DirectorDashboard } from '@/routes/directors/directorDashboard'
 import { OperationsDashboard } from '@/routes/operations/OperationsDashboard'
+
+// ───────────────────────────────────────────────────────────
+// 🔹 Admin Routes
+// ───────────────────────────────────────────────────────────
+import FormManagement from '@/routes/admin/forms'
+
+// ───────────────────────────────────────────────────────────
+// 🔹 Operations Routes
+// ───────────────────────────────────────────────────────────
 import OperationsFormsManagement from '@/routes/operations/forms'
 import OperationsParticipantsManagement from '@/routes/operations/participants'
 import OperationsResourceManagement from '@/routes/operations/resources'
 import OperationsCompliance from './routes/operations/compliance'
 import OperationsReports from './routes/operations/reports'
-
-import '@refinedev/antd/dist/reset.css'
-import { DocumentHub } from './routes/incubatee/documents/DocumentsHub'
 import { ConsultantAssignments } from './routes/operations/assignments'
+
+// ───────────────────────────────────────────────────────────
+// 🔹 Funder Routes
+// ───────────────────────────────────────────────────────────
+import { FunderDashboard } from '@/routes/funder/funderDashboard'
+import { ApprovalQueue } from '@/routes/funder/approvals/approvalQueue'
+import { FundDisbursement } from '@/routes/funder/disbursements/fundDisbursement'
+import { FunderAnalytics } from '@/routes/funder/analytics/funderAnalytics'
+
+// ───────────────────────────────────────────────────────────
+// 🔹 Incubatee Routes
+// ───────────────────────────────────────────────────────────
+import { IncubateeDashboard } from '@/routes/incubatee'
+import { MonthlyPerformanceForm } from '@/routes/incubatee/projects/projectSubmission'
+import { DocumentHub } from './routes/incubatee/documents/DocumentsHub'
+
+// ───────────────────────────────────────────────────────────
+// 🔹 Consultant Routes
+// ───────────────────────────────────────────────────────────
+import { ConsultantDashboard } from '@/routes/consultants/ConsultantDashboard'
+import { AssignedInterventions } from '@/routes/consultants/allocated'
+import { InterventionTrack } from '@/routes/consultants/allocated/intervention'
+import { FeedbackWorkspace } from '@/routes/consultants/feedback/FeedbackWorkspace'
+import { ProjectAnalytics } from '@/routes/consultants/analytics/ProjectAnalytics'
+
+// ───────────────────────────────────────────────────────────
+// 🔹 Project Admin Routes
+// ───────────────────────────────────────────────────────────
 import { ProjectAdminDashboard } from './routes/projectadmin/projectAdminDashboard'
+import MonitoringEvaluationSection from '@/routes/projectadmin/monitoring'
 import { ImpactAnalysisForm } from './routes/projectadmin/impact'
+
+// ───────────────────────────────────────────────────────────
+// 🔹 Utilities / Misc
+// ───────────────────────────────────────────────────────────
+import Chat from '@/routes/chat/chat'
+
 
 const queryClient = new QueryClient()
 
@@ -79,10 +130,8 @@ const App = () => {
                       </Authenticated>
                     }
                   >
-                    <Route path='/' element={<AdminDashboard />} />
-                    <Route path='admin'>
-                      <Route path='forms' element={<FormManagement />} />
-                    </Route>
+                   <Route path='/' element={<LoginPage />} />
+
                     <Route path='projectadmin'>
                       <Route index element={<ProjectAdminDashboard />} />
                       <Route
@@ -123,7 +172,10 @@ const App = () => {
 
                     <Route path='operations'>
                       <Route index element={<OperationsDashboard />} />
-                       <Route  path='system' element={<AdminDashboard />} />
+                      <Route 
+                        path='admin' 
+                        element={<AdminDashboard />}
+                      />
                       <Route
                         path='forms'
                         element={<OperationsFormsManagement />}
