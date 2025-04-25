@@ -91,7 +91,7 @@ export const CustomLayout: React.FC = () => {
       ]),
       operations: items([
         { key: 'dashboard', to: '/operations', label: 'Dashboard' },
-        { key: 'system', to: '/operations/admin', label: 'System Configuration' },
+        { key: 'admin', to: '/operations/admin', label: 'System Configuration' },
         {
           key: 'assignments',
           to: '/operations/assignments',
