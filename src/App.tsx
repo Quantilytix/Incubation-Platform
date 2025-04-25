@@ -16,7 +16,7 @@ import { CustomLayout } from '@/components/layout' // ✅ Updated import
 
 import { authProvider, dataProvider, liveProvider } from '@/providers'
 
-import { AdminDashboard } from '@/routes/admin/adminDashboard'
+import { AdminDashboard } from '@/routes/operations/admin/adminDashboard'
 import FormManagement from '@/routes/admin/forms'
 import MonitoringEvaluationSection from '@/routes/projectadmin/monitoring'
 import { LoginPage } from '@/routes/login'
@@ -81,11 +81,14 @@ const App = () => {
                   >
                     <Route path='/' element={<AdminDashboard />} />
                     <Route path='admin'>
-                      <Route index element={<AdminDashboard />} />
                       <Route path='forms' element={<FormManagement />} />
                     </Route>
                     <Route path='projectadmin'>
                       <Route index element={<ProjectAdminDashboard />} />
+                      <Route
+                        path='compliance'
+                        element={<OperationsCompliance />}
+                      />
                       <Route path='impact' element={<ImpactAnalysisForm />} />
                       <Route
                         path='monitoring'
@@ -120,6 +123,7 @@ const App = () => {
 
                     <Route path='operations'>
                       <Route index element={<OperationsDashboard />} />
+                       <Route   path='forms' element={<AdminDashboard />} />
                       <Route
                         path='forms'
                         element={<OperationsFormsManagement />}
