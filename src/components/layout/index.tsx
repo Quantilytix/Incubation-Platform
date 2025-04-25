@@ -10,7 +10,6 @@ const { Header, Sider, Content } = Layout
 const { Title } = Typography
 
 type UserRole =
-  | 'admin'
   | 'funder'
   | 'consultant'
   | 'incubatee'
@@ -45,15 +44,6 @@ export const CustomLayout: React.FC = () => {
       }))
 
     const menus: Record<UserRole, any[]> = {
-      admin: items([
-        { key: 'dashboard', to: '/admin', label: 'Dashboard' },
-        { key: 'forms', to: '/admin/forms', label: 'Forms' },
-        {
-          key: 'monitoringevalsection',
-          to: '/admin/monitoring',
-          label: 'Monitoring & Evaluation'
-        }
-      ]),
       projectadmin: items([
         { key: 'dashboard', to: '/projectadmin', label: 'Dashboard' },
         {
@@ -101,7 +91,7 @@ export const CustomLayout: React.FC = () => {
       ]),
       operations: items([
         { key: 'dashboard', to: '/operations', label: 'Dashboard' },
-         { key: 'system', to: '/operations/admin', label: 'System Configuration' },
+        { key: 'system', to: '/operations/admin', label: 'System Configuration' },
         {
           key: 'assignments',
           to: '/operations/assignments',
