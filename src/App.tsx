@@ -12,7 +12,7 @@ import { RefineThemes } from '@refinedev/antd'
 import { DevtoolsProvider } from '@refinedev/devtools'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-import { CustomLayout } from '@/components/layout' // ✅ Updated import
+import { CustomLayout } from '@/components/layout' 
 
 import { authProvider, dataProvider, liveProvider } from '@/providers'
 
@@ -123,7 +123,7 @@ const App = () => {
 
                     <Route path='operations'>
                       <Route index element={<OperationsDashboard />} />
-                       <Route   path='forms' element={<AdminDashboard />} />
+                       <Route  path='system' element={<AdminDashboard />} />
                       <Route
                         path='forms'
                         element={<OperationsFormsManagement />}
