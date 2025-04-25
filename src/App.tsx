@@ -130,7 +130,7 @@ const App = () => {
                       </Authenticated>
                     }
                   >
-                   <Route path='/' element={<LoginPage />} />
+                  
 
                     <Route path='projectadmin'>
                       <Route index element={<ProjectAdminDashboard />} />
@@ -201,7 +201,7 @@ const App = () => {
 
                     <Route path='chat' element={<Chat />} />
                   </Route>
-
+ <Route path='/' element={<LoginPage />} />
                   <Route path='/login' element={<LoginPage />} />
                   <Route path='/register' element={<RegisterPage />} />
 
