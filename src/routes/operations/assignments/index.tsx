@@ -22,19 +22,19 @@ import {
 import { Helmet } from 'react-helmet'
 import { useGetIdentity } from '@refinedev/core'
 import { useNavigate } from 'react-router-dom'
-import { collection, getDocs, setDoc, doc, Timestamp } from 'firebase/firestore';
-import { db } from '@/firebase';
+import { collection, getDocs, setDoc, doc, Timestamp } from 'firebase/firestore'
+import { db } from '@/firebase'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
-type InterventionType = 'singular' | 'grouped';
+type InterventionType = 'singular' | 'grouped'
 
 interface Assignment {
   id: string
   participantId: string
   participantName: string
   intervention: string
-  type: InterventionType;
+  type: InterventionType
   consultantId: string
   consultantName: string
   status: 'active' | 'completed' | 'cancelled'
@@ -69,6 +69,10 @@ export const ConsultantAssignments: React.FC = () => {
   const [sessionModalVisible, setSessionModalVisible] = useState(false)
   const [selectedAssignment, setSelectedAssignment] =
     useState<Assignment | null>(null)
+  const [selectedType, setSelectedType] = useState<'singular' | 'grouped'>(
+    'singular'
+  )
+
   const [sessionForm] = Form.useForm()
   const [notesModalVisible, setNotesModalVisible] = useState(false)
   const [notesForm] = Form.useForm()
@@ -338,10 +342,10 @@ export const ConsultantAssignments: React.FC = () => {
 
   return (
     <div style={{ padding: 24 }}>
-        <Helmet>
-      <title>Consultant Assignments | Incubation Platform</title>
-      <meta name="description" content="Manage consultant assignments, interventions, and track progress for the incubation program." />
-    </Helmet>
+      <Helmet>
+        <title>Consultant Assignments | Incubation Platform</title>
+      </Helmet>
+
       {/* 🔘 Header + Button */}
       <div
         style={{
@@ -416,66 +420,86 @@ export const ConsultantAssignments: React.FC = () => {
         <Form
           form={assignmentForm}
           layout='vertical'
-         onFinish={async values => {
-  try {
-    // Step 1: Fetch current count
-    const snapshot = await getDocs(collection(db, 'assignedInterventions'));
-    const currentCount = snapshot.size;
+          onFinish={async values => {
+            try {
+              // Step 1: Fetch current count
+              const snapshot = await getDocs(
+                collection(db, 'assignedInterventions')
+              )
+              const currentCount = snapshot.size
 
-    // Step 2: Build new ID like ai6, ai7
-    const newId = `ai${currentCount + 1}`;
+              // Step 2: Build new ID like ai6, ai7
+              const newId = `ai${currentCount + 1}`
 
-    // Step 3: Create new assignment object
-    const newAssignment = {
-      id: newId,
-      participantId: `pid-${Date.now()}`, // you can later improve participant ID logic
-      participantName: values.participant,
-      consultantId: `cid-${Date.now()}`, // same here
-      consultantName: values.consultant,
-      intervention: values.intervention,
-      type: values.type,
-      status: 'active',
-      createdAt: Timestamp.now(),
-      targetType: values.targetType,
-      targetValue: values.targetValue
-    };
+              // Step 3: Create new assignment object
+              const newAssignment = {
+                id: newId,
+                participantId: `pid-${Date.now()}`, // you can later improve participant ID logic
+                participantName: values.participant,
+                consultantId: `cid-${Date.now()}`, // same here
+                consultantName: values.consultant,
+                intervention: values.intervention,
+                type: values.type,
+                status: 'active',
+                createdAt: Timestamp.now(),
+                targetType: values.targetType,
+                targetValue: values.targetValue
+              }
 
-    // Step 4: Save assignment to Firestore
-    await setDoc(doc(db, 'assignedInterventions', newId), newAssignment);
+              // Step 4: Save assignment to Firestore
+              await setDoc(
+                doc(db, 'assignedInterventions', newId),
+                newAssignment
+              )
 
-    // Step 5: Save notification
-    await setDoc(doc(collection(db, 'notifications')), {
-      message: `You have been assigned a new intervention: ${values.intervention}`,
-      participantName: values.participant,
-      interventionId: newId,
-      interventionTitle: values.intervention,
-      type: 'intervention-assigned',
-      recipientRoles: ['consultant', 'participant', 'admin'],
-      createdAt: new Date(),
-      status: 'unread'
-    });
+              // Step 5: Save notification
+              await setDoc(doc(collection(db, 'notifications')), {
+                message: `You have been assigned a new intervention: ${values.intervention}`,
+                participantName: values.participant,
+                interventionId: newId,
+                interventionTitle: values.intervention,
+                type: 'intervention-assigned',
+                recipientRoles: ['consultant', 'participant', 'admin'],
+                createdAt: new Date(),
+                status: 'unread'
+              })
 
-    // Step 6: Update local state (what you were doing already)
-    setAssignments(prev => [...prev, newAssignment]);
-    message.success('New intervention assigned successfully');
-    setAssignmentModalVisible(false);
-    assignmentForm.resetFields();
-  } catch (error) {
-    console.error('❌ Error creating assignment:', error);
-    message.error('Failed to create assignment');
-  }
-}}
+              // Step 6: Update local state (what you were doing already)
+              setAssignments(prev => [...prev, newAssignment])
+              message.success('New intervention assigned successfully')
+              setAssignmentModalVisible(false)
+              assignmentForm.resetFields()
+            } catch (error) {
+              console.error('❌ Error creating assignment:', error)
+              message.error('Failed to create assignment')
+            }
+          }}
+          onValuesChange={changedValues => {
+            if (changedValues.type) {
+              setSelectedType(changedValues.type) // ✅ when type changes, update local state
+              assignmentForm.setFieldsValue({
+                participant: undefined,
+                participants: undefined
+              }) // ✅ clear participant selection
+            }
+          }}
         >
           <Form.Item
-  name="type"
-  label="Intervention Type"
-  rules={[{ required: true, message: 'Please select the intervention type' }]}
->
-  <Select placeholder="Select type">
-    <Select.Option value="singular">Singular (1 Participant)</Select.Option>
-    <Select.Option value="grouped">Grouped (Multiple Participants)</Select.Option>
-  </Select>
-</Form.Item>
+            name='type'
+            label='Intervention Type'
+            rules={[
+              { required: true, message: 'Please select the intervention type' }
+            ]}
+          >
+            <Select placeholder='Select type'>
+              <Select.Option value='singular'>
+                Singular (1 Participant)
+              </Select.Option>
+              <Select.Option value='grouped'>
+                Grouped (Multiple Participants)
+              </Select.Option>
+            </Select>
+          </Form.Item>
 
           <Form.Item
             name='intervention'
@@ -492,31 +516,30 @@ export const ConsultantAssignments: React.FC = () => {
               ))}
             </Select>
           </Form.Item>
-         {form.getFieldValue('type') === 'singular' ? (
-  <Form.Item
-    name="participant"
-    label="Select Participant"
-    rules={[{ required: true, message: 'Please select a participant' }]}
-  >
-    <Select placeholder="Choose one">
-      {participantOptions.map(name => (
-        <Select.Option key={name} value={name}>{name}</Select.Option>
-      ))}
-    </Select>
-  </Form.Item>
-) : (
-  <Form.Item
-    name="participants"
-    label="Select Participants"
-    rules={[{ required: true, message: 'Please select one or more participants' }]}
-  >
-    <Select mode="multiple" placeholder="Choose multiple">
-      {participantOptions.map(name => (
-        <Select.Option key={name} value={name}>{name}</Select.Option>
-      ))}
-    </Select>
-  </Form.Item>
-)}
+          <Form.Item
+            name={selectedType === 'grouped' ? 'participants' : 'participant'}
+            label={
+              selectedType === 'grouped'
+                ? 'Select Participants'
+                : 'Select Participant'
+            }
+            rules={[
+              { required: true, message: 'Please select participant(s)' }
+            ]}
+          >
+            <Select
+              placeholder={
+                selectedType === 'grouped' ? 'Choose multiple' : 'Choose one'
+              }
+              mode={selectedType === 'grouped' ? 'multiple' : undefined}
+            >
+              {participantOptions.map(name => (
+                <Select.Option key={name} value={name}>
+                  {name}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
 
           <Form.Item
             name='consultant'
