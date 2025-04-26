@@ -19,18 +19,21 @@ import {
   CommentOutlined,
   CheckCircleOutlined
 } from '@ant-design/icons'
-import { Timestamp } from 'firebase/firestore'
 import { useGetIdentity } from '@refinedev/core'
 import { useNavigate } from 'react-router-dom'
+import { collection, getDocs, setDoc, doc, Timestamp } from 'firebase/firestore';
+import { db } from '@/firebase';
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
+type InterventionType = 'singular' | 'grouped';
 
 interface Assignment {
   id: string
   participantId: string
   participantName: string
   intervention: string
+  type: InterventionType;
   consultantId: string
   consultantName: string
   status: 'active' | 'completed' | 'cancelled'
@@ -408,26 +411,67 @@ export const ConsultantAssignments: React.FC = () => {
         <Form
           form={assignmentForm}
           layout='vertical'
-          onFinish={values => {
-            const newAssignment = {
-              id: `a${Date.now()}`,
-              participantId: `pid-${Date.now()}`,
-              participantName: values.participant,
-              consultantId: `cid-${Date.now()}`,
-              consultantName: values.consultant,
-              intervention: values.intervention,
-              status: 'active',
-              createdAt: Timestamp.now(),
-              targetType: values.targetType, // ✅ Capture here
-              targetValue: values.targetValue // ✅ Capture here
-            }
+         onFinish={async values => {
+  try {
+    // Step 1: Fetch current count
+    const snapshot = await getDocs(collection(db, 'assignedInterventions'));
+    const currentCount = snapshot.size;
 
-            setAssignments(prev => [...prev, newAssignment])
-            message.success('New intervention assigned successfully')
-            setAssignmentModalVisible(false)
-            assignmentForm.resetFields()
-          }}
+    // Step 2: Build new ID like ai6, ai7
+    const newId = `ai${currentCount + 1}`;
+
+    // Step 3: Create new assignment object
+    const newAssignment = {
+      id: newId,
+      participantId: `pid-${Date.now()}`, // you can later improve participant ID logic
+      participantName: values.participant,
+      consultantId: `cid-${Date.now()}`, // same here
+      consultantName: values.consultant,
+      intervention: values.intervention,
+      type: values.type,
+      status: 'active',
+      createdAt: Timestamp.now(),
+      targetType: values.targetType,
+      targetValue: values.targetValue
+    };
+
+    // Step 4: Save assignment to Firestore
+    await setDoc(doc(db, 'assignedInterventions', newId), newAssignment);
+
+    // Step 5: Save notification
+    await setDoc(doc(collection(db, 'notifications')), {
+      message: `You have been assigned a new intervention: ${values.intervention}`,
+      participantName: values.participant,
+      interventionId: newId,
+      interventionTitle: values.intervention,
+      type: 'intervention-assigned',
+      recipientRoles: ['consultant', 'participant', 'admin'],
+      createdAt: new Date(),
+      status: 'unread'
+    });
+
+    // Step 6: Update local state (what you were doing already)
+    setAssignments(prev => [...prev, newAssignment]);
+    message.success('New intervention assigned successfully');
+    setAssignmentModalVisible(false);
+    assignmentForm.resetFields();
+  } catch (error) {
+    console.error('❌ Error creating assignment:', error);
+    message.error('Failed to create assignment');
+  }
+}}
         >
+          <Form.Item
+  name="type"
+  label="Intervention Type"
+  rules={[{ required: true, message: 'Please select the intervention type' }]}
+>
+  <Select placeholder="Select type">
+    <Select.Option value="singular">Singular (1 Participant)</Select.Option>
+    <Select.Option value="grouped">Grouped (Multiple Participants)</Select.Option>
+  </Select>
+</Form.Item>
+
           <Form.Item
             name='intervention'
             label='Select Intervention'
@@ -443,19 +487,31 @@ export const ConsultantAssignments: React.FC = () => {
               ))}
             </Select>
           </Form.Item>
-          <Form.Item
-            name='participant'
-            label='Select Participant'
-            rules={[{ required: true, message: 'Please select a participant' }]}
-          >
-            <Select placeholder='Choose a participant'>
-              {participantOptions.map(name => (
-                <Select.Option key={name} value={name}>
-                  {name}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
+         {form.getFieldValue('type') === 'singular' ? (
+  <Form.Item
+    name="participant"
+    label="Select Participant"
+    rules={[{ required: true, message: 'Please select a participant' }]}
+  >
+    <Select placeholder="Choose one">
+      {participantOptions.map(name => (
+        <Select.Option key={name} value={name}>{name}</Select.Option>
+      ))}
+    </Select>
+  </Form.Item>
+) : (
+  <Form.Item
+    name="participants"
+    label="Select Participants"
+    rules={[{ required: true, message: 'Please select one or more participants' }]}
+  >
+    <Select mode="multiple" placeholder="Choose multiple">
+      {participantOptions.map(name => (
+        <Select.Option key={name} value={name}>{name}</Select.Option>
+      ))}
+    </Select>
+  </Form.Item>
+)}
 
           <Form.Item
             name='consultant'
