@@ -173,7 +173,7 @@ export const OperationsDashboard: React.FC = () => {
         id: newId,
         title: values.title,
         date: values.date.format('YYYY-MM-DD'), // ✅ format DatePicker value
-        time: values.time || '',
+      time: values.time ? values.time.format('HH:mm') : '',
         type: values.type,
         createdAt: Timestamp.now()
       }
@@ -572,7 +572,7 @@ export const OperationsDashboard: React.FC = () => {
                             </Tag>
                           </Space>
                         }
-                        description={`Due: ${task.dueDate}`}
+                      description={`Due: ${task.dueDate?.toDate?.().toLocaleDateString?.() || task.dueDate || 'N/A'}`}
                       />
                       <Badge
                         status={getStatusColor(task.status) as any}
