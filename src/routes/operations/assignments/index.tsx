@@ -99,53 +99,8 @@ export const ConsultantAssignments: React.FC = () => {
   const [notesForm] = Form.useForm()
   const [assignmentModalVisible, setAssignmentModalVisible] = useState(false)
   const [assignmentForm] = Form.useForm()
-  // Participant and Consultants Mappings
-  const participantMap = new Map(participants.map(p => [p.id, p.name]))
-  const consultantMap = new Map(consultants.map(c => [c.id, c.name]))
 
   useEffect(() => {
-    const fetchAssignments = async () => {
-      setLoading(true)
-      try {
-        const snapshot = await getDocs(collection(db, 'assignedInterventions'))
-        const fetchedAssignments: Assignment[] = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Assignment[]
-
-        const participantMap = new Map(participants.map(p => [p.id, p.name]))
-        const consultantMap = new Map(consultants.map(c => [c.id, c.name]))
-
-        // Enriching Interventions and Assignments data
-        const enrichedAssignments = fetchedAssignments.map(assignment => {
-          const foundArea = interventionList.find(group =>
-            group.interventions.some(
-              (i: any) => i.title === assignment.interventionTitle
-            )
-          )
-          const areaName = foundArea ? foundArea.area : 'Unknown Area'
-
-          return {
-            ...assignment,
-            participantName:
-              participantMap.get(assignment.participantId) ||
-              'Unknown Participant',
-            consultantName:
-              consultantMap.get(assignment.consultantId) ||
-              'Unknown Consultant',
-            area: areaName // 🔥 Add area
-          }
-        })
-
-        setAssignments(enrichedAssignments)
-      } catch (error) {
-        console.error('Error fetching assignments:', error)
-        message.error('Failed to load assignments')
-      } finally {
-        setLoading(false)
-      }
-    }
-
     const fetchParticipantsConsultantsAndInterventions = async () => {
       try {
         // 🔥 Fetch everything at once
@@ -211,11 +166,61 @@ export const ConsultantAssignments: React.FC = () => {
         )
       }
     }
+    const fetchAssignments = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'assignedInterventions'))
+        const fetchedAssignments: Assignment[] = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Assignment[]
 
-    if (user) {
-      fetchAssignments()
-      fetchParticipantsConsultantsAndInterventions()
+        const currentParticipantMap = new Map(
+          participants.map(p => [p.id, p.name])
+        )
+        const currentConsultantMap = new Map(
+          consultants.map(c => [c.id, c.name])
+        )
+
+        const enrichedAssignments = fetchedAssignments.map(assignment => {
+          const foundArea = interventions.find(
+            i => i.title === assignment.interventionTitle
+          )
+
+          return {
+            ...assignment,
+            participantName:
+              currentParticipantMap.get(assignment.participantId) ||
+              'Unknown Participant',
+            consultantName:
+              currentConsultantMap.get(assignment.consultantId) ||
+              'Unknown Consultant',
+            area: foundArea?.area || 'Unknown Area'
+          }
+        })
+
+        setAssignments(enrichedAssignments)
+      } catch (error) {
+        console.error('Error fetching assignments:', error)
+        message.error('Failed to load assignments')
+      }
     }
+
+    const loadData = async () => {
+      if (!user) return
+
+      setLoading(true)
+      try {
+        await fetchParticipantsConsultantsAndInterventions()
+        await fetchAssignments()
+      } catch (error) {
+        console.error('Error loading data:', error)
+        message.error('Failed to load data')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
   }, [user])
 
   const showSessionModal = (assignment: Assignment) => {
