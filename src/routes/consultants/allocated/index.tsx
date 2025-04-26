@@ -1,74 +1,169 @@
-import React, { useState } from 'react'
-import { Table, Button, Modal, Typography, Tag, List } from 'antd'
+import React, { useEffect, useState } from 'react'
+import {
+  Table,
+  Button,
+  Modal,
+  Typography,
+  Tag,
+  List,
+  Card,
+  Space,
+  message
+} from 'antd'
 import {
   CheckOutlined,
   FileTextOutlined,
   LinkOutlined,
   PictureOutlined
 } from '@ant-design/icons'
+import { db } from '@/firebase'
+import { getAuth, onAuthStateChanged } from 'firebase/auth'
+import { collection, getDocs, query, where } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 
 const { Title, Paragraph } = Typography
 
-const mockData = [
-  {
-    id: 1,
-    sme: 'BrightTech',
-    title: 'Website Development',
-    timeSpent: '5',
-    description: 'Create a full SME landing page with domain & hosting',
-    status: 'In Progress',
-    resources: [
-      {
-        type: 'document',
-        label: 'Brand Brief PDF',
-        link: '/docs/brighttech-brief.pdf'
-      },
-      {
-        type: 'link',
-        label: 'Sample Website',
-        link: 'https://example.com/sample-site'
-      }
-    ]
-  },
-  {
-    id: 2,
-    sme: 'Green Farms',
-    title: 'Financial Literacy Training',
-    timeSpent: '10',
-    description: 'Basic budgeting and record keeping for Agri-SMEs',
-    status: 'Assigned',
-    resources: [
-      {
-        type: 'document',
-        label: 'Budget Template',
-        link: '/docs/budget-template.xlsx'
-      },
-      {
-        type: 'image',
-        label: 'Training Snapshot',
-        link: '/images/greenfarms-training.jpg'
-      }
-    ]
-  }
-]
+interface AssignedIntervention {
+  id: string
+  participantId: string
+  consultantId: string
+  smeName: string
+  interventionTitle: string
+  description: string
+  timeSpent: number
+  status: string
+  dueDate: string
+  resources: {
+    type: string
+    label: string
+    link: string
+  }[]
+}
 
 export const AssignedInterventions: React.FC = () => {
-  const [selected, setSelected] = useState<any | null>(null)
-  const [modalOpen, setModalOpen] = useState(false)
+  const auth = getAuth()
   const navigate = useNavigate()
+  const [consultantId, setConsultantId] = useState<string | null>(null)
+  const [selected, setSelected] = useState<AssignedIntervention | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [assignedInterventions, setAssignedInterventions] = useState<
+    AssignedIntervention[]
+  >([])
+  const [completedInterventions, setCompletedInterventions] = useState<
+    AssignedIntervention[]
+  >([])
+  const [selectedParticipantId, setSelectedParticipantId] = useState<
+    string | null
+  >(null)
 
-  const openDetails = (record: any) => {
+  useEffect(() => {
+    const fetchCompletedInterventions = async () => {
+      if (!consultantId || !selectedParticipantId) return
+
+      try {
+        const q = query(
+          collection(db, 'assignedInterventions'),
+          where('participantId', '==', selectedParticipantId),
+          where('status', '==', 'completed')
+        )
+
+        const snapshot = await getDocs(q)
+
+        const data = await Promise.all(
+          snapshot.docs.map(async docSnap => {
+            const intervention = docSnap.data() as AssignedIntervention
+
+            const consultantSnap = await getDocs(
+              query(
+                collection(db, 'consultants'),
+                where('id', '==', intervention.consultantId)
+              )
+            )
+
+            const consultant = consultantSnap.empty
+              ? null
+              : consultantSnap.docs[0].data()
+
+            return {
+              id: docSnap.id,
+              ...intervention,
+              consultantName: consultant
+                ? consultant.name
+                : 'Unknown Consultant'
+            }
+          })
+        )
+
+        setCompletedInterventions(data)
+      } catch (error) {
+        console.error('Error fetching completed interventions:', error)
+      }
+    }
+
+    fetchCompletedInterventions()
+  }, [consultantId, selectedParticipantId])
+
+  // Fetch consultant ID based on logged-in user's email
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async user => {
+      if (user) {
+        console.log('User logged in:', user.email)
+        const consultantSnapshot = await getDocs(
+          query(collection(db, 'consultants'), where('email', '==', user.email))
+        )
+        if (!consultantSnapshot.empty) {
+          const consultantDoc = consultantSnapshot.docs[0]
+          const consultantData = consultantDoc.data()
+          setConsultantId(consultantDoc.id) // Use Firestore document ID
+          console.log('Consultant Data:', consultantData)
+        } else {
+          console.error('No consultant found for the logged-in user.')
+        }
+      } else {
+        console.log('No user is logged in.')
+      }
+    })
+    return () => unsubscribe()
+  }, [])
+
+  // Fetch assigned interventions for the logged-in consultant
+  useEffect(() => {
+    const fetchAssignedInterventions = async () => {
+      if (!consultantId) return
+      try {
+        const q = query(
+          collection(db, 'assignedInterventions'),
+          where('consultantId', '==', consultantId)
+        )
+        const snapshot = await getDocs(q)
+        const data = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as AssignedIntervention[]
+        setAssignedInterventions(data)
+      } catch (error) {
+        console.error('Error fetching assigned interventions:', error)
+      }
+    }
+
+    fetchAssignedInterventions()
+  }, [consultantId])
+
+  // Open modal to view details
+  const openDetails = (record: AssignedIntervention) => {
     setSelected(record)
+    setSelectedParticipantId(record.participantId)
     setModalOpen(true)
   }
 
+  // Table columns
   const columns = [
-    { title: 'SME', dataIndex: 'sme' },
-    { title: 'Intervention', dataIndex: 'title' },
+    { title: 'SME', dataIndex: 'smeName' },
+    { title: 'Intervention', dataIndex: 'interventionTitle' },
     {
       title: 'Time Spent (hrs)',
-      dataIndex: 'timeSpent'
+      dataIndex: 'timeSpent',
+      render: (timeSpent: number) => timeSpent || 0 // Default to 0 if undefined
     },
     {
       title: 'Status',
@@ -78,26 +173,26 @@ export const AssignedInterventions: React.FC = () => {
       )
     },
     {
-      title: 'Action', // ✅ Renamed here
+      title: 'Action',
       render: (_, record) => (
         <div style={{ display: 'flex', gap: 12 }}>
-          <Button type='link' onClick={() => openDetails(record)}>
-            View Resources
-          </Button>
-          <Button
-            type='link'
-            icon={<CheckOutlined />}
-            onClick={() =>
-              navigate(`/consultant/allocated/intervention/${record.id}`)
-            }
-          >
-            Update
-          </Button>
+          {record.status !== 'completed' && (
+            <Button
+              type='link'
+              icon={<CheckOutlined />}
+              onClick={() =>
+                navigate(`/consultant/allocated/intervention/${record.id}`)
+              }
+            >
+              Update
+            </Button>
+          )}
         </div>
       )
     }
   ]
 
+  // Get icons for resource types
   const getIcon = (type: string) => {
     switch (type) {
       case 'document':
@@ -110,11 +205,106 @@ export const AssignedInterventions: React.FC = () => {
         return null
     }
   }
+  const handleDownloadAll = (resources: AssignedIntervention['resources']) => {
+    if (!resources || resources.length === 0) {
+      message.warning('No resources to download')
+      return
+    }
+
+    resources.forEach(resource => {
+      const link = document.createElement('a')
+      link.href = resource.link
+      link.download = resource.label || 'resource'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    })
+  }
+
+  const completedColumns = [
+    {
+      title: 'Intervention',
+      dataIndex: 'interventionTitle'
+    },
+    {
+      title: 'Consultant',
+      dataIndex: 'consultantName',
+      render: (name: string, record: AssignedIntervention) => (
+        <span>
+          {name}
+          {record.consultantId !== consultantId && (
+            <Tag color='red' style={{ marginLeft: 8 }}>
+              Other Consultant
+            </Tag>
+          )}
+        </span>
+      )
+    },
+    {
+      title: 'Resources',
+      key: 'resources',
+      render: (_: any, record: AssignedIntervention) => (
+        <div>
+          {(record.resources || []).map(res => (
+            <span key={res.link} style={{ marginRight: 8 }}>
+              {getIcon(res.type)}{' '}
+              <a href={res.link} target='_blank' rel='noopener noreferrer'>
+                {res.label}
+              </a>
+            </span>
+          ))}
+        </div>
+      )
+    },
+    {
+      title: 'Action',
+      key: 'action',
+      render: (_: any, record: AssignedIntervention) => (
+        <Space>
+          <Button type='link' onClick={() => openDetails(record)}>
+            View
+          </Button>
+          <Button
+            type='link'
+            onClick={() => handleDownloadAll(record.resources)}
+          >
+            Download All
+          </Button>
+        </Space>
+      )
+    }
+  ]
 
   return (
     <>
       <Title level={4}>Assigned Interventions</Title>
-      <Table dataSource={mockData} columns={columns} rowKey='id' />
+      <Table
+        dataSource={assignedInterventions}
+        columns={columns}
+        rowKey='id'
+        onRow={record => ({
+          onClick: () => {
+            setSelected(record)
+            setSelectedParticipantId(record.participantId)
+          }
+        })}
+      />
+
+      <Card
+        style={{ marginTop: 32 }}
+        title={`Completed Interventions for ${
+          assignedInterventions.find(
+            i => i.participantId === selectedParticipantId
+          )?.smeName || 'this SME'
+        }`}
+      >
+        <Table
+          dataSource={completedInterventions}
+          columns={completedColumns}
+          rowKey='id'
+          pagination={{ pageSize: 5 }}
+        />
+      </Card>
 
       <Modal
         open={modalOpen}
@@ -124,25 +314,25 @@ export const AssignedInterventions: React.FC = () => {
       >
         {selected && (
           <>
-            <Title level={5}>{selected.title}</Title>
+            <Title level={5}>{selected.interventionTitle}</Title>
             <Paragraph>
-              <b>SME:</b> {selected.sme}
+              <b>SME:</b> {selected.smeName}
               <br />
-              <b>Time Spent:</b> {selected.timeSpent} hours
+              <b>Time Spent:</b> {selected.timeSpent || 0} hours
               <br />
               <b>Status:</b> {selected.status}
             </Paragraph>
             <Paragraph>
               <b>Description:</b> <br />
-              {selected.description}
+              {selected.description || 'No description available'}
             </Paragraph>
 
             <Paragraph>
               <b>Reference Material:</b>
             </Paragraph>
             <List
-              dataSource={selected.resources}
-              renderItem={(item: any) => (
+              dataSource={selected.resources || []} // Default to empty array if undefined
+              renderItem={item => (
                 <List.Item>
                   {getIcon(item.type)}{' '}
                   <a href={item.link} target='_blank' rel='noopener noreferrer'>
