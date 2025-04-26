@@ -14,6 +14,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '@/firebase'
 import { doc, updateDoc, getDoc } from 'firebase/firestore'
 import { Modal } from 'antd'
+import { Helmet } from 'react-helmet'
 
 const { Title, Paragraph } = Typography
 const { TextArea } = Input
@@ -181,85 +182,94 @@ export const InterventionTrack: React.FC = () => {
   }
 
   return (
-    <Card title='Track Intervention Progress'>
-      <Title level={5}>Intervention: {interventionTitle}</Title>
-      <Paragraph>Company: {companyName}</Paragraph>
+    <>
+      <Helmet>
+        <title>Track Intervention Progress | Consultant Workspace</title>
+        <meta
+          name='description'
+          content='Track and update progress on assigned interventions. Submit your final work for review.'
+        />
+      </Helmet>
+      <Card title='Track Intervention Progress'>
+        <Title level={5}>Intervention: {interventionTitle}</Title>
+        <Paragraph>Company: {companyName}</Paragraph>
 
-      {/* Cumulative display */}
-      <Form layout='vertical'>
-        <Form.Item label='Total Time Spent'>
-          <Input value={`${totalTimeSpent} hours`} disabled />
-        </Form.Item>
+        {/* Cumulative display */}
+        <Form layout='vertical'>
+          <Form.Item label='Total Time Spent'>
+            <Input value={`${totalTimeSpent} hours`} disabled />
+          </Form.Item>
 
-        <Form.Item label='Overall Progress'>
-          <Progress
-            percent={totalProgress}
-            status={totalProgress === 100 ? 'success' : 'active'}
-          />
-        </Form.Item>
+          <Form.Item label='Overall Progress'>
+            <Progress
+              percent={totalProgress}
+              status={totalProgress === 100 ? 'success' : 'active'}
+            />
+          </Form.Item>
 
-        {/* Incremental update */}
-        <Form.Item label="Today's Time Spent (hours)">
-          <Input
-            type='number'
-            value={currentHours ?? ''}
-            onChange={e => setCurrentHours(Number(e.target.value))}
-            placeholder='e.g. 4'
-            min={0}
-          />
-        </Form.Item>
+          {/* Incremental update */}
+          <Form.Item label="Today's Time Spent (hours)">
+            <Input
+              type='number'
+              value={currentHours ?? ''}
+              onChange={e => setCurrentHours(Number(e.target.value))}
+              placeholder='e.g. 4'
+              min={0}
+            />
+          </Form.Item>
 
-        <Form.Item label="Today's Progress (%)">
-          <Input
-            type='number'
-            value={currentProgress ?? ''}
-            onChange={e => {
-              const val = Number(e.target.value)
-              setCurrentProgress(val > 100 ? 100 : val)
-            }}
-            placeholder='e.g. 25'
-            min={0}
-            max={100}
-          />
-        </Form.Item>
+          <Form.Item label="Today's Progress (%)">
+            <Input
+              type='number'
+              value={currentProgress ?? ''}
+              onChange={e => {
+                const val = Number(e.target.value)
+                setCurrentProgress(val > 100 ? 100 : val)
+              }}
+              placeholder='e.g. 25'
+              min={0}
+              max={100}
+            />
+          </Form.Item>
 
-        <Form.Item label='Progress Notes / Results'>
-          <TextArea
-            rows={4}
-            placeholder='Add notes or results here...'
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-          />
-        </Form.Item>
-        <Form.Item>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <Button onClick={handleCancel}>Cancel</Button>
+          <Form.Item label='Progress Notes / Results'>
+            <TextArea
+              rows={4}
+              placeholder='Add notes or results here...'
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+            />
+          </Form.Item>
+          <Form.Item>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <Button onClick={handleCancel}>Cancel</Button>
 
-            <Button type='primary' onClick={handleUpdateProgress}>
-              Add Update
-            </Button>
-          </div>
-        </Form.Item>
+              <Button type='primary' onClick={handleUpdateProgress}>
+                Add Update
+              </Button>
+            </div>
+          </Form.Item>
 
-        {/* Upload only at 100% */}
-        {totalProgress === 100 && (
-          <>
-            <Title level={5}>Upload Completion Document</Title>
-            <Upload beforeUpload={() => false} onChange={handleUpload}>
-              <Button icon={<UploadOutlined />}>Upload File</Button>
-            </Upload>
+          {/* Upload only at 100% */}
+          {totalProgress === 100 && (
+            <>
+              <Title level={5}>Upload Completion Document</Title>
+              <Upload beforeUpload={() => false} onChange={handleUpload}>
+                <Button icon={<UploadOutlined />}>Upload File</Button>
+              </Upload>
 
-            <Button
-              type='primary'
-              onClick={handleSubmit}
-              disabled={!uploaded}
-              style={{ marginTop: 16 }}
-            >
-              Send For Review
-            </Button>
-          </>
-        )}
-      </Form>
-    </Card>
+              <Button
+                type='primary'
+                onClick={handleSubmit}
+                disabled={!uploaded}
+                style={{ marginTop: 16 }}
+              >
+                Send For Review
+              </Button>
+            </>
+          )}
+        </Form>
+      </Card>
+    </>
   )
 }
