@@ -10,6 +10,10 @@ import {
   Form
 } from 'antd'
 import { UploadOutlined } from '@ant-design/icons'
+import { useNavigate, useParams } from 'react-router-dom'
+import { db } from '@/firebase'
+import { doc, updateDoc } from 'firebase/firestore'
+import { Modal } from 'antd'
 
 const { Title, Paragraph } = Typography
 const { TextArea } = Input
@@ -21,29 +25,86 @@ export const InterventionTrack: React.FC = () => {
   const [totalProgress, setTotalProgress] = useState(0)
   const [currentHours, setCurrentHours] = useState<number | null>(null)
   const [currentProgress, setCurrentProgress] = useState<number | null>(null)
+  const navigate = useNavigate()
+  const { interventionId } = useParams<{ interventionId: string }>()
 
   const handleUpload = () => {
     setUploaded(true)
     message.success('File uploaded')
   }
 
-  const handleUpdateProgress = () => {
+  const handleUpdateProgress = async () => {
     if (currentHours && currentProgress) {
       const newTime = totalTimeSpent + currentHours
       const newProgress = Math.min(totalProgress + currentProgress, 100)
 
-      setTotalTimeSpent(newTime)
-      setTotalProgress(newProgress)
-      setCurrentHours(null)
-      setCurrentProgress(null)
-      message.success('Progress updated successfully')
+      try {
+        if (!interventionId) {
+          message.error('No intervention ID found')
+          return
+        }
+
+        const interventionRef = doc(db, 'assignedInterventions', interventionId)
+        await updateDoc(interventionRef, {
+          timeSpent: newTime,
+          progress: newProgress,
+          notes: notes
+        })
+
+        setTotalTimeSpent(newTime)
+        setTotalProgress(newProgress)
+        setCurrentHours(null)
+        setCurrentProgress(null)
+
+        message.success('Progress updated and saved!')
+
+        // Navigate back
+        navigate('/consultant/allocated')
+      } catch (error) {
+        console.error('Error updating intervention:', error)
+        message.error('Failed to update progress.')
+      }
     } else {
       message.warning('Please enter both hours and percentage')
     }
   }
 
-  const handleSubmit = () => {
-    message.success('Intervention marked as complete')
+  const handleSubmit = async () => {
+    try {
+      if (!interventionId) {
+        message.error('No intervention ID found')
+        return
+      }
+
+      const interventionRef = doc(db, 'assignedInterventions', interventionId)
+      await updateDoc(interventionRef, {
+        status: 'completed',
+        notes: notes,
+        timeSpent: totalTimeSpent,
+        progress: totalProgress
+      })
+
+      message.success('Intervention marked as completed and sent for review!')
+
+      // Navigate back
+      navigate('/consultant/allocated')
+    } catch (error) {
+      console.error('Error completing intervention:', error)
+      message.error('Failed to send intervention for review.')
+    }
+  }
+
+  const handleCancel = () => {
+    Modal.confirm({
+      title: 'Discard Changes?',
+      content:
+        'Are you sure you want to cancel and discard all unsaved changes?',
+      okText: 'Yes, Cancel',
+      cancelText: 'No',
+      onOk: () => {
+        navigate('/consultant/allocated')
+      }
+    })
   }
 
   return (
@@ -97,14 +158,15 @@ export const InterventionTrack: React.FC = () => {
             onChange={e => setNotes(e.target.value)}
           />
         </Form.Item>
+        <Form.Item>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <Button onClick={handleCancel}>Cancel</Button>
 
-        <Button
-          type='primary'
-          onClick={handleUpdateProgress}
-          style={{ marginBottom: 24 }}
-        >
-          Add Update
-        </Button>
+            <Button type='primary' onClick={handleUpdateProgress}>
+              Add Update
+            </Button>
+          </div>
+        </Form.Item>
 
         {/* Upload only at 100% */}
         {totalProgress === 100 && (
