@@ -43,6 +43,8 @@ interface Assignment {
     comments: string
   }
   timeSpentHours?: number
+  targetType?: 'percentage' | 'number' // 🔥 NEW
+  targetValue?: number // 🔥 NEW
 }
 
 interface UserIdentity {
@@ -415,14 +417,32 @@ export const ConsultantAssignments: React.FC = () => {
               consultantName: values.consultant,
               intervention: values.intervention,
               status: 'active',
-              createdAt: Timestamp.now()
+              createdAt: Timestamp.now(),
+              targetType: values.targetType, // ✅ Capture here
+              targetValue: values.targetValue // ✅ Capture here
             }
+
             setAssignments(prev => [...prev, newAssignment])
             message.success('New intervention assigned successfully')
             setAssignmentModalVisible(false)
             assignmentForm.resetFields()
           }}
         >
+          <Form.Item
+            name='intervention'
+            label='Select Intervention'
+            rules={[
+              { required: true, message: 'Please select an intervention' }
+            ]}
+          >
+            <Select placeholder='Choose an intervention'>
+              {interventionOptions.map(name => (
+                <Select.Option key={name} value={name}>
+                  {name}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
           <Form.Item
             name='participant'
             label='Select Participant'
@@ -452,19 +472,25 @@ export const ConsultantAssignments: React.FC = () => {
           </Form.Item>
 
           <Form.Item
-            name='intervention'
-            label='Select Intervention'
-            rules={[
-              { required: true, message: 'Please select an intervention' }
-            ]}
+            name='targetType'
+            label='Target Type'
+            rules={[{ required: true, message: 'Please select a target type' }]}
           >
-            <Select placeholder='Choose an intervention'>
-              {interventionOptions.map(name => (
-                <Select.Option key={name} value={name}>
-                  {name}
-                </Select.Option>
-              ))}
+            <Select placeholder='Choose target type'>
+              <Select.Option value='percentage'>Percentage (%)</Select.Option>
+              <Select.Option value='number'>Number (e.g., hours)</Select.Option>
             </Select>
+          </Form.Item>
+
+          <Form.Item
+            name='targetValue'
+            label='Target Value'
+            rules={[{ required: true, message: 'Please enter a target value' }]}
+          >
+            <Input
+              type='number'
+              placeholder='Enter target (e.g. 10 hours or 100%)'
+            />
           </Form.Item>
 
           <Form.Item>
