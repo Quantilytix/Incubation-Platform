@@ -42,6 +42,7 @@ interface Assignment {
     rating: number
     comments: string
   }
+  timeSpentHours?: number
 }
 
 interface UserIdentity {
@@ -262,7 +263,7 @@ export const ConsultantAssignments: React.FC = () => {
       )
     },
     {
-      title: 'Last Session',
+      title: 'Due Date',
       key: 'lastSessionDate',
       render: (record: Assignment) =>
         record.lastSessionDate
@@ -270,28 +271,11 @@ export const ConsultantAssignments: React.FC = () => {
           : 'No sessions yet'
     },
     {
-      title: 'Next Session',
-      key: 'nextSessionDate',
-      render: (record: Assignment) =>
-        record.nextSessionDate
-          ? new Date(record.nextSessionDate.toMillis()).toLocaleDateString()
-          : 'Not scheduled'
-    },
-    {
       title: 'Actions',
       key: 'actions',
       render: (record: Assignment) => (
         <div>
           <Space wrap>
-            <Button
-              type='primary'
-              size='small'
-              icon={<CalendarOutlined />}
-              onClick={() => showSessionModal(record)}
-              disabled={record.status !== 'active'}
-            >
-              Record Session
-            </Button>
             <Button
               size='small'
               icon={<CommentOutlined />}
@@ -390,32 +374,6 @@ export const ConsultantAssignments: React.FC = () => {
           )
         }}
       />
-
-      {/* 📆 Session Modal */}
-      <Modal
-        title='Record Mentoring Session'
-        open={sessionModalVisible}
-        onCancel={() => setSessionModalVisible(false)}
-        footer={null}
-      >
-        <Form
-          form={sessionForm}
-          layout='vertical'
-          onFinish={handleRecordSession}
-        >
-          <Form.Item name='nextSessionDate' label='Schedule Next Session'>
-            <DatePicker showTime style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name='sessionNotes' label='Session Notes'>
-            <TextArea rows={4} />
-          </Form.Item>
-          <Form.Item>
-            <Button type='primary' htmlType='submit'>
-              Record Session
-            </Button>
-          </Form.Item>
-        </Form>
-      </Modal>
 
       {/* 📝 Notes Modal */}
       <Modal
