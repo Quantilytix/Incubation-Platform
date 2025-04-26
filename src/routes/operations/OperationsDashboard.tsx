@@ -759,36 +759,6 @@ export const OperationsDashboard: React.FC = () => {
             </Col>
           </Row>
         </TabPane>
-
-        <TabPane
-          tab={
-            <span>
-              <TeamOutlined />
-              Participants
-            </span>
-          }
-          key='4'
-        >
-          <Row gutter={[16, 16]}>
-            <Col span={24}>
-              <Card
-                title='Participant Tracking'
-                extra={
-                  <Button type='primary' onClick={goToParticipantManagement}>
-                    Manage Participants
-                  </Button>
-                }
-              >
-                <Table
-                  dataSource={participants}
-                  columns={participantColumns}
-                  rowKey='id'
-                  pagination={{ pageSize: 5 }}
-                />
-              </Card>
-            </Col>
-          </Row>
-        </TabPane>
       </Tabs>
       {/* Add Task Modal */}
       <Modal
