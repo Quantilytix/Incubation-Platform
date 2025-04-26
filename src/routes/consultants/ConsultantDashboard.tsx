@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Card,
   Row,
@@ -10,101 +10,224 @@ import {
   Tag,
   Table,
   Modal,
-  Input
+  Input,
+  message,
+  Spin,
+  Space
 } from 'antd'
 import {
+  CheckOutlined,
+  CloseOutlined,
   FileSearchOutlined,
   MessageOutlined,
   BarChartOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
+import { db } from '@/firebase'
+import {
+  collection,
+  getDocs,
+  updateDoc,
+  doc,
+  query,
+  where
+} from 'firebase/firestore'
+import { getAuth, onAuthStateChanged } from 'firebase/auth'
 
 const { Title } = Typography
 
-const initialInterventions = [
-  {
-    id: 1,
-    sme: 'BrightTech',
-    intervention: 'Website Development',
-    resources: 'R12,000',
-    sector: 'ICT',
-    stage: 'Growth',
-    location: 'Johannesburg',
-    declined: false,
-    declineReason: ''
-  },
-  {
-    id: 2,
-    sme: 'Green Farms',
-    intervention: 'Financial Literacy Training',
-    resources: 'R8,000',
-    sector: 'Agriculture',
-    stage: 'Startup',
-    location: 'Limpopo',
-    declined: false,
-    declineReason: ''
-  }
-]
+interface Intervention {
+  id: string
+  sme: string
+  intervention: string
+  sector: string
+  stage: string
+  location: string
+  status: string
+  declined: boolean
+  declineReason: string
+}
+
+interface Feedback {
+  id: string
+  sme: string
+  comment: string
+}
 
 export const ConsultantDashboard: React.FC = () => {
   const navigate = useNavigate()
+  const auth = getAuth()
 
-  const [data, setData] = useState(initialInterventions)
+  const [interventions, setInterventions] = useState<Intervention[]>([])
+  const [feedbacks, setFeedbacks] = useState<Feedback[]>([])
   const [modalVisible, setModalVisible] = useState(false)
   const [declineReason, setDeclineReason] = useState('')
-  const [currentDeclineId, setCurrentDeclineId] = useState<number | null>(null)
+  const [currentDeclineId, setCurrentDeclineId] = useState<string | null>(null)
+  const [consultantId, setConsultantId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [ongoingCount, setOngoingCount] = useState(0)
 
-  const handleAccept = (id: number) => {
-    console.log('Accepted:', id)
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async user => {
+      if (user) {
+        const consultantSnap = await getDocs(
+          query(collection(db, 'consultants'), where('email', '==', user.email))
+        )
+        if (!consultantSnap.empty) {
+          setConsultantId(consultantSnap.docs[0].id)
+        }
+      }
+    })
+    return () => unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!consultantId) return
+      try {
+        const interventionsSnap = await getDocs(
+          query(
+            collection(db, 'assignedInterventions'),
+            where('consultantId', '==', consultantId),
+            where('status', '==', 'assigned')
+          )
+        )
+
+        const interventionList: Intervention[] = await Promise.all(
+          interventionsSnap.docs.map(async docSnap => {
+            const data = docSnap.data()
+            let sector = 'Unknown'
+            let stage = 'Unknown'
+            let location = 'Unknown'
+
+            if (data.participantId) {
+              const participantSnap = await getDocs(
+                query(
+                  collection(db, 'participants'),
+                  where('id', '==', data.participantId)
+                )
+              )
+
+              if (!participantSnap.empty) {
+                const participant = participantSnap.docs[0].data()
+                sector = participant.sector || sector
+                stage = participant.stage || stage
+                location = participant.location || location
+              }
+            }
+
+            return {
+              id: docSnap.id,
+              sme: data.smeName,
+              intervention: data.interventionTitle,
+              sector,
+              stage,
+              location,
+              status: data.status,
+              declined: data.status === 'declined',
+              declineReason: data.declineReason || ''
+            }
+          })
+        )
+
+        const feedbackSnap = await getDocs(collection(db, 'feedbacks'))
+        const feedbackList: Feedback[] = feedbackSnap.docs.map(docSnap => {
+          const data = docSnap.data()
+          return {
+            id: docSnap.id,
+            sme: data.smeName,
+            comment: data.comment
+          }
+        })
+
+        const inProgressSnap = await getDocs(
+          query(
+            collection(db, 'assignedInterventions'),
+            where('consultantId', '==', consultantId),
+            where('status', '==', 'in-progress')
+          )
+        )
+        setOngoingCount(inProgressSnap.size)
+
+        setInterventions(interventionList)
+        setFeedbacks(feedbackList)
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [consultantId])
+
+  const handleAccept = async (id: string) => {
+    try {
+      await updateDoc(doc(db, 'assignedInterventions', id), {
+        status: 'in-progress'
+      })
+      message.success('Intervention accepted!')
+      setInterventions(prev => prev.filter(item => item.id !== id))
+    } catch (error) {
+      console.error(error)
+      message.error('Failed to accept intervention.')
+    }
   }
 
-  const handleDecline = (id: number) => {
+  const handleDecline = (id: string) => {
     setCurrentDeclineId(id)
     setModalVisible(true)
   }
 
-  const confirmDecline = () => {
-    setData(prev =>
-      prev.map(item =>
-        item.id === currentDeclineId
-          ? { ...item, declined: true, declineReason }
-          : item
+  const confirmDecline = async () => {
+    if (!currentDeclineId) return
+    try {
+      await updateDoc(doc(db, 'assignedInterventions', currentDeclineId), {
+        status: 'declined',
+        declineReason
+      })
+      message.success('Intervention declined.')
+      setInterventions(prev =>
+        prev.filter(item => item.id !== currentDeclineId)
       )
-    )
-    setModalVisible(false)
-    setDeclineReason('')
-    setCurrentDeclineId(null)
+      setModalVisible(false)
+      setDeclineReason('')
+      setCurrentDeclineId(null)
+    } catch (error) {
+      console.error(error)
+      message.error('Failed to decline intervention.')
+    }
   }
 
   const columns = [
     { title: 'SME Name', dataIndex: 'sme', key: 'sme' },
     { title: 'Intervention', dataIndex: 'intervention', key: 'intervention' },
-    // { title: 'Resources', dataIndex: 'resources', key: 'resources' },
     { title: 'Sector', dataIndex: 'sector', key: 'sector' },
     { title: 'Lifecycle Stage', dataIndex: 'stage', key: 'stage' },
-    { title: 'Location', dataIndex: 'location', key: 'location' },
     {
       title: 'Action',
-      render: (_, record) =>
+      render: (_: any, record: Intervention) =>
         record.declined ? (
           <Tag color='red'>Declined</Tag>
         ) : (
-          <>
+          <Space>
             <Button
               type='link'
+              icon={<CheckOutlined />}
               onClick={() => handleAccept(record.id)}
               style={{ color: 'green' }}
             >
-              ✅
+              Accept
             </Button>
             <Button
               type='link'
+              icon={<CloseOutlined />}
               onClick={() => handleDecline(record.id)}
               style={{ color: 'red' }}
             >
-              ❌
+              Decline
             </Button>
-          </>
+          </Space>
         )
     }
   ]
@@ -113,96 +236,60 @@ export const ConsultantDashboard: React.FC = () => {
     <div style={{ padding: 24 }}>
       <Title level={3}>Consultant Workspace</Title>
 
-      {/* Top Stats */}
-      <Row gutter={[16, 16]}>
-        <Col span={8}>
-          <Card>
-            <Statistic
-              title='Total Feedbacks'
-              value={24}
-              prefix={<MessageOutlined />}
-            />
-          </Card>
-        </Col>
+      {loading ? (
+        <Spin size='large' />
+      ) : (
+        <Row gutter={[16, 16]}>
+          {/* Top Stats */}
+          <Col span={8}>
+            <Card>
+              <Statistic
+                title='Total Feedbacks'
+                value={feedbacks.length}
+                prefix={<MessageOutlined />}
+              />
+            </Card>
+          </Col>
 
-        <Col span={8}>
-          <Card>
-            <Statistic
-              title='Ongoing Audits'
-              value={5}
-              prefix={<FileSearchOutlined />}
-            />
-          </Card>
-        </Col>
+          <Col span={8}>
+            <Card>
+              <Statistic
+                title='Pending Interventions'
+                value={interventions.length}
+                prefix={<FileSearchOutlined />}
+              />
+            </Card>
+          </Col>
 
-        <Col span={8}>
-          <Card>
-            <Statistic
-              title='Analysed Projects'
-              value={12}
-              prefix={<BarChartOutlined />}
-            />
-          </Card>
-        </Col>
+          <Col span={8}>
+            <Card>
+              <Statistic
+                title='Ongoing Interventions'
+                value={ongoingCount}
+                prefix={<BarChartOutlined />}
+              />
+            </Card>
+          </Col>
 
-        {/* Feedback List */}
-        <Col span={24}>
-          <Card title='Recent Feedback'>
-            <List
-              itemLayout='horizontal'
-              dataSource={[
-                {
-                  id: 1,
-                  sme: 'BrightTech',
-                  summary: 'Good progress but needs branding support.'
-                },
-                {
-                  id: 2,
-                  sme: 'Green Farms',
-                  summary:
-                    'Supply chain issues noted, suggest strategic partner.'
-                }
-              ]}
-              renderItem={item => (
-                <List.Item
-                  actions={[
-                    <Button
-                      key='view'
-                      onClick={() => navigate('/consultant/feedback')}
-                      type='link'
-                    >
-                      View
-                    </Button>
-                  ]}
-                >
-                  <List.Item.Meta
-                    title={<b>{item.sme}</b>}
-                    description={<Tag color='blue'>{item.summary}</Tag>}
-                  />
-                </List.Item>
-              )}
-            />
-          </Card>
-        </Col>
-
-        {/* Interventions Table */}
-        <Col span={24}>
-          <Card title='Allocated Interventions'>
-            <Table
-              dataSource={data}
-              columns={columns}
-              rowKey='id'
-              pagination={false}
-              rowClassName={record => (record.declined ? 'declined-row' : '')}
-            />
-          </Card>
-        </Col>
-      </Row>
+          {/* Allocated Interventions Table */}
+          <Col span={24}>
+            <Card title='Allocated Interventions'>
+              <Table
+                dataSource={interventions}
+                columns={columns}
+                rowKey='id'
+                pagination={false}
+                rowClassName={record => (record.declined ? 'declined-row' : '')}
+              />
+            </Card>
+          </Col>
+        </Row>
+      )}
 
       {/* Decline Reason Modal */}
       <Modal
         title='Reason for Declining'
-        visible={modalVisible}
+        open={modalVisible}
         onOk={confirmDecline}
         onCancel={() => setModalVisible(false)}
         okText='Confirm'
