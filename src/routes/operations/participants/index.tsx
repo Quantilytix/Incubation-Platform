@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Card, 
-  Table, 
-  Button, 
-  Space, 
-  Tag, 
-  Input, 
+import React, { useState, useEffect } from 'react'
+import {
+  Card,
+  Table,
+  Button,
+  Space,
+  Tag,
+  Input,
   Divider,
   Typography,
   Badge,
@@ -15,46 +15,47 @@ import {
   Col,
   Statistic,
   Tooltip
-} from 'antd';
-import { 
+} from 'antd'
+import {
   SearchOutlined,
   TeamOutlined,
   UserOutlined,
   ApartmentOutlined,
   CalendarOutlined,
   StarOutlined
-} from '@ant-design/icons';
+} from '@ant-design/icons'
+import { Helmet } from 'react-helmet'
 
-const { Title, Text } = Typography;
-const { TabPane } = Tabs;
-const { Option } = Select;
+const { Title, Text } = Typography
+const { TabPane } = Tabs
+const { Option } = Select
 
 interface Participant {
-  id: string;
-  name: string;
-  industry: string;
-  stage: string;
-  joinDate: string;
-  status: string;
-  mentorAssigned: boolean;
-  mentorName?: string;
-  nextReview: string;
-  team: number;
-  progress: number;
+  id: string
+  name: string
+  industry: string
+  stage: string
+  joinDate: string
+  status: string
+  mentorAssigned: boolean
+  mentorName?: string
+  dueDate: string
+  participationRate: number
+  progress: number
 }
 
 const OperationsParticipantsManagement: React.FC = () => {
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchText, setSearchText] = useState('');
-  const [activeTab, setActiveTab] = useState('all');
+  const [participants, setParticipants] = useState<Participant[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchText, setSearchText] = useState('')
+  const [activeTab, setActiveTab] = useState('all')
 
   useEffect(() => {
-    fetchParticipants();
-  }, []);
+    fetchParticipants()
+  }, [])
 
   const fetchParticipants = async () => {
-    setLoading(true);
+    setLoading(true)
     try {
       // Sample data for demonstration
       const sampleParticipants: Participant[] = [
@@ -67,8 +68,8 @@ const OperationsParticipantsManagement: React.FC = () => {
           status: 'active',
           mentorAssigned: true,
           mentorName: 'John Doe',
-          nextReview: '2023-11-15',
-          team: 4,
+          dueDate: '2023-11-15',
+          participationRate: 4,
           progress: 32
         },
         {
@@ -80,8 +81,8 @@ const OperationsParticipantsManagement: React.FC = () => {
           status: 'active',
           mentorAssigned: true,
           mentorName: 'Jane Smith',
-          nextReview: '2023-11-10',
-          team: 7,
+          dueDate: '2023-11-10',
+          participationRate: 7,
           progress: 68
         },
         {
@@ -92,8 +93,8 @@ const OperationsParticipantsManagement: React.FC = () => {
           joinDate: '2023-02-22',
           status: 'warning',
           mentorAssigned: false,
-          nextReview: '2023-11-20',
-          team: 5,
+          dueDate: '2023-11-20',
+          participationRate: 5,
           progress: 75
         },
         {
@@ -105,8 +106,8 @@ const OperationsParticipantsManagement: React.FC = () => {
           status: 'active',
           mentorAssigned: true,
           mentorName: 'Robert Johnson',
-          nextReview: '2023-12-05',
-          team: 3,
+          dueDate: '2023-12-05',
+          participationRate: 3,
           progress: 15
         },
         {
@@ -117,8 +118,8 @@ const OperationsParticipantsManagement: React.FC = () => {
           joinDate: '2023-03-18',
           status: 'warning',
           mentorAssigned: false,
-          nextReview: '2023-11-25',
-          team: 6,
+          dueDate: '2023-11-25',
+          participationRate: 6,
           progress: 52
         },
         {
@@ -130,8 +131,8 @@ const OperationsParticipantsManagement: React.FC = () => {
           status: 'active',
           mentorAssigned: true,
           mentorName: 'Sarah Williams',
-          nextReview: '2023-12-10',
-          team: 4,
+          dueDate: '2023-12-10',
+          participationRate: 4,
           progress: 10
         },
         {
@@ -143,75 +144,77 @@ const OperationsParticipantsManagement: React.FC = () => {
           status: 'inactive',
           mentorAssigned: true,
           mentorName: 'David Miller',
-          nextReview: '2023-11-30',
-          team: 5,
+          dueDate: '2023-11-30',
+          participationRate: 5,
           progress: 45
-        },
-      ];
-      
-      setParticipants(sampleParticipants);
+        }
+      ]
+
+      setParticipants(sampleParticipants)
     } catch (error) {
-      console.error('Error fetching participants:', error);
+      console.error('Error fetching participants:', error)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const handleSearch = (value: string) => {
-    setSearchText(value);
-  };
+    setSearchText(value)
+  }
 
   const getFilteredParticipants = () => {
-    let filtered = [...participants];
-    
+    let filtered = [...participants]
+
     // Filter by search text
     if (searchText) {
       filtered = filtered.filter(
-        participant => 
+        participant =>
           participant.name.toLowerCase().includes(searchText.toLowerCase()) ||
           participant.industry.toLowerCase().includes(searchText.toLowerCase())
-      );
+      )
     }
-    
+
     // Filter by tab status
     if (activeTab !== 'all') {
-      filtered = filtered.filter(participant => participant.status === activeTab);
+      filtered = filtered.filter(
+        participant => participant.status === activeTab
+      )
     }
-    
-    return filtered;
-  };
+
+    return filtered
+  }
 
   const getStatusBadge = (status: string) => {
-    switch(status) {
+    switch (status) {
       case 'active':
-        return <Badge status="success" text="Active" />;
+        return <Badge status='success' text='Active' />
       case 'warning':
-        return <Badge status="warning" text="At Risk" />;
+        return <Badge status='warning' text='At Risk' />
       case 'inactive':
-        return <Badge status="default" text="Inactive" />;
+        return <Badge status='default' text='Inactive' />
       default:
-        return <Badge status="default" text={status} />;
+        return <Badge status='default' text={status} />
     }
-  };
+  }
 
   const getStageBadge = (stage: string) => {
-    let color = '';
-    switch(stage) {
+    let color = ''
+    switch (stage) {
       case 'Early':
-        color = 'blue';
-        break;
+        color = 'blue'
+        break
       case 'Growth':
-        color = 'green';
-        break;
+        color = 'green'
+        break
       case 'Scaling':
-        color = 'purple';
-        break;
+        color = 'purple'
+        break
       default:
-        color = 'default';
+        color = 'default'
     }
-    
-    return <Tag color={color}>{stage}</Tag>;
-  };
+
+    return <Tag color={color}>{stage}</Tag>
+  }
 
   const columns = [
     {
@@ -219,23 +222,26 @@ const OperationsParticipantsManagement: React.FC = () => {
       dataIndex: 'name',
       key: 'name',
       render: (text: string, record: Participant) => (
-        <Space direction="vertical" size={0}>
+        <Space direction='vertical' size={0}>
           <Text strong>{text}</Text>
-          <Text type="secondary" style={{ fontSize: '12px' }}>{record.industry}</Text>
+          <Text type='secondary' style={{ fontSize: '12px' }}>
+            {record.industry}
+          </Text>
         </Space>
-      ),
+      )
     },
     {
       title: 'Stage',
       dataIndex: 'stage',
       key: 'stage',
-      render: (stage: string) => getStageBadge(stage),
+      render: (stage: string) => getStageBadge(stage)
     },
     {
-      title: 'Team Size',
-      dataIndex: 'team',
-      key: 'team',
-      sorter: (a: Participant, b: Participant) => a.team - b.team,
+      title: 'Participation Rate',
+      dataIndex: 'participationRate',
+      key: 'participationRate',
+      sorter: (a: Participant, b: Participant) =>
+        a.participationRate - b.participationRate
     },
     {
       title: 'Progress',
@@ -243,76 +249,77 @@ const OperationsParticipantsManagement: React.FC = () => {
       key: 'progress',
       render: (progress: number) => (
         <Tooltip title={`${progress}% Complete`}>
-          <div style={{ width: 100, backgroundColor: '#f0f0f0', borderRadius: 10, height: 8 }}>
-            <div 
-              style={{ 
-                width: `${progress}%`, 
-                backgroundColor: progress < 30 ? '#ff4d4f' : progress < 70 ? '#faad14' : '#52c41a', 
-                borderRadius: 10, 
-                height: 8 
-              }} 
+          <div
+            style={{
+              width: 100,
+              backgroundColor: '#f0f0f0',
+              borderRadius: 10,
+              height: 8
+            }}
+          >
+            <div
+              style={{
+                width: `${progress}%`,
+                backgroundColor:
+                  progress < 30
+                    ? '#ff4d4f'
+                    : progress < 70
+                    ? '#faad14'
+                    : '#52c41a',
+                borderRadius: 10,
+                height: 8
+              }}
             />
           </div>
         </Tooltip>
       ),
-      sorter: (a: Participant, b: Participant) => a.progress - b.progress,
-    },
-    {
-      title: 'Mentor',
-      key: 'mentor',
-      render: (text: string, record: Participant) => (
-        record.mentorAssigned ? (
-          <Text type="success">{record.mentorName}</Text>
-        ) : (
-          <Text type="danger">Not Assigned</Text>
-        )
-      ),
-    },
-    {
-      title: 'Next Review',
-      dataIndex: 'nextReview',
-      key: 'nextReview',
+      sorter: (a: Participant, b: Participant) => a.progress - b.progress
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => getStatusBadge(status),
+      render: (status: string) => getStatusBadge(status)
     },
     {
       title: 'Actions',
       key: 'actions',
       render: (_: any, record: Participant) => (
-        <Space size="small">
-          <Button type="primary" size="small">
+        <Space size='small'>
+          <Button type='primary' size='small'>
             View Details
           </Button>
-          <Button size="small">
-            Assign Mentor
-          </Button>
         </Space>
-      ),
-    },
-  ];
+      )
+    }
+  ]
 
   return (
     <div style={{ padding: '20px' }}>
+      <Helmet>
+        <title>Participant Management | Incubation Platform</title>
+        <meta
+          name='description'
+          content='Manage and track participants in the incubation program. View company stages, assignments, and upcoming reviews.'
+        />
+      </Helmet>
+
       <Title level={2}>
         <TeamOutlined /> Participant Management
       </Title>
-      <Text type="secondary">
+      <Text type='secondary'>
         Manage and track incubatee companies and their progress
       </Text>
-      
+
       <Divider />
-      
+
       {/* Stats Overview */}
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
           <Card>
-            <Statistic 
-              title="Total Participants" 
-              value={participants.length} 
+            <Statistic
+              title='Total Participants'
+              value={participants.length}
               prefix={<TeamOutlined />}
               valueStyle={{ color: '#1890ff' }}
             />
@@ -320,9 +327,9 @@ const OperationsParticipantsManagement: React.FC = () => {
         </Col>
         <Col xs={24} sm={12} md={6}>
           <Card>
-            <Statistic 
-              title="Need Mentor Assignment" 
-              value={participants.filter(p => !p.mentorAssigned).length} 
+            <Statistic
+              title='Need Consultant Assignment'
+              value={participants.filter(p => !p.mentorAssigned).length}
               prefix={<UserOutlined />}
               valueStyle={{ color: '#faad14' }}
             />
@@ -330,9 +337,9 @@ const OperationsParticipantsManagement: React.FC = () => {
         </Col>
         <Col xs={24} sm={12} md={6}>
           <Card>
-            <Statistic 
-              title="Companies at Risk" 
-              value={participants.filter(p => p.status === 'warning').length} 
+            <Statistic
+              title='Companies at Risk'
+              value={participants.filter(p => p.status === 'warning').length}
               prefix={<ApartmentOutlined />}
               valueStyle={{ color: '#ff4d4f' }}
             />
@@ -340,80 +347,86 @@ const OperationsParticipantsManagement: React.FC = () => {
         </Col>
         <Col xs={24} sm={12} md={6}>
           <Card>
-            <Statistic 
-              title="Upcoming Reviews" 
-              value={participants.filter(p => {
-                const reviewDate = new Date(p.nextReview);
-                const today = new Date();
-                const timeDiff = reviewDate.getTime() - today.getTime();
-                const dayDiff = timeDiff / (1000 * 3600 * 24);
-                return dayDiff <= 7 && dayDiff > 0;
-              }).length} 
+            <Statistic
+              title='Upcoming Reviews'
+              value={
+                participants.filter(p => {
+                  const reviewDate = new Date(p.dueDate)
+                  const today = new Date()
+                  const timeDiff = reviewDate.getTime() - today.getTime()
+                  const dayDiff = timeDiff / (1000 * 3600 * 24)
+                  return dayDiff <= 7 && dayDiff > 0
+                }).length
+              }
               prefix={<CalendarOutlined />}
               valueStyle={{ color: '#52c41a' }}
             />
           </Card>
         </Col>
       </Row>
-      
+
       <Card>
-        <Space style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+        <Space
+          style={{
+            marginBottom: 16,
+            display: 'flex',
+            justifyContent: 'space-between',
+            width: '100%'
+          }}
+        >
           <Space>
             <Input
-              placeholder="Search participants..."
+              placeholder='Search participants...'
               prefix={<SearchOutlined />}
               allowClear
               onChange={e => handleSearch(e.target.value)}
               style={{ width: 250 }}
             />
-            <Select 
-              placeholder="Filter by industry" 
+            <Select
+              placeholder='Filter by industry'
               style={{ width: 180 }}
               allowClear
             >
-              <Option value="software">Software</Option>
-              <Option value="healthcare">Healthcare</Option>
-              <Option value="education">Education</Option>
-              <Option value="finance">Finance</Option>
-              <Option value="energy">Energy</Option>
-              <Option value="agriculture">Agriculture</Option>
-              <Option value="transportation">Transportation</Option>
+              <Option value='software'>Software</Option>
+              <Option value='healthcare'>Healthcare</Option>
+              <Option value='education'>Education</Option>
+              <Option value='finance'>Finance</Option>
+              <Option value='energy'>Energy</Option>
+              <Option value='agriculture'>Agriculture</Option>
+              <Option value='transportation'>Transportation</Option>
             </Select>
-            <Select 
-              placeholder="Filter by stage" 
+            <Select
+              placeholder='Filter by stage'
               style={{ width: 150 }}
               allowClear
             >
-              <Option value="early">Early</Option>
-              <Option value="growth">Growth</Option>
-              <Option value="scaling">Scaling</Option>
+              <Option value='early'>Early</Option>
+              <Option value='growth'>Growth</Option>
+              <Option value='scaling'>Scaling</Option>
             </Select>
           </Space>
-          <Button 
-            type="primary" 
-            icon={<TeamOutlined />}
-          >
+          <Button type='primary' icon={<TeamOutlined />}>
             Add Participant
           </Button>
         </Space>
 
         <Tabs activeKey={activeTab} onChange={setActiveTab}>
-          <TabPane tab="All Participants" key="all" />
-          <TabPane tab="Active" key="active" />
-          <TabPane tab="At Risk" key="warning" />
-          <TabPane tab="Inactive" key="inactive" />
+          <TabPane tab='All Participants' key='all' />
+          <TabPane tab='Active' key='active' />
+          <TabPane tab='At Risk' key='warning' />
+          <TabPane tab='Inactive' key='inactive' />
         </Tabs>
-        
+
         <Table
           dataSource={getFilteredParticipants()}
           columns={columns}
-          rowKey="id"
+          rowKey='id'
           loading={loading}
           pagination={{ pageSize: 10 }}
         />
       </Card>
     </div>
-  );
-};
+  )
+}
 
-export default OperationsParticipantsManagement; 
+export default OperationsParticipantsManagement
