@@ -8,7 +8,6 @@ import {
   List,
   Card,
   Space,
-  Progress,
   message
 } from 'antd'
 import {
@@ -161,23 +160,6 @@ export const AssignedInterventions: React.FC = () => {
   const columns = [
     { title: 'SME', dataIndex: 'smeName' },
     { title: 'Intervention', dataIndex: 'interventionTitle' },
-    {
-  title: 'Progress',
-  key: 'progress',
-  render: (record: AssignedIntervention) => {
-    const expected = record.expectedHours || 10; // default expected hours
-    const percent = Math.min(Math.round((record.timeSpent / expected) * 100), 100);
-
-    return (
-      <Space direction="vertical" size={0}>
-        <Progress percent={percent} size="small" />
-        <div style={{ fontSize: '12px' }}>
-          {record.timeSpent || 0}h / {expected}h
-        </div>
-      </Space>
-    );
-  }
-},
     {
       title: 'Time Spent (hrs)',
       dataIndex: 'timeSpent',
