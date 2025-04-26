@@ -33,14 +33,13 @@ interface Assignment {
   id: string
   participantId: string
   participantName: string
-  intervention: string
+  interventionTitle: string
   type: InterventionType
   consultantId: string
   consultantName: string
   status: 'active' | 'completed' | 'cancelled'
   createdAt: Timestamp
-  lastSessionDate?: Timestamp
-  nextSessionDate?: Timestamp
+  dueDate?: Timestamp
   notes?: string
   feedback?: {
     rating: number
@@ -59,10 +58,32 @@ interface UserIdentity {
   avatar?: string
   [key: string]: any
 }
+interface Participant {
+  id: string
+  name: string
+  requiredInterventions: { id: string; title: string }[] // <-- Important
+}
+interface Intervention {
+  id: string
+  title: string
+  area: string
+}
 
 export const ConsultantAssignments: React.FC = () => {
   const { data: user } = useGetIdentity<UserIdentity>()
   const navigate = useNavigate()
+  const [participants, setParticipants] = useState<Participant[]>([])
+  const [consultants, setConsultants] = useState<
+    { id: string; name: string }[]
+  >([])
+  const [interventions, setInterventions] = useState<Intervention[]>([])
+  const [interventionList, setInterventionList] = useState<any[]>([])
+  const [filteredInterventions, setFilteredInterventions] = useState<
+    { id: string; name: string }[]
+  >([])
+  const [participantInterventionMap, setParticipantInterventionMap] = useState<
+    Record<string, string[]>
+  >({})
 
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [loading, setLoading] = useState(true)
@@ -78,64 +99,45 @@ export const ConsultantAssignments: React.FC = () => {
   const [notesForm] = Form.useForm()
   const [assignmentModalVisible, setAssignmentModalVisible] = useState(false)
   const [assignmentForm] = Form.useForm()
-
-  // Dummy options (replace with Firebase fetches if needed)
-  const participantOptions = [
-    'John Smith',
-    'Sara Johnson',
-    'BrightTech',
-    'Green Farms'
-  ]
-  const consultantOptions = ['Dr. Michael Brown', 'Jane Wilson']
-  const interventionOptions = [
-    'Website Development',
-    'Logo Design',
-    'Financial Literacy',
-    'Market Research',
-    'Technical Training'
-  ]
+  // Participant and Consultants Mappings
+  const participantMap = new Map(participants.map(p => [p.id, p.name]))
+  const consultantMap = new Map(consultants.map(c => [c.id, c.name]))
 
   useEffect(() => {
     const fetchAssignments = async () => {
       setLoading(true)
       try {
-        const mockAssignments: Assignment[] = [
-          {
-            id: 'a1',
-            participantId: 'p1',
-            participantName: 'John Smith',
-            intervention: 'Website Development',
-            consultantId: 'c1',
-            consultantName: user?.name || 'Current Consultant',
-            status: 'active',
-            createdAt: Timestamp.fromDate(
-              new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-            ),
-            lastSessionDate: Timestamp.fromDate(
-              new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
-            ),
-            nextSessionDate: Timestamp.fromDate(
-              new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
-            )
-          },
-          {
-            id: 'a2',
-            participantId: 'p2',
-            participantName: 'Sara Johnson',
-            intervention: 'Logo Design',
-            consultantId: 'c1',
-            consultantName: user?.name || 'Current Consultant',
-            status: 'active',
-            createdAt: Timestamp.fromDate(
-              new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
-            ),
-            lastSessionDate: Timestamp.fromDate(
-              new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
-            )
-          }
-        ]
+        const snapshot = await getDocs(collection(db, 'assignedInterventions'))
+        const fetchedAssignments: Assignment[] = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Assignment[]
 
-        setAssignments(mockAssignments)
+        const participantMap = new Map(participants.map(p => [p.id, p.name]))
+        const consultantMap = new Map(consultants.map(c => [c.id, c.name]))
+
+        // Enriching Interventions and Assignments data
+        const enrichedAssignments = fetchedAssignments.map(assignment => {
+          const foundArea = interventionList.find(group =>
+            group.interventions.some(
+              (i: any) => i.title === assignment.interventionTitle
+            )
+          )
+          const areaName = foundArea ? foundArea.area : 'Unknown Area'
+
+          return {
+            ...assignment,
+            participantName:
+              participantMap.get(assignment.participantId) ||
+              'Unknown Participant',
+            consultantName:
+              consultantMap.get(assignment.consultantId) ||
+              'Unknown Consultant',
+            area: areaName // 🔥 Add area
+          }
+        })
+
+        setAssignments(enrichedAssignments)
       } catch (error) {
         console.error('Error fetching assignments:', error)
         message.error('Failed to load assignments')
@@ -144,8 +146,75 @@ export const ConsultantAssignments: React.FC = () => {
       }
     }
 
+    const fetchParticipantsConsultantsAndInterventions = async () => {
+      try {
+        // 🔥 Fetch everything at once
+        const [
+          participantsSnapshot,
+          consultantsSnapshot,
+          interventionsSnapshot
+        ] = await Promise.all([
+          getDocs(collection(db, 'participants')),
+          getDocs(collection(db, 'consultants')),
+          getDocs(collection(db, 'interventions'))
+        ])
+
+        // ✅ Process participants
+        const fetchedParticipants = participantsSnapshot.docs.map(doc => {
+          const data = doc.data()
+          return {
+            id: doc.id,
+            name: data.name,
+            requiredInterventions: data.interventions?.required || []
+          }
+        })
+
+        // ✅ Process consultants
+        const fetchedConsultants = consultantsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          name: doc.data().name
+        }))
+
+        // ✅ Process interventions
+        const fetchedInterventions = interventionsSnapshot.docs.flatMap(doc =>
+          doc.data().interventions.map(intervention => ({
+            id: intervention.id,
+            title: intervention.title,
+            area: doc.data().area // include area
+          }))
+        )
+
+        // ✅ Build participantId -> interventionId[] map
+        const map: Record<string, string[]> = {}
+        fetchedParticipants.forEach(p => {
+          map[p.id] = p.requiredInterventions.map(i => i.id)
+        })
+
+        // 🔥 Set the states *after* everything is loaded
+        setParticipants(fetchedParticipants)
+        setConsultants(fetchedConsultants)
+        setInterventions(fetchedInterventions)
+        setParticipantInterventionMap(map)
+
+        // 🛠 Debug logging - optional but recommended
+        console.log('👥 Participants:', fetchedParticipants)
+        console.log('🧑‍💼 Consultants:', fetchedConsultants)
+        console.log('🛠 Interventions:', fetchedInterventions)
+        console.log('🗺 Participant -> Intervention Map:', map)
+      } catch (error) {
+        console.error(
+          '❌ Error fetching participants, consultants or interventions:',
+          error
+        )
+        message.error(
+          'Failed to load participants, consultants, or interventions'
+        )
+      }
+    }
+
     if (user) {
       fetchAssignments()
+      fetchParticipantsConsultantsAndInterventions()
     }
   }, [user])
 
@@ -163,7 +232,7 @@ export const ConsultantAssignments: React.FC = () => {
         if (a.id === selectedAssignment.id) {
           return {
             ...a,
-            lastSessionDate: Timestamp.now(),
+            dueDate: Timestamp.now(),
             nextSessionDate: values.nextSessionDate
               ? Timestamp.fromDate(values.nextSessionDate.toDate())
               : undefined
@@ -251,8 +320,8 @@ export const ConsultantAssignments: React.FC = () => {
     },
     {
       title: 'Intervention',
-      dataIndex: 'intervention',
-      key: 'intervention'
+      dataIndex: 'interventionTitle',
+      key: 'interventionTitle'
     },
     {
       title: 'Status',
@@ -274,11 +343,17 @@ export const ConsultantAssignments: React.FC = () => {
     },
     {
       title: 'Due Date',
-      key: 'lastSessionDate',
-      render: (record: Assignment) =>
-        record.lastSessionDate
-          ? new Date(record.lastSessionDate.toMillis()).toLocaleDateString()
-          : 'No sessions yet'
+      key: 'dueDate',
+      render: (record: Assignment) => {
+        if (!record.dueDate) return 'No due date'
+
+        const date =
+          typeof record.dueDate === 'string'
+            ? new Date(record.dueDate)
+            : record.dueDate.toDate?.() ?? new Date()
+
+        return date.toLocaleDateString()
+      }
     },
     {
       title: 'Actions',
@@ -290,7 +365,7 @@ export const ConsultantAssignments: React.FC = () => {
               size='small'
               icon={<CommentOutlined />}
               onClick={() => showNotesModal(record)}
-              disabled={record.status !== 'active'}
+              disabled={record.status !== 'in-progress'}
             >
               Notes
             </Button>
@@ -375,8 +450,10 @@ export const ConsultantAssignments: React.FC = () => {
             <div style={{ padding: '20px' }}>
               <Title level={5}>Assignment Details</Title>
               <Paragraph>
-                <Text strong>Created: </Text>
-                {new Date(record.createdAt.toMillis()).toLocaleDateString()}
+                <Text strong>Assigned: </Text>
+                {record.createdAt?.toMillis
+                  ? new Date(record.createdAt.toMillis()).toLocaleDateString()
+                  : 'No assignment date available'}
               </Paragraph>
               {record.notes && (
                 <div>
@@ -422,159 +499,182 @@ export const ConsultantAssignments: React.FC = () => {
           layout='vertical'
           onFinish={async values => {
             try {
-              // Step 1: Fetch current count
-              const snapshot = await getDocs(
-                collection(db, 'assignedInterventions')
+              const selectedParticipant = participants.find(
+                p => p.id === values.participant
               )
-              const currentCount = snapshot.size
 
-              // Step 2: Build new ID like ai6, ai7
-              const newId = `ai${currentCount + 1}`
+              const selectedConsultant = consultants.find(
+                c => c.id === values.consultant
+              )
 
-              // Step 3: Create new assignment object
-              const newAssignment = {
-                id: newId,
-                participantId: `pid-${Date.now()}`, // you can later improve participant ID logic
-                participantName: values.participant,
-                consultantId: `cid-${Date.now()}`, // same here
-                consultantName: values.consultant,
-                intervention: values.intervention,
-                type: values.type,
-                status: 'active',
-                createdAt: Timestamp.now(),
-                targetType: values.targetType,
-                targetValue: values.targetValue
+              const requiredInterventions =
+                selectedParticipant?.requiredInterventions || []
+              const selectedIntervention = requiredInterventions.find(
+                (i: any) => i.id === values.intervention
+              )
+
+              if (
+                !selectedParticipant ||
+                !selectedConsultant ||
+                !selectedIntervention
+              ) {
+                message.error('Invalid data selected. Please retry.')
+                return
               }
 
-              // Step 4: Save assignment to Firestore
+              const newId = `ai${Date.now()}`
+
+              const newAssignment = {
+                id: newId,
+                participantId: selectedParticipant.id,
+                participantName: selectedParticipant.name,
+                consultantId: selectedConsultant.id,
+                consultantName: selectedConsultant.name,
+                interventionId: selectedIntervention.id,
+                interventionTitle: selectedIntervention.title,
+                type: values.type,
+                targetType: values.targetType,
+                targetValue: values.targetValue,
+                status: 'active',
+                createdAt: Timestamp.now()
+              }
+
               await setDoc(
                 doc(db, 'assignedInterventions', newId),
                 newAssignment
               )
 
-              // Step 5: Save notification
-              await setDoc(doc(collection(db, 'notifications')), {
-                message: `You have been assigned a new intervention: ${values.intervention}`,
-                participantName: values.participant,
-                interventionId: newId,
-                interventionTitle: values.intervention,
-                type: 'intervention-assigned',
-                recipientRoles: ['consultant', 'participant', 'admin'],
-                createdAt: new Date(),
-                status: 'unread'
-              })
-
-              // Step 6: Update local state (what you were doing already)
-              setAssignments(prev => [...prev, newAssignment])
               message.success('New intervention assigned successfully')
               setAssignmentModalVisible(false)
               assignmentForm.resetFields()
+              // 🔥 Optional: Reload assigned interventions table here
             } catch (error) {
-              console.error('❌ Error creating assignment:', error)
+              console.error('❌ Error assigning intervention:', error)
               message.error('Failed to create assignment')
             }
           }}
           onValuesChange={changedValues => {
-            if (changedValues.type) {
-              setSelectedType(changedValues.type) // ✅ when type changes, update local state
+            if (changedValues.participant) {
               assignmentForm.setFieldsValue({
-                participant: undefined,
-                participants: undefined
-              }) // ✅ clear participant selection
+                intervention: undefined
+              })
+
+              const selectedParticipant = participants.find(
+                p => p.id === changedValues.participant
+              )
+
+              console.log('🛠 Selected Participant:', selectedParticipant)
+              console.log(
+                '📋 Required Interventions:',
+                selectedParticipant?.requiredInterventions
+              )
             }
           }}
         >
+          {/* Participant */}
           <Form.Item
-            name='type'
-            label='Intervention Type'
-            rules={[
-              { required: true, message: 'Please select the intervention type' }
-            ]}
+            name='participant'
+            label='Select Participant'
+            rules={[{ required: true, message: 'Please select a participant' }]}
           >
-            <Select placeholder='Select type'>
-              <Select.Option value='singular'>
-                Singular (1 Participant)
-              </Select.Option>
-              <Select.Option value='grouped'>
-                Grouped (Multiple Participants)
-              </Select.Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            name='intervention'
-            label='Select Intervention'
-            rules={[
-              { required: true, message: 'Please select an intervention' }
-            ]}
-          >
-            <Select placeholder='Choose an intervention'>
-              {interventionOptions.map(name => (
-                <Select.Option key={name} value={name}>
-                  {name}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item
-            name={selectedType === 'grouped' ? 'participants' : 'participant'}
-            label={
-              selectedType === 'grouped'
-                ? 'Select Participants'
-                : 'Select Participant'
-            }
-            rules={[
-              { required: true, message: 'Please select participant(s)' }
-            ]}
-          >
-            <Select
-              placeholder={
-                selectedType === 'grouped' ? 'Choose multiple' : 'Choose one'
-              }
-              mode={selectedType === 'grouped' ? 'multiple' : undefined}
-            >
-              {participantOptions.map(name => (
-                <Select.Option key={name} value={name}>
-                  {name}
+            <Select placeholder='Choose a participant'>
+              {participants.map(p => (
+                <Select.Option key={p.id} value={p.id}>
+                  {p.name}
                 </Select.Option>
               ))}
             </Select>
           </Form.Item>
 
+          {/* Intervention */}
+          <Form.Item
+            shouldUpdate={(prev, curr) => prev.participant !== curr.participant}
+            noStyle
+          >
+            {({ getFieldValue }) => {
+              const participantId = getFieldValue('participant')
+              const requiredInterventions =
+                participantInterventionMap[participantId] || []
+              const filtered = interventions.filter(i =>
+                requiredInterventions.includes(i.id)
+              )
+              return (
+                <Form.Item
+                  name='intervention'
+                  label='Select Intervention'
+                  rules={[
+                    { required: true, message: 'Please select an intervention' }
+                  ]}
+                >
+                  <Select
+                    placeholder='Choose an intervention'
+                    disabled={!participantId}
+                  >
+                    {filtered.map(intervention => (
+                      <Select.Option
+                        key={intervention.id}
+                        value={intervention.id}
+                      >
+                        {intervention.title} ({intervention.area})
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              )
+            }}
+          </Form.Item>
+
+          {/* Consultant */}
           <Form.Item
             name='consultant'
             label='Select Consultant'
             rules={[{ required: true, message: 'Please select a consultant' }]}
           >
             <Select placeholder='Choose a consultant'>
-              {consultantOptions.map(name => (
-                <Select.Option key={name} value={name}>
-                  {name}
+              {consultants.map(c => (
+                <Select.Option key={c.id} value={c.id}>
+                  {c.name}
                 </Select.Option>
               ))}
             </Select>
           </Form.Item>
 
+          {/* Type */}
+          <Form.Item
+            name='type'
+            label='Assignment Type'
+            rules={[
+              { required: true, message: 'Please select assignment type' }
+            ]}
+          >
+            <Select placeholder='Select type'>
+              <Select.Option value='singular'>Singular (1 SME)</Select.Option>
+              <Select.Option value='grouped'>
+                Grouped (Multiple SMEs)
+              </Select.Option>
+            </Select>
+          </Form.Item>
+
+          {/* Target */}
           <Form.Item
             name='targetType'
             label='Target Type'
-            rules={[{ required: true, message: 'Please select a target type' }]}
+            rules={[{ required: true, message: 'Please select target type' }]}
           >
-            <Select placeholder='Choose target type'>
+            <Select placeholder='Select target type'>
               <Select.Option value='percentage'>Percentage (%)</Select.Option>
-              <Select.Option value='number'>Number (e.g., hours)</Select.Option>
+              <Select.Option value='number'>
+                Number (Hours, Sessions, etc.)
+              </Select.Option>
             </Select>
           </Form.Item>
 
           <Form.Item
             name='targetValue'
             label='Target Value'
-            rules={[{ required: true, message: 'Please enter a target value' }]}
+            rules={[{ required: true, message: 'Please input a target value' }]}
           >
-            <Input
-              type='number'
-              placeholder='Enter target (e.g. 10 hours or 100%)'
-            />
+            <Input type='number' placeholder='e.g. 10 hours or 100%' />
           </Form.Item>
 
           <Form.Item>
