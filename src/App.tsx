@@ -76,6 +76,7 @@ import { IncubateeDashboard } from '@/routes/incubatee'
 import { MonthlyPerformanceForm } from '@/routes/incubatee/projects/projectSubmission'
 import { DocumentHub } from './routes/incubatee/documents/DocumentsHub'
 
+
 // ───────────────────────────────────────────────────────────
 // 🔹 Consultant Routes
 // ───────────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ import { ProjectAnalytics } from '@/routes/consultants/analytics/ProjectAnalytic
 import { ProjectAdminDashboard } from './routes/projectadmin/projectAdminDashboard'
 import MonitoringEvaluationSection from '@/routes/projectadmin/monitoring'
 import { ImpactAnalysisForm } from './routes/projectadmin/impact'
+import InterventionsTrackingView from './routes/incubatee/interventions'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Utilities / Misc
@@ -151,6 +153,10 @@ const App = () => {
                     </Route>
                     <Route path='incubatee'>
                       <Route index element={<IncubateeDashboard />} />
+                       <Route
+                        path='interventions'
+                        element={<InterventionsTrackingView />}
+                      />
                       <Route
                         path='projects'
                         element={<MonthlyPerformanceForm />}
