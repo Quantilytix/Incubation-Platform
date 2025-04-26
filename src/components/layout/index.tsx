@@ -135,7 +135,7 @@ export const CustomLayout: React.FC = () => {
     if (!role) return ''
     const nameMap = {
       projectadmin: 'Project Admin',
-      funder: 'Funder',
+      funder: 'Sponsor',
       consultant: 'Consultant',
       operations: 'Operations',
       admin: 'Admin',
