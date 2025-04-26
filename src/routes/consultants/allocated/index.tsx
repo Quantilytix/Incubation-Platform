@@ -20,6 +20,7 @@ import { db } from '@/firebase'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
+import { Helmet } from 'react-helmet'
 
 const { Title, Paragraph } = Typography
 
@@ -277,6 +278,14 @@ export const AssignedInterventions: React.FC = () => {
 
   return (
     <>
+      <Helmet>
+        <title>Assigned Interventions | Consultant Workspace</title>
+        <meta
+          name='description'
+          content='View and manage your assigned interventions as a consultant.'
+        />
+      </Helmet>
+
       <Title level={4}>Assigned Interventions</Title>
       <Table
         dataSource={assignedInterventions}
