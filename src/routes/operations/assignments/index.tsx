@@ -99,11 +99,11 @@ export const ConsultantAssignments: React.FC = () => {
   const [notesForm] = Form.useForm()
   const [assignmentModalVisible, setAssignmentModalVisible] = useState(false)
   const [assignmentForm] = Form.useForm()
+  const [dataLoaded, setDataLoaded] = useState(false)
 
   useEffect(() => {
     const fetchParticipantsConsultantsAndInterventions = async () => {
       try {
-        // 🔥 Fetch everything at once
         const [
           participantsSnapshot,
           consultantsSnapshot,
@@ -114,7 +114,6 @@ export const ConsultantAssignments: React.FC = () => {
           getDocs(collection(db, 'interventions'))
         ])
 
-        // ✅ Process participants
         const fetchedParticipants = participantsSnapshot.docs.map(doc => {
           const data = doc.data()
           return {
@@ -124,38 +123,29 @@ export const ConsultantAssignments: React.FC = () => {
           }
         })
 
-        // ✅ Process consultants
         const fetchedConsultants = consultantsSnapshot.docs.map(doc => ({
           id: doc.id,
           name: doc.data().name
         }))
 
-        // ✅ Process interventions
         const fetchedInterventions = interventionsSnapshot.docs.flatMap(doc =>
           doc.data().interventions.map(intervention => ({
             id: intervention.id,
             title: intervention.title,
-            area: doc.data().area // include area
+            area: doc.data().area
           }))
         )
 
-        // ✅ Build participantId -> interventionId[] map
         const map: Record<string, string[]> = {}
         fetchedParticipants.forEach(p => {
           map[p.id] = p.requiredInterventions.map(i => i.id)
         })
 
-        // 🔥 Set the states *after* everything is loaded
         setParticipants(fetchedParticipants)
         setConsultants(fetchedConsultants)
         setInterventions(fetchedInterventions)
         setParticipantInterventionMap(map)
-
-        // 🛠 Debug logging - optional but recommended
-        console.log('👥 Participants:', fetchedParticipants)
-        console.log('🧑‍💼 Consultants:', fetchedConsultants)
-        console.log('🛠 Interventions:', fetchedInterventions)
-        console.log('🗺 Participant -> Intervention Map:', map)
+        setDataLoaded(true) // 🛑 IMPORTANT! Flag when data is loaded
       } catch (error) {
         console.error(
           '❌ Error fetching participants, consultants or interventions:',
@@ -166,6 +156,13 @@ export const ConsultantAssignments: React.FC = () => {
         )
       }
     }
+
+    if (user) {
+      fetchParticipantsConsultantsAndInterventions()
+    }
+  }, [user])
+
+  useEffect(() => {
     const fetchAssignments = async () => {
       try {
         const snapshot = await getDocs(collection(db, 'assignedInterventions'))
@@ -202,26 +199,16 @@ export const ConsultantAssignments: React.FC = () => {
       } catch (error) {
         console.error('Error fetching assignments:', error)
         message.error('Failed to load assignments')
-      }
-    }
-
-    const loadData = async () => {
-      if (!user) return
-
-      setLoading(true)
-      try {
-        await fetchParticipantsConsultantsAndInterventions()
-        await fetchAssignments()
-      } catch (error) {
-        console.error('Error loading data:', error)
-        message.error('Failed to load data')
       } finally {
         setLoading(false)
       }
     }
 
-    loadData()
-  }, [user])
+    if (dataLoaded) {
+      setLoading(true)
+      fetchAssignments()
+    }
+  }, [dataLoaded, participants, consultants, interventions])
 
   const showSessionModal = (assignment: Assignment) => {
     setSelectedAssignment(assignment)
