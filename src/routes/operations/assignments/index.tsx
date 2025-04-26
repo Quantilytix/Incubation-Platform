@@ -19,6 +19,7 @@ import {
   CommentOutlined,
   CheckCircleOutlined
 } from '@ant-design/icons'
+import { Helmet } from 'react-helmet'
 import { useGetIdentity } from '@refinedev/core'
 import { useNavigate } from 'react-router-dom'
 import { collection, getDocs, setDoc, doc, Timestamp } from 'firebase/firestore';
@@ -337,6 +338,10 @@ export const ConsultantAssignments: React.FC = () => {
 
   return (
     <div style={{ padding: 24 }}>
+        <Helmet>
+      <title>Consultant Assignments | Incubation Platform</title>
+      <meta name="description" content="Manage consultant assignments, interventions, and track progress for the incubation program." />
+    </Helmet>
       {/* 🔘 Header + Button */}
       <div
         style={{
