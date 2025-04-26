@@ -73,11 +73,17 @@ export const CustomLayout: React.FC = () => {
         { key: 'feedback', to: '/consultant/feedback', label: 'Feedback' },
         { key: 'analytics', to: '/consultant/analytics', label: 'Analytics' }
       ]),
-      director: items([
-        { key: 'dashboard', to: '/director', label: 'My Dashboard' }
+       director: items([
+        { key: 'dashboard', to: '/director', label: 'My Dashboard' },
+        { key: 'sponsor', to: '/funder', label: 'Sponsor View' }
       ]),
-      incubatee: items([
+        incubatee: items([
         { key: 'dashboard', to: '/incubatee', label: 'My Dashboard' },
+        {
+          key: 'interventions',
+          to: '/incubatee/interventions',
+          label: 'Interventions Tracker'
+        },
         {
           key: 'projects',
           to: '/incubatee/projects',
