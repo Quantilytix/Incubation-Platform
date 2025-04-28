@@ -87,6 +87,7 @@ export const ConsultantDashboard: React.FC = () => {
           if (userData.role) {
             setCurrentRole(userData.role.toLowerCase())
           }
+          setConsultantId(userSnap.docs[0].id) // ✅ SET CONSULTANT ID
         }
       }
       setRoleLoading(false)
