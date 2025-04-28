@@ -31,7 +31,8 @@ import {
   updateDoc,
   doc,
   query,
-  where
+  where,
+  Timestamp
 } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { Helmet } from 'react-helmet'
@@ -79,15 +80,20 @@ export const ConsultantDashboard: React.FC = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
       if (user) {
-        const userSnap = await getDocs(
-          query(collection(db, 'users'), where('email', '==', user.email))
+        const consultantSnap = await getDocs(
+          query(collection(db, 'consultants'), where('email', '==', user.email))
         )
-        if (!userSnap.empty) {
-          const userData = userSnap.docs[0].data()
-          if (userData.role) {
-            setCurrentRole(userData.role.toLowerCase())
+
+        if (!consultantSnap.empty) {
+          const consultantDoc = consultantSnap.docs[0]
+          setConsultantId(consultantDoc.id) // ✅ THIS is the correct consultantId
+
+          const consultantData = consultantDoc.data()
+          if (consultantData.role) {
+            setCurrentRole(consultantData.role.toLowerCase())
           }
-          setConsultantId(userSnap.docs[0].id) 
+        } else {
+          console.error('No consultant found for this user')
         }
       }
       setRoleLoading(false)
@@ -98,18 +104,21 @@ export const ConsultantDashboard: React.FC = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!consultantId) return
+      if (!consultantId) {
+        setLoading(false)
+        return
+      }
+
       try {
-        const interventionsSnap = await getDocs(
+        const allSnap = await getDocs(
           query(
             collection(db, 'assignedInterventions'),
-            where('consultantId', '==', consultantId),
-            where('status', '==', 'assigned')
+            where('consultantId', '==', consultantId)
           )
         )
 
-        const interventionList: Intervention[] = await Promise.all(
-          interventionsSnap.docs.map(async docSnap => {
+        const allInterventions: Intervention[] = await Promise.all(
+          allSnap.docs.map(async docSnap => {
             const data = docSnap.data()
             let sector = 'Unknown'
             let stage = 'Unknown'
@@ -144,6 +153,14 @@ export const ConsultantDashboard: React.FC = () => {
           })
         )
 
+        const assigned = allInterventions.filter(i => i.status === 'assigned')
+        const inProgress = allInterventions.filter(
+          i => i.status === 'in-progress'
+        )
+
+        setInterventions(assigned)
+        setOngoingCount(inProgress.length)
+
         const feedbackSnap = await getDocs(collection(db, 'feedbacks'))
         const feedbackList: Feedback[] = feedbackSnap.docs.map(docSnap => {
           const data = docSnap.data()
@@ -154,16 +171,6 @@ export const ConsultantDashboard: React.FC = () => {
           }
         })
 
-        const inProgressSnap = await getDocs(
-          query(
-            collection(db, 'assignedInterventions'),
-            where('consultantId', '==', consultantId),
-            where('status', '==', 'in-progress')
-          )
-        )
-
-        setOngoingCount(inProgressSnap.size)
-        setInterventions(interventionList)
         setFeedbacks(feedbackList)
       } catch (error) {
         console.error('Error fetching dashboard data:', error)
@@ -231,9 +238,29 @@ export const ConsultantDashboard: React.FC = () => {
 
   const handleAccept = async (id: string) => {
     try {
-      await updateDoc(doc(db, 'assignedInterventions', id), {
-        status: 'in-progress'
+      const interventionRef = doc(db, 'assignedInterventions', id)
+      const interventionSnap = await getDoc(interventionRef)
+
+      if (!interventionSnap.exists()) {
+        message.error('Intervention not found.')
+        return
+      }
+
+      const interventionData = interventionSnap.data()
+
+      // Update consultantStatus
+      await updateDoc(interventionRef, {
+        consultantStatus: 'accepted',
+        updatedAt: Timestamp.now()
       })
+
+      // If userStatus was already accepted → set to in-progress
+      if (interventionData.userStatus === 'accepted') {
+        await updateDoc(interventionRef, {
+          status: 'in-progress'
+        })
+      }
+
       message.success('Intervention accepted!')
       setInterventions(prev => prev.filter(item => item.id !== id))
     } catch (error) {
@@ -251,9 +278,12 @@ export const ConsultantDashboard: React.FC = () => {
     if (!currentDeclineId) return
     try {
       await updateDoc(doc(db, 'assignedInterventions', currentDeclineId), {
+        consultantStatus: 'declined',
         status: 'declined',
-        declineReason
+        declineReason,
+        updatedAt: Timestamp.now()
       })
+
       message.success('Intervention declined.')
       setInterventions(prev =>
         prev.filter(item => item.id !== currentDeclineId)
