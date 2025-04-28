@@ -155,35 +155,39 @@ export const IncubateeDashboard: React.FC = () => {
     setFeedbackModalVisible(true)
   }
 
-  const handleSubmitFeedback = async () => {
-    if (!selectedNotification) return
-
-    try {
-      await addDoc(collection(db, 'feedbacks'), {
-        participantId: selectedNotification.participantId,
-        smeName: selectedNotification.participantName,
-        consultantId: selectedNotification.consultantId || '',
-        interventionTitle: selectedNotification.interventionTitle,
-        comment: feedbackComment,
-        createdAt: new Date()
-      })
-
-      message.success('Feedback submitted successfully!')
-      setFeedbackModalVisible(false)
-      setFeedbackComment('')
-      setFeedbackRating(0)
-      setSelectedNotification(null)
-    } catch (error) {
-      console.error('Error submitting feedback:', error)
-      message.error('Failed to submit feedback.')
-    }
-  }
-
   const handleAccept = async (interventionId: string) => {
     try {
-      await updateDoc(doc(db, 'assignedInterventions', interventionId), {
+      const interventionRef = doc(db, 'assignedInterventions', interventionId)
+      const interventionSnap = await getDoc(interventionRef)
+
+      if (!interventionSnap.exists()) {
+        message.error('Intervention not found.')
+        return
+      }
+
+      const interventionData = interventionSnap.data()
+
+      // 1. Update the intervention status
+      await updateDoc(interventionRef, {
         status: 'pending'
       })
+      console.log(interventionData)
+      try {
+        // 2. Save notification properly
+        await addDoc(collection(db, 'notifications'), {
+          interventionId: interventionId,
+          participantId: interventionData.participantId,
+          consultantId: interventionData.consultantId,
+          interventionTitle: interventionData.interventionTitle,
+          message: `Benefiiciary ${interventionData.smeName} accepted the intervention: ${interventionData.interventionTitle}.`,
+          type: 'intervention-accepted',
+          createdAt: new Date(),
+          recipientRole: ['projectadmin', 'consultant']
+        })
+      } catch (error) {
+        console.error('Error saving notification:', error)
+      }
+
       message.success('Intervention accepted.')
       setPendingInterventions(prev =>
         prev.filter(item => item.id !== interventionId)
@@ -193,6 +197,7 @@ export const IncubateeDashboard: React.FC = () => {
       message.error('Failed to accept intervention.')
     }
   }
+
   const showDeclineModal = (id: string) => {
     setSelectedInterventionId(id)
     setDeclineModalVisible(true)
@@ -202,22 +207,37 @@ export const IncubateeDashboard: React.FC = () => {
     if (!selectedInterventionId) return
 
     try {
-      const interventionDoc = doc(
+      // First fetch the intervention document properly
+      const interventionRef = doc(
         db,
         'assignedInterventions',
         selectedInterventionId
       )
-      await updateDoc(interventionDoc, {
+      const interventionSnap = await getDoc(interventionRef)
+
+      if (!interventionSnap.exists()) {
+        message.error('Intervention not found.')
+        return
+      }
+
+      const interventionData = interventionSnap.data()
+
+      // Now update intervention status
+      await updateDoc(interventionRef, {
         status: 'declined'
       })
 
+      // Then add the notification
       await addDoc(collection(db, 'notifications'), {
-        participantId: selectedInterventionId,
-        message: `Intervention declined by participant.`,
+        interventionId: selectedInterventionId,
+        participantId: interventionData.participantId, // ✅ Correct
+        consultantId: interventionData.consultantId, // ✅ Correct
+        interventionTitle: interventionData.interventionTitle, // ✅ Correct
+        message: `Beneficiary ${interventionData.smeName} declined the intervention: ${interventionData.interventionTitle}.`,
         reason: declineReason,
         type: 'intervention-declined',
-        recipientRole: 'admin',
-        createdAt: new Date()
+        createdAt: new Date(),
+        recipientRole: ['projectadmin', 'consultant']
       })
 
       message.success('Declined and notification sent.')
@@ -227,9 +247,9 @@ export const IncubateeDashboard: React.FC = () => {
       setDeclineModalVisible(false)
       setDeclineReason('')
       setSelectedInterventionId(null)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Decline failed:', error)
-      message.error('Failed to decline.')
+      message.error(`Failed to decline. ${error.message || ''}`)
     }
   }
 
@@ -383,24 +403,6 @@ export const IncubateeDashboard: React.FC = () => {
           </Card>
         </Col>
       </Row>
-      <Modal
-        title='Provide Feedback'
-        open={feedbackModalVisible}
-        onCancel={() => setFeedbackModalVisible(false)}
-        onOk={handleSubmitFeedback}
-      >
-        <Rate
-          value={feedbackRating}
-          onChange={value => setFeedbackRating(value)}
-        />
-        <Input.TextArea
-          rows={4}
-          value={feedbackComment}
-          onChange={e => setFeedbackComment(e.target.value)}
-          placeholder='Write your feedback here'
-          style={{ marginTop: 16 }}
-        />
-      </Modal>
 
       <Modal
         title='Reason for Declining'
