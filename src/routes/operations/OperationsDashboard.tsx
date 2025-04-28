@@ -44,6 +44,7 @@ import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
+import dayjs from 'dayjs'
 
 export const OperationsDashboard: React.FC = () => {
   const navigate = useNavigate()
@@ -566,7 +567,11 @@ export const OperationsDashboard: React.FC = () => {
                             </Tag>
                           </Space>
                         }
-                        description={`Due: ${task.dueDate}`}
+                        description={`Due: ${dayjs(
+                          task.dueDate.toDate
+                            ? task.dueDate.toDate()
+                            : task.dueDate
+                        ).format('YYYY-MM-DD')}`}
                       />
                       <Badge
                         status={getStatusColor(task.status) as any}
@@ -664,21 +669,23 @@ export const OperationsDashboard: React.FC = () => {
                         {event.date} - {event.title}
                       </Text>
                       <br />
-                      <Text type='secondary'>{event.time}</Text>
-                      <Tag
-                        color={
-                          event.type === 'meeting'
-                            ? 'blue'
-                            : event.type === 'deadline'
-                            ? 'red'
-                            : event.type === 'event'
-                            ? 'green'
-                            : 'purple'
-                        }
-                      >
-                        {event.type.charAt(0).toUpperCase() +
-                          event.type.slice(1)}
-                      </Tag>
+                      <Space>
+                        <Text type='secondary'>Time: {event.time}</Text>
+                        <Tag
+                          color={
+                            event.type === 'meeting'
+                              ? 'blue'
+                              : event.type === 'deadline'
+                              ? 'red'
+                              : event.type === 'event'
+                              ? 'green'
+                              : 'purple'
+                          }
+                        >
+                          {event.type.charAt(0).toUpperCase() +
+                            event.type.slice(1)}
+                        </Tag>
+                      </Space>
                     </Timeline.Item>
                   ))}
                 </Timeline>
