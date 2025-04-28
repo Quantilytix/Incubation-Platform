@@ -25,7 +25,9 @@ export const AdminDashboard: React.FC = () => {
 
   return (
     <div style={{ padding: '20px' }}>
-    
+      <Title level={2}>Admin Dashboard</Title>
+      <Text type="secondary">System administration and user management</Text>
+      
       <Divider />
       
       {/* Stats Overview */}
@@ -148,3 +150,4 @@ export const AdminDashboard: React.FC = () => {
     </div>
   );
 };
+

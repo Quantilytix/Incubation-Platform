@@ -173,7 +173,7 @@ export const OperationsDashboard: React.FC = () => {
         id: newId,
         title: values.title,
         date: values.date.format('YYYY-MM-DD'), // ✅ format DatePicker value
-      time: values.time ? values.time.format('HH:mm') : '',
+        time: values.time || '',
         type: values.type,
         createdAt: Timestamp.now()
       }
@@ -433,7 +433,7 @@ export const OperationsDashboard: React.FC = () => {
   ]
 
   return (
-    <div style={{ padding: '20px' }}>
+    <div>
       <Helmet>
         <title>Operations Dashboard</title>
         <meta
@@ -441,12 +441,6 @@ export const OperationsDashboard: React.FC = () => {
           content='Manage daily operations and track incubatee progress'
         />
       </Helmet>
-      <Title level={2}>Operations Dashboard</Title>
-      <Text type='secondary'>
-        Manage daily operations and track incubatee progress
-      </Text>
-
-      <Divider />
 
       {/* High-level Stats */}
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
@@ -572,7 +566,7 @@ export const OperationsDashboard: React.FC = () => {
                             </Tag>
                           </Space>
                         }
-                      description={`Due: ${task.dueDate?.toDate?.().toLocaleDateString?.() || task.dueDate || 'N/A'}`}
+                        description={`Due: ${task.dueDate}`}
                       />
                       <Badge
                         status={getStatusColor(task.status) as any}
@@ -695,66 +689,6 @@ export const OperationsDashboard: React.FC = () => {
                 >
                   View Full Calendar
                 </Button>
-              </Card>
-            </Col>
-          </Row>
-        </TabPane>
-
-        <TabPane
-          tab={
-            <span>
-              <FormOutlined />
-              Form Management
-            </span>
-          }
-          key='2'
-        >
-          <Row gutter={[16, 16]}>
-            <Col span={24}>
-              <Card
-                title='Forms & Submissions'
-                extra={
-                  <Button type='primary' onClick={goToFormManagement}>
-                    Manage All Forms
-                  </Button>
-                }
-              >
-                <Table
-                  dataSource={formSubmissions}
-                  columns={formColumns}
-                  rowKey='id'
-                  pagination={{ pageSize: 5 }}
-                />
-              </Card>
-            </Col>
-          </Row>
-        </TabPane>
-
-        <TabPane
-          tab={
-            <span>
-              <ApartmentOutlined />
-              Resource Management
-            </span>
-          }
-          key='3'
-        >
-          <Row gutter={[16, 16]}>
-            <Col span={24}>
-              <Card
-                title='Resource Allocation'
-                extra={
-                  <Button type='primary' onClick={goToResourceManagement}>
-                    Manage Resources
-                  </Button>
-                }
-              >
-                <Table
-                  dataSource={resourceAllocation}
-                  columns={resourceColumns}
-                  rowKey='id'
-                  pagination={{ pageSize: 5 }}
-                />
               </Card>
             </Col>
           </Row>

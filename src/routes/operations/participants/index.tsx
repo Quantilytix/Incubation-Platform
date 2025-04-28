@@ -1,424 +1,279 @@
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Card,
-  Table,
-  Button,
-  Space,
-  Tag,
-  Input,
-  Divider,
-  Typography,
-  Badge,
-  Tabs,
-  Select,
   Row,
   Col,
+  Table,
   Statistic,
-  Tooltip
+  Tag,
+  Button,
+  Progress,
+  Select,
+  Form,
+  Input,
+  Space
 } from 'antd'
 import {
-  SearchOutlined,
   TeamOutlined,
-  UserOutlined,
-  ApartmentOutlined,
-  CalendarOutlined,
-  StarOutlined
+  PlusOutlined,
+  CheckCircleOutlined,
+  WarningOutlined
 } from '@ant-design/icons'
+import { db } from '@/firebase'
 import { Helmet } from 'react-helmet'
+import { addDoc, collection, getDocs } from 'firebase/firestore' // addDoc to create
+import { useNavigate } from 'react-router-dom'
 
-const { Title, Text } = Typography
-const { TabPane } = Tabs
 const { Option } = Select
 
-interface Participant {
-  id: string
-  name: string
-  industry: string
-  stage: string
-  joinDate: string
-  status: string
-  mentorAssigned: boolean
-  mentorName?: string
-  dueDate: string
-  participationRate: number
-  progress: number
+const calculateProgress = (required: number, completed: number) => {
+  if (!required || required === 0) return 0
+  return Math.round((completed / required) * 100)
+}
+
+const getStatus = (progress: number) => {
+  if (progress >= 70) return 'active'
+  if (progress >= 30) return 'warning'
+  return 'inactive'
 }
 
 const OperationsParticipantsManagement: React.FC = () => {
-  const [participants, setParticipants] = useState<Participant[]>([])
+  const [form] = Form.useForm()
+  const navigate = useNavigate()
+  const [participants, setParticipants] = useState<any[]>([])
+  const [metrics, setMetrics] = useState({
+    totalParticipants: 0,
+    totalRequiredInterventions: 0,
+    totalCompletedInterventions: 0,
+    totalNeedingAssignment: 0
+  })
   const [loading, setLoading] = useState(true)
-  const [searchText, setSearchText] = useState('')
-  const [activeTab, setActiveTab] = useState('all')
 
   useEffect(() => {
+    const fetchParticipants = async () => {
+      setLoading(true)
+      try {
+        const snapshot = await getDocs(collection(db, 'participants'))
+        const participantsList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+
+        let totalRequired = 0
+        let totalCompleted = 0
+        let totalNeeding = 0
+
+        participantsList.forEach((participant: any) => {
+          const required = participant.interventions?.required || []
+          const completed = participant.interventions?.completed || []
+          const assigned = participant.interventions?.assigned || []
+
+          totalRequired += required.length
+          totalCompleted += completed.length
+
+          if (assigned.length === 0) {
+            totalNeeding += 1
+          }
+        })
+
+        setParticipants(participantsList)
+        setMetrics({
+          totalParticipants: participantsList.length,
+          totalRequiredInterventions: totalRequired,
+          totalCompletedInterventions: totalCompleted,
+          totalNeedingAssignment: totalNeeding
+        })
+      } catch (error) {
+        console.error('Error fetching participants:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
     fetchParticipants()
   }, [])
 
-  const fetchParticipants = async () => {
-    setLoading(true)
+  const handleAddParticipant = async (values: any) => {
     try {
-      // Sample data for demonstration
-      const sampleParticipants: Participant[] = [
-        {
-          id: '1',
-          name: 'TechSolutions Inc.',
-          industry: 'Software',
-          stage: 'Early',
-          joinDate: '2023-06-15',
-          status: 'active',
-          mentorAssigned: true,
-          mentorName: 'John Doe',
-          dueDate: '2023-11-15',
-          participationRate: 4,
-          progress: 32
+      const newParticipant = {
+        enterpriseName: values.enterpriseName,
+        sector: values.sector,
+        stage: values.stage,
+        developmentType: values.developmentType,
+        gender: values.gender,
+        ageGroup: values.ageGroup,
+        incubatorCode: values.incubatorCode,
+        email: values.email || '',
+        interventions: {
+          required: [],
+          assigned: [],
+          completed: [],
+          participationRate: values.participationRate ?? 0
         },
-        {
-          id: '2',
-          name: 'GreenEnergy Startup',
-          industry: 'Renewable Energy',
-          stage: 'Growth',
-          joinDate: '2023-04-10',
-          status: 'active',
-          mentorAssigned: true,
-          mentorName: 'Jane Smith',
-          dueDate: '2023-11-10',
-          participationRate: 7,
-          progress: 68
+        revenueHistory: {
+          monthly: {},
+          yearly: {}
         },
-        {
-          id: '3',
-          name: 'HealthTech Innovations',
-          industry: 'Healthcare',
-          stage: 'Scaling',
-          joinDate: '2023-02-22',
-          status: 'warning',
-          mentorAssigned: false,
-          dueDate: '2023-11-20',
-          participationRate: 5,
-          progress: 75
-        },
-        {
-          id: '4',
-          name: 'EdTech Solutions',
-          industry: 'Education',
-          stage: 'Early',
-          joinDate: '2023-07-05',
-          status: 'active',
-          mentorAssigned: true,
-          mentorName: 'Robert Johnson',
-          dueDate: '2023-12-05',
-          participationRate: 3,
-          progress: 15
-        },
-        {
-          id: '5',
-          name: 'FinTech Revolution',
-          industry: 'Finance',
-          stage: 'Growth',
-          joinDate: '2023-03-18',
-          status: 'warning',
-          mentorAssigned: false,
-          dueDate: '2023-11-25',
-          participationRate: 6,
-          progress: 52
-        },
-        {
-          id: '6',
-          name: 'AgriTech Pioneers',
-          industry: 'Agriculture',
-          stage: 'Early',
-          joinDate: '2023-08-01',
-          status: 'active',
-          mentorAssigned: true,
-          mentorName: 'Sarah Williams',
-          dueDate: '2023-12-10',
-          participationRate: 4,
-          progress: 10
-        },
-        {
-          id: '7',
-          name: 'Logistics Optimization',
-          industry: 'Transportation',
-          stage: 'Growth',
-          joinDate: '2023-05-12',
-          status: 'inactive',
-          mentorAssigned: true,
-          mentorName: 'David Miller',
-          dueDate: '2023-11-30',
-          participationRate: 5,
-          progress: 45
+        headcountHistory: {
+          monthly: {},
+          yearly: {}
         }
-      ]
+      }
 
-      setParticipants(sampleParticipants)
+      await addDoc(collection(db, 'participants'), newParticipant)
+
+      message.success('Participant added successfully!')
+      setModalOpen(false)
+      form.resetFields()
+
+      // Refresh participants
+      const snapshot = await getDocs(collection(db, 'participants'))
+      const participantsList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      setParticipants(participantsList)
     } catch (error) {
-      console.error('Error fetching participants:', error)
-    } finally {
-      setLoading(false)
+      console.error('Error adding participant:', error)
+      message.error('Failed to add participant.')
     }
-  }
-
-  const handleSearch = (value: string) => {
-    setSearchText(value)
-  }
-
-  const getFilteredParticipants = () => {
-    let filtered = [...participants]
-
-    // Filter by search text
-    if (searchText) {
-      filtered = filtered.filter(
-        participant =>
-          participant.name.toLowerCase().includes(searchText.toLowerCase()) ||
-          participant.industry.toLowerCase().includes(searchText.toLowerCase())
-      )
-    }
-
-    // Filter by tab status
-    if (activeTab !== 'all') {
-      filtered = filtered.filter(
-        participant => participant.status === activeTab
-      )
-    }
-
-    return filtered
-  }
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'active':
-        return <Badge status='success' text='Active' />
-      case 'warning':
-        return <Badge status='warning' text='At Risk' />
-      case 'inactive':
-        return <Badge status='default' text='Inactive' />
-      default:
-        return <Badge status='default' text={status} />
-    }
-  }
-
-  const getStageBadge = (stage: string) => {
-    let color = ''
-    switch (stage) {
-      case 'Early':
-        color = 'blue'
-        break
-      case 'Growth':
-        color = 'green'
-        break
-      case 'Scaling':
-        color = 'purple'
-        break
-      default:
-        color = 'default'
-    }
-
-    return <Tag color={color}>{stage}</Tag>
   }
 
   const columns = [
     {
-      title: 'Participant Name',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text: string, record: Participant) => (
-        <Space direction='vertical' size={0}>
-          <Text strong>{text}</Text>
-          <Text type='secondary' style={{ fontSize: '12px' }}>
-            {record.industry}
-          </Text>
-        </Space>
-      )
+      title: 'SME Name',
+      dataIndex: 'enterpriseName', // using enterpriseName now
+      key: 'enterpriseName'
+    },
+    {
+      title: 'Sector',
+      dataIndex: 'sector',
+      key: 'sector'
     },
     {
       title: 'Stage',
       dataIndex: 'stage',
-      key: 'stage',
-      render: (stage: string) => getStageBadge(stage)
+      key: 'stage'
     },
     {
-      title: 'Participation Rate',
-      dataIndex: 'participationRate',
-      key: 'participationRate',
-      sorter: (a: Participant, b: Participant) =>
-        a.participationRate - b.participationRate
+      title: 'Required',
+      key: 'required',
+      render: (record: any) => record.interventions?.required?.length ?? 0
+    },
+    {
+      title: 'Completed',
+      key: 'completed',
+      render: (record: any) => record.interventions?.completed?.length ?? 0
     },
     {
       title: 'Progress',
-      dataIndex: 'progress',
       key: 'progress',
-      render: (progress: number) => (
-        <Tooltip title={`${progress}% Complete`}>
-          <div
-            style={{
-              width: 100,
-              backgroundColor: '#f0f0f0',
-              borderRadius: 10,
-              height: 8
-            }}
-          >
-            <div
-              style={{
-                width: `${progress}%`,
-                backgroundColor:
-                  progress < 30
-                    ? '#ff4d4f'
-                    : progress < 70
-                    ? '#faad14'
-                    : '#52c41a',
-                borderRadius: 10,
-                height: 8
-              }}
-            />
-          </div>
-        </Tooltip>
-      ),
-      sorter: (a: Participant, b: Participant) => a.progress - b.progress
+      render: (record: any) => {
+        const required = record.interventions?.required?.length ?? 0
+        const completed = record.interventions?.completed?.length ?? 0
+        const progress = calculateProgress(required, completed)
+        return (
+          <Progress
+            percent={progress}
+            size='small'
+            status={progress === 100 ? 'success' : 'active'}
+          />
+        )
+      }
+    },
+    {
+      title: 'Participation Rate',
+      key: 'participationRate',
+      render: (record: any) =>
+        `${record.interventions?.participationRate ?? 0}%`
     },
     {
       title: 'Status',
-      dataIndex: 'status',
       key: 'status',
-      render: (status: string) => getStatusBadge(status)
+      render: (record: any) => {
+        const required = record.interventions?.required?.length ?? 0
+        const completed = record.interventions?.completed?.length ?? 0
+        const progress = calculateProgress(required, completed)
+        const status = getStatus(progress)
+
+        let color = 'default'
+        if (status === 'active') color = 'green'
+        else if (status === 'warning') color = 'orange'
+        else color = 'gray'
+
+        return <Tag color={color}>{status.toUpperCase()}</Tag>
+      }
     },
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: any, record: Participant) => (
-        <Space size='small'>
-          <Button type='primary' size='small'>
-            View Details
-          </Button>
-        </Space>
-      )
+      render: (_: any, record: any) => <Button type='link'>View</Button>
     }
   ]
 
   return (
-    <div style={{ padding: '20px' }}>
+    <div style={{ padding: 24 }}>
       <Helmet>
         <title>Participant Management | Incubation Platform</title>
-        <meta
-          name='description'
-          content='Manage and track participants in the incubation program. View company stages, assignments, and upcoming reviews.'
-        />
       </Helmet>
 
-      <Title level={2}>
-        <TeamOutlined /> Participant Management
-      </Title>
-      <Text type='secondary'>
-        Manage and track incubatee companies and their progress
-      </Text>
-
-      <Divider />
-
-      {/* Stats Overview */}
+      {/* Metrics Cards */}
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Total Participants'
-              value={participants.length}
+              value={metrics.totalParticipants}
               prefix={<TeamOutlined />}
-              valueStyle={{ color: '#1890ff' }}
             />
           </Card>
         </Col>
+
         <Col xs={24} sm={12} md={6}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
-              title='Need Consultant Assignment'
-              value={participants.filter(p => !p.mentorAssigned).length}
-              prefix={<UserOutlined />}
-              valueStyle={{ color: '#faad14' }}
+              title='Total Required Interventions'
+              value={metrics.totalRequiredInterventions}
+              prefix={<PlusOutlined />}
             />
           </Card>
         </Col>
+
         <Col xs={24} sm={12} md={6}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
-              title='Companies at Risk'
-              value={participants.filter(p => p.status === 'warning').length}
-              prefix={<ApartmentOutlined />}
-              valueStyle={{ color: '#ff4d4f' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title='Upcoming Reviews'
-              value={
-                participants.filter(p => {
-                  const reviewDate = new Date(p.dueDate)
-                  const today = new Date()
-                  const timeDiff = reviewDate.getTime() - today.getTime()
-                  const dayDiff = timeDiff / (1000 * 3600 * 24)
-                  return dayDiff <= 7 && dayDiff > 0
-                }).length
-              }
-              prefix={<CalendarOutlined />}
+              title='Total Completed Interventions'
+              value={metrics.totalCompletedInterventions}
+              prefix={<CheckCircleOutlined />}
               valueStyle={{ color: '#52c41a' }}
             />
           </Card>
         </Col>
+
+        <Col xs={24} sm={12} md={6}>
+          <Card loading={loading}>
+            <Statistic
+              title='Need Consultant Assignment'
+              value={metrics.totalNeedingAssignment}
+              prefix={<WarningOutlined />}
+              valueStyle={{ color: '#faad14' }}
+            />
+          </Card>
+        </Col>
+      </Row>
+      <Row justify='end' style={{ marginBottom: 16 }}>
+        <Button
+          type='primary'
+          onClick={() => navigate('/consultant/participants/new')}
+        >
+          + Add New Participant
+        </Button>
       </Row>
 
+      {/* Participants Table */}
       <Card>
-        <Space
-          style={{
-            marginBottom: 16,
-            display: 'flex',
-            justifyContent: 'space-between',
-            width: '100%'
-          }}
-        >
-          <Space>
-            <Input
-              placeholder='Search participants...'
-              prefix={<SearchOutlined />}
-              allowClear
-              onChange={e => handleSearch(e.target.value)}
-              style={{ width: 250 }}
-            />
-            <Select
-              placeholder='Filter by industry'
-              style={{ width: 180 }}
-              allowClear
-            >
-              <Option value='software'>Software</Option>
-              <Option value='healthcare'>Healthcare</Option>
-              <Option value='education'>Education</Option>
-              <Option value='finance'>Finance</Option>
-              <Option value='energy'>Energy</Option>
-              <Option value='agriculture'>Agriculture</Option>
-              <Option value='transportation'>Transportation</Option>
-            </Select>
-            <Select
-              placeholder='Filter by stage'
-              style={{ width: 150 }}
-              allowClear
-            >
-              <Option value='early'>Early</Option>
-              <Option value='growth'>Growth</Option>
-              <Option value='scaling'>Scaling</Option>
-            </Select>
-          </Space>
-          <Button type='primary' icon={<TeamOutlined />}>
-            Add Participant
-          </Button>
-        </Space>
-
-        <Tabs activeKey={activeTab} onChange={setActiveTab}>
-          <TabPane tab='All Participants' key='all' />
-          <TabPane tab='Active' key='active' />
-          <TabPane tab='At Risk' key='warning' />
-          <TabPane tab='Inactive' key='inactive' />
-        </Tabs>
-
         <Table
-          dataSource={getFilteredParticipants()}
+          dataSource={participants}
           columns={columns}
           rowKey='id'
           loading={loading}
