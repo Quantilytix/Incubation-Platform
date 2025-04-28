@@ -60,6 +60,15 @@ import OperationsResourceManagement from '@/routes/operations/resources'
 import OperationsCompliance from './routes/operations/compliance'
 import OperationsReports from './routes/operations/reports'
 import { ConsultantAssignments } from './routes/operations/assignments'
+import ParticipantOnboardingForm from './routes/operations/participants/new/ParticipantOnboardingForm'
+import ParticipantSuccess from './routes/operations/participants/success'
+
+// ───────────────────────────────────────────────────────────
+// 🔹 Registration Routes
+// ───────────────────────────────────────────────────────────
+import ParticipantFormalRegistration from './routes/registration/onboarding'
+
+
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Funder Routes
@@ -163,7 +172,7 @@ const App = () => {
                       />
                       <Route path='documents' element={<DocumentHub />} />
                     </Route>
-                    <Route path='consultant'>
+                     <Route path='consultant'>
                       <Route index element={<ConsultantDashboard />} />
                       <Route path='feedback' element={<FeedbackWorkspace />} />
                       <Route path='analytics' element={<ProjectAnalytics />} />
@@ -172,6 +181,20 @@ const App = () => {
                         <Route
                           path='intervention/:id'
                           element={<InterventionTrack />}
+                        />
+                      </Route>
+                      <Route path='participants'>
+                        <Route
+                          index
+                          element={<OperationsParticipantsManagement />}
+                        />
+                        <Route
+                          path='new'
+                          element={<ParticipantOnboardingForm />}
+                        />
+                        <Route
+                          path='success'
+                          element={<ParticipantSuccess />}
                         />
                       </Route>
                     </Route>
@@ -209,8 +232,13 @@ const App = () => {
                   </Route>
  <Route path='/' element={<LoginPage />} />
                   <Route path='/login' element={<LoginPage />} />
-                  <Route path='/register' element={<RegisterPage />} />
-
+                     <Route path='/registration'>
+                    <Route index element={<RegisterPage />} />
+                    <Route
+                      path='/registration/onboarding/:userId'
+                      element={<ParticipantFormalRegistration />}
+                    />
+                  </Route>
                   <Route path='*' element={<h1>Page Not Found</h1>} />
                 </Routes>
 
