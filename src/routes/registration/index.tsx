@@ -46,7 +46,6 @@ export const RegisterPage: React.FC = () => {
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
         email: user.email,
-        role: values.role,
         name: values.name || '',
         createdAt: new Date().toISOString()
       })
@@ -56,7 +55,7 @@ export const RegisterPage: React.FC = () => {
       setRedirecting(true)
 
       setTimeout(() => {
-        navigate('/')
+        navigate(`/registration/onboarding/${user.uid}`)
       }, 2000)
     } catch (error: any) {
       message.error(error.message)
@@ -79,7 +78,6 @@ export const RegisterPage: React.FC = () => {
           uid: user.uid,
           name: user.displayName || '',
           email: user.email,
-          role: 'Incubatee', // or let user pick after redirect
           createdAt: new Date().toISOString()
         },
         { merge: true } // don't overwrite existing data
@@ -197,20 +195,6 @@ export const RegisterPage: React.FC = () => {
                   visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
                 }
               />
-            </Form.Item>
-
-            <Form.Item
-              name='role'
-              label='Role'
-              rules={[{ required: true, message: 'Please select your role' }]}
-            >
-              <Select placeholder='Select your role'>
-                <Select.Option value='Admin'>Admin</Select.Option>
-                <Select.Option value='Operations'>Operations</Select.Option>
-                <Select.Option value='Incubatee'>Incubatee</Select.Option>
-                <Select.Option value='Funder'>Funder</Select.Option>
-                <Select.Option value='Consultant'>Consultant</Select.Option>
-              </Select>
             </Form.Item>
 
             <Form.Item>
