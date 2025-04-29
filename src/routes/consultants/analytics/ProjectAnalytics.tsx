@@ -1,43 +1,66 @@
-import React from 'react'
-import { Typography, Row, Col, Card } from 'antd'
+import React, { useEffect, useState } from 'react'
+import { Typography, Row, Col, Card, Spin } from 'antd'
+import { db } from '@/firebase'
+import { collection, getDocs } from 'firebase/firestore'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 
 const { Title } = Typography
 
-export const ProjectAnalytics: React.FC = () => {
-  // Dummy SME data
-  const smes = [
-    {
-      name: 'BrightTech',
-      interventions: 5,
-      revenue: 150000,
-      headCount: 12,
-      stage: 'Growth'
-    },
-    {
-      name: 'Green Farms',
-      interventions: 3,
-      revenue: 80000,
-      headCount: 8,
-      stage: 'Startup'
-    },
-    {
-      name: 'EduNext',
-      interventions: 4,
-      revenue: 120000,
-      headCount: 10,
-      stage: 'Maturity'
-    }
-  ]
+interface SME {
+  id: string
+  name: string
+  interventions: number
+  revenue: number
+  headCount: number
+  stage: string
+}
 
-  // Grouped stage data
+export const ProjectAnalytics: React.FC = () => {
+  const [smes, setSMEs] = useState<SME[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchSMEs = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'participants'))
+        const data: SME[] = snapshot.docs.map(doc => {
+          const p = doc.data()
+
+          const interventionsAssigned = p.interventions?.assigned?.length || 0
+          const interventionsCompleted = p.interventions?.completed?.length || 0
+          const totalInterventions =
+            interventionsAssigned + interventionsCompleted
+
+          const revenue = p.revenueHistory?.yearly?.['2023'] || 0
+          const headCount = p.headcountHistory?.yearly?.['2023'] || 0
+
+          return {
+            id: doc.id,
+            name: p.enterpriseName || 'Unknown SME',
+            interventions: totalInterventions,
+            revenue: revenue,
+            headCount: headCount,
+            stage: p.stage || 'Unknown'
+          }
+        })
+
+        setSMEs(data)
+      } catch (error) {
+        console.error('Error fetching SMEs:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchSMEs()
+  }, [])
+
   const stageCounts = smes.reduce<Record<string, number>>((acc, sme) => {
     acc[sme.stage] = (acc[sme.stage] || 0) + 1
     return acc
   }, {})
 
-  // 📊 Interventions Bar Chart
   const interventionsChart: Highcharts.Options = {
     chart: { type: 'column' },
     title: { text: 'Interventions per SME' },
@@ -52,7 +75,6 @@ export const ProjectAnalytics: React.FC = () => {
     ]
   }
 
-  // 💰 Revenue Chart
   const revenueChart: Highcharts.Options = {
     chart: { type: 'spline' },
     title: { text: 'Revenue by SME (R)' },
@@ -68,13 +90,12 @@ export const ProjectAnalytics: React.FC = () => {
     series: [
       {
         name: 'Revenue',
-        type: 'spline', // ✅ Match chart type
+        type: 'spline',
         data: smes.map(s => s.revenue)
       }
     ]
   }
 
-  // 👥 Head Count Chart
   const headCountChart: Highcharts.Options = {
     chart: { type: 'bar' },
     title: { text: 'Head Count per SME' },
@@ -89,7 +110,6 @@ export const ProjectAnalytics: React.FC = () => {
     ]
   }
 
-  // 📈 Life Cycle Stages
   const lifeCycleChart: Highcharts.Options = {
     chart: { type: 'pie' },
     title: { text: 'Life Cycle Stage Distribution' },
@@ -109,34 +129,44 @@ export const ProjectAnalytics: React.FC = () => {
     <div style={{ padding: 24 }}>
       <Title level={3}>Project Analytics</Title>
 
-      <Row gutter={[24, 24]}>
-        <Col xs={24} lg={12}>
-          <Card>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={interventionsChart}
-            />
-          </Card>
-        </Col>
+      {loading ? (
+        <Spin size='large' />
+      ) : (
+        <Row gutter={[24, 24]}>
+          <Col xs={24} lg={12}>
+            <Card>
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={interventionsChart}
+              />
+            </Card>
+          </Col>
 
-        <Col xs={24} lg={12}>
-          <Card>
-            <HighchartsReact highcharts={Highcharts} options={revenueChart} />
-          </Card>
-        </Col>
+          <Col xs={24} lg={12}>
+            <Card>
+              <HighchartsReact highcharts={Highcharts} options={revenueChart} />
+            </Card>
+          </Col>
 
-        <Col xs={24} lg={12}>
-          <Card>
-            <HighchartsReact highcharts={Highcharts} options={headCountChart} />
-          </Card>
-        </Col>
+          <Col xs={24} lg={12}>
+            <Card>
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={headCountChart}
+              />
+            </Card>
+          </Col>
 
-        <Col xs={24} lg={12}>
-          <Card>
-            <HighchartsReact highcharts={Highcharts} options={lifeCycleChart} />
-          </Card>
-        </Col>
-      </Row>
+          <Col xs={24} lg={12}>
+            <Card>
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={lifeCycleChart}
+              />
+            </Card>
+          </Col>
+        </Row>
+      )}
     </div>
   )
 }

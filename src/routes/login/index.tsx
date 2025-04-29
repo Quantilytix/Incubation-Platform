@@ -41,6 +41,31 @@ export const LoginPage: React.FC = () => {
     'director',
     'projectadmin'
   ]
+  async function checkAndSetupUser (user) {
+    const userRef = doc(db, 'users', user.uid)
+    const userSnap = await getDoc(userRef)
+
+    if (!userSnap.exists()) {
+      await setDoc(userRef, {
+        uid: user.uid,
+        email: user.email,
+        name: '',
+        role: 'director', // if you know beforehand
+        company: '',
+        companyCode: '',
+        firstLoginComplete: false,
+        createdAt: new Date().toISOString()
+      })
+      return { isFirstLogin: true, role: 'director', firstLoginComplete: false }
+    } else {
+      const data = userSnap.data()
+      return {
+        isFirstLogin: false,
+        role: normalizeRole(data?.role || ''),
+        firstLoginComplete: data?.firstLoginComplete || false
+      }
+    }
+  }
 
   const handleLogin = async (values: any) => {
     try {
@@ -51,19 +76,12 @@ export const LoginPage: React.FC = () => {
         values.password
       )
       const user = userCred.user
-      const userRef = doc(db, 'users', user.uid)
-      const userSnap = await getDoc(userRef)
 
-      if (!userSnap.exists()) {
-        message.error('No user record found in Firestore.')
-        return
-      }
-
-      const rawRole = userSnap.data()?.role || ''
-      const role = normalizeRole(rawRole)
+      const { isFirstLogin, role, firstLoginComplete } =
+        await checkAndSetupUser(user)
 
       if (!supportedRoles.includes(role)) {
-        message.error(`🚫 The role "${rawRole}" is not recognized.`)
+        message.error(`🚫 The role "${role}" is not recognized.`)
         return
       }
 
@@ -71,7 +89,11 @@ export const LoginPage: React.FC = () => {
       setRedirecting(true)
 
       setTimeout(() => {
-        navigate(`/${role}`)
+        if (role === 'director' && !firstLoginComplete) {
+          navigate('/director/onboarding')
+        } else {
+          navigate(`/${role}`)
+        }
       }, 2000)
     } catch (error: any) {
       console.error(error)
@@ -88,34 +110,23 @@ export const LoginPage: React.FC = () => {
       const result = await signInWithPopup(auth, provider)
       const user = result.user
 
-      const userRef = doc(db, 'users', user.uid)
-      const userSnap = await getDoc(userRef)
+      const { isFirstLogin, role, firstLoginComplete } =
+        await checkAndSetupUser(user)
 
-      let role = 'participants' // fallback role if user doesn't exist
-
-      if (!userSnap.exists()) {
-        await setDoc(userRef, {
-          uid: user.uid,
-          email: user.email,
-          name: user.displayName || '',
-          role,
-          createdAt: new Date().toISOString()
-        })
-      } else {
-        const rawRole = userSnap.data()?.role || ''
-        role = normalizeRole(rawRole)
-
-        if (!supportedRoles.includes(role)) {
-          message.error(`🚫 The role "${rawRole}" is not recognized.`)
-          return
-        }
+      if (!supportedRoles.includes(role)) {
+        message.error(`🚫 The role "${role}" is not recognized.`)
+        return
       }
 
       message.success('✅ Google login successful! Redirecting...', 2)
       setRedirecting(true)
 
       setTimeout(() => {
-        navigate(`/${role}`)
+        if (role === 'director' && !firstLoginComplete) {
+          navigate('/director-onboarding')
+        } else {
+          navigate(`/${role}`)
+        }
       }, 2000)
     } catch (error: any) {
       console.error(error)
@@ -233,7 +244,7 @@ export const LoginPage: React.FC = () => {
           <div style={{ marginTop: 24, textAlign: 'center' }}>
             Don’t have an account?{' '}
             <a
-              onClick={() => navigate('/register')}
+              onClick={() => navigate('/registration')}
               style={{ fontWeight: 500 }}
             >
               Register
@@ -256,22 +267,22 @@ export const LoginPage: React.FC = () => {
 
       <style>
         {`
-          @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-          }
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
 
-          @keyframes fadeInUp {
-            from {
-              opacity: 0;
-              transform: translateY(20px);
+            @keyframes fadeInUp {
+              from {
+                opacity: 0;
+                transform: translateY(20px);
+              }
+              to {
+                opacity: 1;
+                transform: translateY(0);
+              }
             }
-            to {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }
-        `}
+          `}
       </style>
     </Spin>
   )

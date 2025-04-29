@@ -62,20 +62,11 @@ import OperationsReports from './routes/operations/reports'
 import { ConsultantAssignments } from './routes/operations/assignments'
 import ParticipantOnboardingForm from './routes/operations/participants/new/ParticipantOnboardingForm'
 import ParticipantSuccess from './routes/operations/participants/success'
-
-// ───────────────────────────────────────────────────────────
-// 🔹 Registration Routes
-// ───────────────────────────────────────────────────────────
-import ParticipantFormalRegistration from './routes/registration/onboarding'
-
-
-
+import { ConsultantPage } from './routes/operations/consultants'
 // ───────────────────────────────────────────────────────────
 // 🔹 Funder Routes
 // ───────────────────────────────────────────────────────────
 import { FunderDashboard } from '@/routes/funder/funderDashboard'
-import { ApprovalQueue } from '@/routes/funder/approvals/approvalQueue'
-import { FundDisbursement } from '@/routes/funder/disbursements/fundDisbursement'
 import { FunderAnalytics } from '@/routes/funder/analytics/funderAnalytics'
 
 // ───────────────────────────────────────────────────────────
@@ -84,7 +75,6 @@ import { FunderAnalytics } from '@/routes/funder/analytics/funderAnalytics'
 import { IncubateeDashboard } from '@/routes/incubatee'
 import { MonthlyPerformanceForm } from '@/routes/incubatee/projects/projectSubmission'
 import { DocumentHub } from './routes/incubatee/documents/DocumentsHub'
-
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Consultant Routes
@@ -104,14 +94,30 @@ import { ImpactAnalysisForm } from './routes/projectadmin/impact'
 import InterventionsTrackingView from './routes/incubatee/interventions'
 
 // ───────────────────────────────────────────────────────────
+// 🔹 Registration Routes
+// ───────────────────────────────────────────────────────────
+import ParticipantFormalRegistration from './routes/registration/onboarding'
+
+// ───────────────────────────────────────────────────────────
 // 🔹 Utilities / Misc
 // ───────────────────────────────────────────────────────────
 import Chat from '@/routes/chat/chat'
-
+import ApplicationsPage from './routes/applications'
+import { ConsultantOnboardingForm } from './routes/operations/consultants/new'
+import { DirectorOnboardingPage } from './routes/directors/onboarding'
+import OperationsOnboardingForm from './routes/directors/operations/onboarding'
+import OperationsOnboardingDashboard from './routes/directors/operations'
+import FunderOpportunities from './routes/funder/opportunities'
+import { FunderPortfolio } from './routes/funder/portfolio'
+import FunderDueDiligence from './routes/funder/due-diligence'
+import FunderCalendarPage from './routes/funder/calendar'
+import FunderDocuments from './routes/funder/documents'
 
 const queryClient = new QueryClient()
 
 const App = () => {
+  const notificationProvider = useNotificationProvider()
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
@@ -122,7 +128,7 @@ const App = () => {
                 routerProvider={routerProvider}
                 dataProvider={dataProvider}
                 liveProvider={liveProvider}
-                notificationProvider={useNotificationProvider}
+                notificationProvider={notificationProvider}
                 authProvider={authProvider}
                 options={{
                   syncWithLocation: true,
@@ -141,28 +147,46 @@ const App = () => {
                       </Authenticated>
                     }
                   >
-                  
-
+                    <Route path='admin'>
+                      <Route index element={<AdminDashboard />} />
+                      <Route path='forms' element={<FormManagement />} />
+                    </Route>
                     <Route path='projectadmin'>
                       <Route index element={<ProjectAdminDashboard />} />
-                      <Route
-                        path='compliance'
-                        element={<OperationsCompliance />}
-                      />
                       <Route path='impact' element={<ImpactAnalysisForm />} />
                       <Route
                         path='monitoring'
                         element={<MonitoringEvaluationSection />}
                       />
                     </Route>
-                    <Route path='director' element={<DirectorDashboard />} />
+
+                    <Route path='director'>
+                      <Route index element={<DirectorDashboard />} />
+                      <Route
+                        path='operators'
+                        element={<OperationsOnboardingDashboard />}
+                      />
+                    </Route>
+
+                    {/* Funder Routes */}
                     <Route path='funder'>
                       <Route index element={<FunderDashboard />} />
+                      <Route
+                        path='opportunities'
+                        element={<FunderOpportunities />}
+                      />
+                      <Route path='portfolio' element={<FunderPortfolio />} />
+                      <Route
+                        path='due-diligence'
+                        element={<FunderDueDiligence />}
+                      />
                       <Route path='analytics' element={<FunderAnalytics />} />
+                      <Route path='documents' element={<FunderDocuments />} />
+                      <Route path='calendar' element={<FunderCalendarPage />} />
                     </Route>
                     <Route path='incubatee'>
                       <Route index element={<IncubateeDashboard />} />
-                       <Route
+                      <Route
                         path='interventions'
                         element={<InterventionsTrackingView />}
                       />
@@ -172,7 +196,7 @@ const App = () => {
                       />
                       <Route path='documents' element={<DocumentHub />} />
                     </Route>
-                     <Route path='consultant'>
+                    <Route path='consultant'>
                       <Route index element={<ConsultantDashboard />} />
                       <Route path='feedback' element={<FeedbackWorkspace />} />
                       <Route path='analytics' element={<ProjectAnalytics />} />
@@ -201,10 +225,6 @@ const App = () => {
 
                     <Route path='operations'>
                       <Route index element={<OperationsDashboard />} />
-                      <Route 
-                        path='admin' 
-                        element={<AdminDashboard />}
-                      />
                       <Route
                         path='forms'
                         element={<OperationsFormsManagement />}
@@ -217,6 +237,13 @@ const App = () => {
                         path='participants'
                         element={<OperationsParticipantsManagement />}
                       />
+                      <Route path='consultants'>
+                        <Route index element={<ConsultantPage />} />
+                        <Route
+                          path='new'
+                          element={<ConsultantOnboardingForm />}
+                        />
+                      </Route>
                       <Route
                         path='resources'
                         element={<OperationsResourceManagement />}
@@ -229,16 +256,22 @@ const App = () => {
                     </Route>
 
                     <Route path='chat' element={<Chat />} />
+                    <Route path='applications' element={<ApplicationsPage />} />
                   </Route>
- <Route path='/' element={<LoginPage />} />
+                  <Route path='/' element={<LoginPage />} />
                   <Route path='/login' element={<LoginPage />} />
-                     <Route path='/registration'>
+                  <Route
+                    path='/director/onboarding'
+                    element={<DirectorOnboardingPage />}
+                  />
+                  <Route path='/registration'>
                     <Route index element={<RegisterPage />} />
                     <Route
                       path='/registration/onboarding/:userId'
                       element={<ParticipantFormalRegistration />}
                     />
                   </Route>
+
                   <Route path='*' element={<h1>Page Not Found</h1>} />
                 </Routes>
 

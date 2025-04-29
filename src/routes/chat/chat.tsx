@@ -1,4 +1,3 @@
-// 👇 This is the Chat.tsx component updated with full role logic including operations and admin access scope
 import React, { useState, useEffect, useRef } from 'react'
 import {
   Avatar,
@@ -8,7 +7,8 @@ import {
   Typography,
   Space,
   Card,
-  Spin
+  Spin,
+  message as AntdMessage
 } from 'antd'
 import { SendOutlined } from '@ant-design/icons'
 import { useGetIdentity } from '@refinedev/core'
@@ -26,7 +26,10 @@ export const Chat = () => {
       sender: 'system',
       avatar: '🤖',
       content: 'Hi there! How can I assist you today?',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit'
+      })
     }
   ])
   const [input, setInput] = useState('')
@@ -45,62 +48,9 @@ export const Chat = () => {
     fetchUserRole()
   }, [identity])
 
-  // 🎯 Smart reply mappings
-  const predefinedResponses: Record<string, Record<string, string>> = {
-    projectadmin: {
-      'top 5 interventions': '📈 Top 5: CRM, Mentorship, Marketing, Branding, Linkages',
-      'average consultant ratings': '⭐ Ratings: Finance 4.6, Marketing 4.5, Ops 4.7',
-      'filter interventions by category': '📊 Income vs Expense by Category: R120k vs R85k',
-      'top 10 companies': '🏢 Top Companies: AgriX, EduPro, BioLife...',
-      'lagging analysis': '📉 Lag effect: March Marketing: 40%, April: 65%, May: 82%',
-      'distribution by gender and age': '👥 Gender: 58% Female | Youth: 42%, Adults: 50%'
-    },
-    admin: {
-      'registered users': '🔐 Users: 58 total (Admins: 2, Consultants: 24, Participants: 32)',
-      'active consultants': '📋 11 Consultants have ≥3 active assignments.',
-      'haven\'t submitted monthly performance': '⏱️ SMEs: FinNext, BlueWave, CodeMakers',
-      'summary of interventions per enterprise': '📊 Supplier Dev: 18, Enterprise Dev: 42',
-      'interventions created in past 60': '📅 34 Interventions created by J. Mokoena & Team'
-    },
-    participant: {
-      'completed this year': '✅ You’ve completed 6 interventions so far this year.',
-      'documents pending': '📄 Pending: Management Accounts, Tax Pin'
-    },
-    operations: {
-      'intervention assignments by sector': '📌 Manufacturing: 10, ICT: 8, Agri: 12',
-      'consultants with most active': '🏆 Consultant Leaders:\n- L. Dlamini: 8\n- T. Nkosi: 7',
-      'smes not uploaded compliance': '📂 6 SMEs missing compliance docs.',
-      'assigned last month': '📦 Grouped Interventions:\nGreenGrow: 3\nTechSpark: 2',
-      'cancelled interventions in q1': '❌ Cancelled: 5 (Jan: 1, Feb: 2, Mar: 2)',
-      'missing bee or taxpin': '⚠️ Missing: NeoFarms, SmartMobility'
-    }
-  }
-
-// 🔄 Normalize function (removes punctuation, lowercases, trims)
-const normalize = (str: string) =>
-  str.toLowerCase().replace(/[^\w\s]/gi, '').trim()
-
-// 🎯 Updated matcher
-const matchResponse = (role: string, query: string) => {
-  const roleData = predefinedResponses[role]
-  if (!roleData) return null
-
-  const normalizedQuery = normalize(query)
-
-  const key = Object.keys(roleData).find(rawKey => {
-    const normalizedKey = normalize(rawKey)
-    return (
-      normalizedQuery.includes(normalizedKey) ||
-      normalizedKey.includes(normalizedQuery)
-    )
-  })
-
-  return key ? roleData[key] : null
-}
-
-
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!input.trim()) return
+
     const userMessage = {
       id: messages.length + 1,
       sender: 'user',
@@ -111,18 +61,28 @@ const matchResponse = (role: string, query: string) => {
         minute: '2-digit'
       })
     }
+
     setMessages(prev => [...prev, userMessage])
     setInput('')
-    simulateTyping(input)
+    await sendToAI(input)
   }
 
-  const simulateTyping = (query: string) => {
+  const sendToAI = async (query: string) => {
     setIsTyping(true)
-    setTimeout(() => {
-      setIsTyping(false)
-      const replyText =
-        (userRole && matchResponse(userRole, query)) ||
-        '🤖 Sorry, I couldn’t find that information yet.'
+
+    try {
+      const response = await fetch('https://rairo-incu-api.hf.space', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ inputs: query })
+      })
+
+      const data = await response.json()
+
+      const replyText = data.generated_text || '🤖 Sorry, no reply available.'
+
       setMessages(prev => [
         ...prev,
         {
@@ -136,7 +96,12 @@ const matchResponse = (role: string, query: string) => {
           })
         }
       ])
-    }, 1200)
+    } catch (error) {
+      console.error('Error communicating with AI:', error)
+      AntdMessage.error('Failed to connect to AI service.')
+    } finally {
+      setIsTyping(false)
+    }
   }
 
   useEffect(() => {

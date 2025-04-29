@@ -22,7 +22,15 @@ import {
 import { Helmet } from 'react-helmet'
 import { useGetIdentity } from '@refinedev/core'
 import { useNavigate } from 'react-router-dom'
-import { collection, getDocs, setDoc, doc, Timestamp } from 'firebase/firestore'
+import {
+  collection,
+  getDoc,
+  setDoc,
+  doc,
+  Timestamp,
+  updateDoc,
+  getDocs
+} from 'firebase/firestore'
 import { db } from '@/firebase'
 
 const { Title, Text, Paragraph } = Typography
@@ -46,8 +54,9 @@ interface Assignment {
     comments: string
   }
   timeSpentHours?: number
-  targetType?: 'percentage' | 'number' // 🔥 NEW
-  targetValue?: number // 🔥 NEW
+  targetType?: 'percentage' | 'number'
+  targetValue?: number
+  targetMetric?: string
 }
 
 interface UserIdentity {
@@ -61,7 +70,8 @@ interface UserIdentity {
 interface Participant {
   id: string
   name: string
-  requiredInterventions: { id: string; title: string }[] // <-- Important
+  requiredInterventions: { id: string; title: string }[]
+  completedInterventions: { id: string; title: string }[]
 }
 interface Intervention {
   id: string
@@ -87,7 +97,6 @@ export const ConsultantAssignments: React.FC = () => {
 
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [loading, setLoading] = useState(true)
-  const [sessionModalVisible, setSessionModalVisible] = useState(false)
   const [selectedAssignment, setSelectedAssignment] =
     useState<Assignment | null>(null)
   const [selectedType, setSelectedType] = useState<'singular' | 'grouped'>(
@@ -100,6 +109,7 @@ export const ConsultantAssignments: React.FC = () => {
   const [assignmentModalVisible, setAssignmentModalVisible] = useState(false)
   const [assignmentForm] = Form.useForm()
   const [dataLoaded, setDataLoaded] = useState(false)
+  const [newAssignmentId, setNewAssignmentId] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchParticipantsConsultantsAndInterventions = async () => {
@@ -119,7 +129,8 @@ export const ConsultantAssignments: React.FC = () => {
           return {
             id: doc.id,
             name: data.name,
-            requiredInterventions: data.interventions?.required || []
+            requiredInterventions: data.interventions?.required || [],
+            completedInterventions: data.interventions?.completed || []
           }
         })
 
@@ -145,7 +156,7 @@ export const ConsultantAssignments: React.FC = () => {
         setConsultants(fetchedConsultants)
         setInterventions(fetchedInterventions)
         setParticipantInterventionMap(map)
-        setDataLoaded(true) // 🛑 IMPORTANT! Flag when data is loaded
+        setDataLoaded(true)
       } catch (error) {
         console.error(
           '❌ Error fetching participants, consultants or interventions:',
@@ -210,38 +221,6 @@ export const ConsultantAssignments: React.FC = () => {
     }
   }, [dataLoaded, participants, consultants, interventions])
 
-  const showSessionModal = (assignment: Assignment) => {
-    setSelectedAssignment(assignment)
-    sessionForm.resetFields()
-    setSessionModalVisible(true)
-  }
-
-  const handleRecordSession = async (values: any) => {
-    if (!selectedAssignment) return
-
-    try {
-      const updatedAssignments = assignments.map(a => {
-        if (a.id === selectedAssignment.id) {
-          return {
-            ...a,
-            dueDate: Timestamp.now(),
-            nextSessionDate: values.nextSessionDate
-              ? Timestamp.fromDate(values.nextSessionDate.toDate())
-              : undefined
-          }
-        }
-        return a
-      })
-
-      setAssignments(updatedAssignments)
-      setSessionModalVisible(false)
-      message.success('Session recorded successfully')
-    } catch (error) {
-      console.error('Error recording session:', error)
-      message.error('Failed to record session')
-    }
-  }
-
   const showNotesModal = (assignment: Assignment) => {
     setSelectedAssignment(assignment)
     notesForm.setFieldsValue({
@@ -279,21 +258,63 @@ export const ConsultantAssignments: React.FC = () => {
       content: 'Are you sure you want to mark this assignment as completed?',
       onOk: async () => {
         try {
-          const updatedAssignments = assignments.map(a => {
-            if (a.id === assignmentId) {
-              return {
-                ...a,
-                status: 'completed'
-              }
-            }
-            return a
+          const assignmentToComplete = assignments.find(
+            a => a.id === assignmentId
+          )
+          if (!assignmentToComplete) {
+            message.error('Assignment not found')
+            return
+          }
+
+          // 1. Update the assignment status locally
+          const updatedAssignments = assignments.map(a =>
+            a.id === assignmentId ? { ...a, status: 'completed' } : a
+          )
+          setAssignments(updatedAssignments)
+
+          // 2. Update Firestore for this assignment
+          await setDoc(doc(db, 'assignedInterventions', assignmentId), {
+            ...assignmentToComplete,
+            status: 'completed'
           })
 
-          setAssignments(updatedAssignments)
-          message.success('Assignment marked as completed')
+          // 3. Update Participant's completedInterventions array
+          const participantRef = doc(
+            db,
+            'participants',
+            assignmentToComplete.participantId
+          )
+          const participantSnap = await getDoc(participantRef)
+
+          if (participantSnap.exists()) {
+            const participantData = participantSnap.data()
+            const currentCompleted: any[] =
+              participantData.interventions?.completed || []
+
+            // Add the interventionId if not already added
+            const interventionIdToAdd = assignmentToComplete.interventionId
+            const interventionTitleToAdd =
+              assignmentToComplete.interventionTitle
+
+            if (
+              !currentCompleted.some(comp => comp.id === interventionIdToAdd)
+            ) {
+              const updatedCompleted = [
+                ...currentCompleted,
+                { id: interventionIdToAdd, title: interventionTitleToAdd }
+              ]
+              await updateDoc(participantRef, {
+                'interventions.completed': updatedCompleted
+              })
+            }
+          }
+
+          message.success(
+            'Assignment marked as completed and participant progress updated! 🎯'
+          )
         } catch (error) {
-          console.error('Error updating assignment:', error)
-          message.error('Failed to update assignment')
+          console.error('Error completing assignment:', error)
+          message.error('Failed to complete assignment')
         }
       }
     })
@@ -527,8 +548,14 @@ export const ConsultantAssignments: React.FC = () => {
                 type: values.type,
                 targetType: values.targetType,
                 targetValue: values.targetValue,
-                status: 'active',
-                createdAt: Timestamp.now()
+                targetMetric: values.targetMetric,
+                status: 'assigned', // ✅
+                consultantStatus: 'pending', // ✅
+                userStatus: 'pending', // ✅
+                consultantCompletion: 'pending', // ✅
+                userCompletion: 'pending', // ✅
+                createdAt: Timestamp.now(),
+                updatedAt: Timestamp.now()
               }
 
               await setDoc(
@@ -536,10 +563,13 @@ export const ConsultantAssignments: React.FC = () => {
                 newAssignment
               )
 
+              setNewAssignmentId(newId)
+
+              fetchAssignments()
+
               message.success('New intervention assigned successfully')
               setAssignmentModalVisible(false)
               assignmentForm.resetFields()
-              // 🔥 Optional: Reload assigned interventions table here
             } catch (error) {
               console.error('❌ Error assigning intervention:', error)
               message.error('Failed to create assignment')
@@ -660,6 +690,16 @@ export const ConsultantAssignments: React.FC = () => {
               </Select.Option>
             </Select>
           </Form.Item>
+          <Form.Item
+            name='targetMetric'
+            label='Target Metric'
+            rules={[{ required: true, message: 'Please select target metric' }]}
+          >
+            <Select placeholder='Select or type a target metric' mode='tags'>
+              <Select.Option value='hours'>Hours</Select.Option>
+              <Select.Option value='sessions'>Sessions</Select.Option>
+            </Select>
+          </Form.Item>
 
           <Form.Item
             name='targetValue'
@@ -676,6 +716,18 @@ export const ConsultantAssignments: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+      <style>
+        {`
+      .highlghted {
+        background-color: #e6fffb !important;
+        animation: fadeOut 8s forwards;
+      }
+      @keyframes fadeOut {
+        0% {background-color: #e6fffb; }
+        100% {background-color: white; }
+      }
+      `}
+      </style>
     </div>
   )
 }

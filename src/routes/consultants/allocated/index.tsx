@@ -134,7 +134,8 @@ export const AssignedInterventions: React.FC = () => {
       try {
         const q = query(
           collection(db, 'assignedInterventions'),
-          where('consultantId', '==', consultantId)
+          where('consultantId', '==', consultantId),
+          where('status', 'in', ['assigned', 'in-progress']) // 👈 only fetch active
         )
         const snapshot = await getDocs(q)
         const data = snapshot.docs.map(doc => ({
