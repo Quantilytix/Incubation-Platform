@@ -71,17 +71,23 @@ export const Chat = () => {
     setIsTyping(true)
 
     try {
-      const response = await fetch('https://rairo-incu-api.hf.space', {
+      const response = await fetch('https://rairo-incu-api.hf.space/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ inputs: query })
+        body: JSON.stringify({
+          user_query: query
+        })
       })
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`)
+      }
 
       const data = await response.json()
 
-      const replyText = data.generated_text || '🤖 Sorry, no reply available.'
+      const replyText = data.reply || '🤖 No meaningful response received.'
 
       setMessages(prev => [
         ...prev,
@@ -98,7 +104,7 @@ export const Chat = () => {
       ])
     } catch (error) {
       console.error('Error communicating with AI:', error)
-      AntdMessage.error('Failed to connect to AI service.')
+      AntdMessage.error('AI service error: ' + String(error))
     } finally {
       setIsTyping(false)
     }
