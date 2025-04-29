@@ -172,9 +172,7 @@ export const ConsultantAssignments: React.FC = () => {
       fetchParticipantsConsultantsAndInterventions()
     }
   }, [user])
-
-  useEffect(() => {
-    const fetchAssignments = async () => {
+   const fetchAssignments = async () => {
       try {
         const snapshot = await getDocs(collection(db, 'assignedInterventions'))
         const fetchedAssignments: Assignment[] = snapshot.docs.map(doc => ({
@@ -215,6 +213,7 @@ export const ConsultantAssignments: React.FC = () => {
       }
     }
 
+  useEffect(() => {
     if (dataLoaded) {
       setLoading(true)
       fetchAssignments()
