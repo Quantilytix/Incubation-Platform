@@ -116,7 +116,9 @@ export const CustomLayout: React.FC = () => {
       },
       {
         key: 'reports',
-        to: '/projectadmin/reports',
+       to: '/operations/reports',
+
+        
         label: 'Reports',
         icon: <ReadOutlined />
       }
