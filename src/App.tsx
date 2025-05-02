@@ -105,13 +105,13 @@ import Chat from '@/routes/chat/chat'
 import ApplicationsPage from './routes/applications'
 import { ConsultantOnboardingForm } from './routes/operations/consultants/new'
 import { DirectorOnboardingPage } from './routes/directors/onboarding'
-import OperationsOnboardingForm from './routes/directors/operations/onboarding'
 import OperationsOnboardingDashboard from './routes/directors/operations'
-import FunderOpportunities from './routes/funder/opportunities'
-import { FunderPortfolio } from './routes/funder/portfolio'
-import FunderDueDiligence from './routes/funder/due-diligence'
-import FunderCalendarPage from './routes/funder/calendar'
-import FunderDocuments from './routes/funder/documents'
+import ParticipantRegistrationStepForm from './routes/registration/onboarding'
+import ProgramManager from './routes/programs'
+import ProgramExpenseForm from './routes/expenses'
+import GenericProgramExpenseForm from './routes/expenses'
+import SystemSetupForm from './routes/system'
+import InterventionDatabaseView from './routes/interventions'
 
 const queryClient = new QueryClient()
 
@@ -159,7 +159,6 @@ const App = () => {
                         element={<MonitoringEvaluationSection />}
                       />
                     </Route>
-
                     <Route path='director'>
                       <Route index element={<DirectorDashboard />} />
                       <Route
@@ -167,22 +166,10 @@ const App = () => {
                         element={<OperationsOnboardingDashboard />}
                       />
                     </Route>
-
                     {/* Funder Routes */}
                     <Route path='funder'>
                       <Route index element={<FunderDashboard />} />
-                      <Route
-                        path='opportunities'
-                        element={<FunderOpportunities />}
-                      />
-                      <Route path='portfolio' element={<FunderPortfolio />} />
-                      <Route
-                        path='due-diligence'
-                        element={<FunderDueDiligence />}
-                      />
                       <Route path='analytics' element={<FunderAnalytics />} />
-                      <Route path='documents' element={<FunderDocuments />} />
-                      <Route path='calendar' element={<FunderCalendarPage />} />
                     </Route>
                     <Route path='incubatee'>
                       <Route index element={<IncubateeDashboard />} />
@@ -214,7 +201,7 @@ const App = () => {
                         />
                         <Route
                           path='new'
-                          element={<ParticipantOnboardingForm />}
+                          element={<ParticipantRegistrationStepForm />}
                         />
                         <Route
                           path='success'
@@ -222,7 +209,6 @@ const App = () => {
                         />
                       </Route>
                     </Route>
-
                     <Route path='operations'>
                       <Route index element={<OperationsDashboard />} />
                       <Route
@@ -254,9 +240,19 @@ const App = () => {
                       />
                       <Route path='reports' element={<OperationsReports />} />
                     </Route>
-
+                    <Route
+                      path='interventions'
+                      element={<InterventionDatabaseView />}
+                    />
                     <Route path='chat' element={<Chat />} />
+                    <Route
+                      path='expenses'
+                      element={<GenericProgramExpenseForm />}
+                    />
+                    <Route path='system' element={<SystemSetupForm />} />
+
                     <Route path='applications' element={<ApplicationsPage />} />
+                    <Route path='programs' element={<ProgramManager />} />
                   </Route>
                   <Route path='/' element={<LoginPage />} />
                   <Route path='/login' element={<LoginPage />} />

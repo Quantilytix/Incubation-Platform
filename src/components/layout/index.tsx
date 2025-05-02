@@ -9,21 +9,29 @@ import {
   MenuUnfoldOutlined,
   MenuFoldOutlined,
   DashboardOutlined,
-  FormOutlined,
-  FundOutlined,
+  PieChartOutlined,
+  BarChartOutlined,
+  FundProjectionScreenOutlined,
+  FileTextOutlined,
+  ReadOutlined,
   FileSearchOutlined,
+  UsergroupAddOutlined,
+  CheckSquareOutlined,
+  FileProtectOutlined,
+  PlusCircleOutlined,
+  ProjectOutlined,
+  FormOutlined,
+  LaptopOutlined,
   TeamOutlined,
   FileDoneOutlined,
   SolutionOutlined,
   MessageOutlined,
-  BarChartOutlined,
-  FileTextOutlined,
+  BankOutlined,
   UserOutlined,
   CalendarOutlined,
   AuditOutlined,
   ProfileOutlined
 } from '@ant-design/icons'
-import LepharoLogo from '@/assets/images/Lepharo.png'
 
 const { Header, Sider, Content } = Layout
 const { Title } = Typography
@@ -86,6 +94,7 @@ export const CustomLayout: React.FC = () => {
         icon: <BarChartOutlined />
       }
     ],
+
     projectadmin: [
       {
         key: 'dashboard',
@@ -97,21 +106,22 @@ export const CustomLayout: React.FC = () => {
         key: 'analytics',
         to: '/projectadmin/monitoring',
         label: 'M & E Monitoring',
-        icon: <BarChartOutlined />
+        icon: <PieChartOutlined />
       },
       {
         key: 'impact',
         to: '/projectadmin/impact',
         label: 'Impact Analytics',
-        icon: <FundOutlined />
+        icon: <FundProjectionScreenOutlined />
       },
       {
         key: 'reports',
         to: '/projectadmin/reports',
         label: 'Reports',
-        icon: <FileTextOutlined />
+        icon: <ReadOutlined />
       }
     ],
+
     funder: [
       {
         key: 'dashboard',
@@ -123,39 +133,16 @@ export const CustomLayout: React.FC = () => {
         key: 'opportunities',
         to: '/funder/opportunities',
         label: 'Opportunities',
-        icon: <FundOutlined />
-      },
-      {
-        key: 'portfolio',
-        to: '/funder/portfolio',
-        label: 'Portfolio',
-        icon: <ProfileOutlined />
-      },
-      {
-        key: 'due-diligence',
-        to: '/funder/due-diligence',
-        label: 'Due Diligence',
-        icon: <AuditOutlined />
+        icon: <PlusCircleOutlined />
       },
       {
         key: 'analytics',
         to: '/funder/analytics',
         label: 'Analytics',
         icon: <BarChartOutlined />
-      },
-      {
-        key: 'documents',
-        to: '/funder/documents',
-        label: 'Documents',
-        icon: <FileTextOutlined />
-      },
-      {
-        key: 'calendar',
-        to: '/funder/calendar',
-        label: 'Calendar',
-        icon: <CalendarOutlined />
       }
     ],
+
     consultant: [
       {
         key: 'dashboard',
@@ -167,7 +154,7 @@ export const CustomLayout: React.FC = () => {
         key: 'allocated',
         to: '/consultant/allocated',
         label: 'Interventions',
-        icon: <SolutionOutlined />
+        icon: <FileProtectOutlined />
       },
       {
         key: 'feedback',
@@ -179,9 +166,10 @@ export const CustomLayout: React.FC = () => {
         key: 'analytics',
         to: '/consultant/analytics',
         label: 'Analytics',
-        icon: <BarChartOutlined />
+        icon: <PieChartOutlined />
       }
     ],
+
     director: [
       {
         key: 'dashboard',
@@ -193,15 +181,34 @@ export const CustomLayout: React.FC = () => {
         key: 'operators',
         to: '/director/operators',
         label: 'Operators Onboarding',
-        icon: <DashboardOutlined />
+        icon: <UsergroupAddOutlined />
+      },
+      {
+        key: 'programs',
+        to: '/programs',
+        label: 'Programs Onboarding',
+        icon: <LaptopOutlined />
+      },
+      {
+        key: 'expenses',
+        to: '/expenses',
+        label: 'Project Expenses',
+        icon: <FundProjectionScreenOutlined />
+      },
+      {
+        key: 'system',
+        to: '/system',
+        label: 'System Setup',
+        icon: <BankOutlined />
       },
       {
         key: 'sponsor',
         to: '/funder',
         label: 'Sponsor View',
-        icon: <FundOutlined />
+        icon: <ProfileOutlined />
       }
     ],
+
     incubatee: [
       {
         key: 'dashboard',
@@ -225,9 +232,10 @@ export const CustomLayout: React.FC = () => {
         key: 'documents',
         to: '/incubatee/documents',
         label: 'Upload Documents',
-        icon: <FileTextOutlined />
+        icon: <FileDoneOutlined />
       }
     ],
+
     operations: [
       {
         key: 'dashboard',
@@ -239,7 +247,13 @@ export const CustomLayout: React.FC = () => {
         key: 'assignments',
         to: '/operations/assignments',
         label: 'Assignments',
-        icon: <SolutionOutlined />
+        icon: <FileProtectOutlined />
+      },
+      {
+        key: 'interventions',
+        to: '/interventions',
+        label: 'Interventions Database',
+        icon: <FileSearchOutlined />
       },
       {
         key: 'consultants',
@@ -257,13 +271,13 @@ export const CustomLayout: React.FC = () => {
         key: 'compliance',
         to: '/operations/compliance',
         label: 'Compliance',
-        icon: <FileDoneOutlined />
+        icon: <CheckSquareOutlined />
       },
       {
         key: 'resources',
         to: '/operations/resources',
         label: 'Resources',
-        icon: <FundOutlined />
+        icon: <FundProjectionScreenOutlined />
       },
       {
         key: 'applications',
@@ -272,10 +286,16 @@ export const CustomLayout: React.FC = () => {
         icon: <FormOutlined />
       },
       {
+        key: 'system',
+        to: '/system',
+        label: 'System Setup',
+        icon: <BankOutlined />
+      },
+      {
         key: 'reports',
         to: '/operations/reports',
         label: 'Reports',
-        icon: <FileTextOutlined />
+        icon: <ReadOutlined />
       }
     ]
   }
@@ -323,6 +343,7 @@ export const CustomLayout: React.FC = () => {
         onCollapse={value => setCollapsed(value)}
         collapsedWidth={80}
         width={siderWidth}
+        trigger={null}
         style={{
           background: '#ffffff',
           height: '100vh',
