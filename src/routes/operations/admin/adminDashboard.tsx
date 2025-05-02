@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Card,
   Row,
@@ -20,12 +20,23 @@ import {
   UserAddOutlined
 } from '@ant-design/icons'
 import { UserManagement } from '@/components/user-management'
+import { collection, onSnapshot } from 'firebase/firestore'
+import { db } from '@/firebase'
 
 const { Title, Text } = Typography
 const { TabPane } = Tabs
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('users')
+  const [userCount, setUserCount] = useState<number>(0)
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'users'), snapshot => {
+      setUserCount(snapshot.size)
+    })
+
+    return () => unsubscribe() // 🧹 cleanup when component unmounts
+  }, [])
 
   return (
     <div style={{ padding: '20px' }}>
@@ -40,7 +51,7 @@ export const AdminDashboard: React.FC = () => {
           <Card>
             <Statistic
               title='Total Users'
-              value={35}
+              value={userCount}
               prefix={<UserOutlined />}
             />
           </Card>
@@ -66,24 +77,6 @@ export const AdminDashboard: React.FC = () => {
         >
           <Card>
             <UserManagement />
-          </Card>
-        </TabPane>
-
-        <TabPane
-          tab={
-            <span>
-              <SettingOutlined />
-              Settings
-            </span>
-          }
-          key='settings'
-        >
-          <Card title='System Configuration'>
-            <p>This section is under development.</p>
-            <p>
-              Here you will be able to manage system-wide settings, customize
-              the platform appearance, and configure notifications.
-            </p>
           </Card>
         </TabPane>
       </Tabs>

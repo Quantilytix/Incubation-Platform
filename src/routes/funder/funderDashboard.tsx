@@ -214,16 +214,7 @@ export const FunderDashboard: React.FC = () => {
         </Col>
 
         <Col span={24}>
-          <Card>
-            <Tabs defaultActiveKey='1'>
-              <TabPane tab='SMEs' key='1'>
-                {renderSMETable()}
-              </TabPane>
-              <TabPane tab='Reports' key='2'>
-                <p>Reports content coming soon...</p>
-              </TabPane>
-            </Tabs>
-          </Card>
+          <Card>{renderSMETable()}</Card>
         </Col>
       </Row>
     </div>

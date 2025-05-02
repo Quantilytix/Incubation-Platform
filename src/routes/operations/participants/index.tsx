@@ -11,7 +11,8 @@ import {
   Select,
   Form,
   Input,
-  Space
+  Space,
+  message
 } from 'antd'
 import {
   TeamOutlined,
@@ -96,7 +97,7 @@ const OperationsParticipantsManagement: React.FC = () => {
   const handleAddParticipant = async (values: any) => {
     try {
       const newParticipant = {
-        enterpriseName: values.enterpriseName,
+        beneficiaryName: values.beneficiaryName,
         sector: values.sector,
         stage: values.stage,
         developmentType: values.developmentType,
@@ -141,9 +142,9 @@ const OperationsParticipantsManagement: React.FC = () => {
 
   const columns = [
     {
-      title: 'SME Name',
-      dataIndex: 'enterpriseName', // using enterpriseName now
-      key: 'enterpriseName'
+      title: 'Beneficiary Name',
+      dataIndex: 'beneficiaryName', // using beneficiaryName now
+      key: 'beneficiaryName'
     },
     {
       title: 'Sector',

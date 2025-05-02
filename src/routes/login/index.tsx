@@ -41,35 +41,31 @@ export const LoginPage: React.FC = () => {
     'director',
     'projectadmin'
   ]
-  async function checkAndSetupUser (user) {
+
+  async function checkUser (user) {
     const userRef = doc(db, 'users', user.uid)
     const userSnap = await getDoc(userRef)
 
     if (!userSnap.exists()) {
-      await setDoc(userRef, {
-        uid: user.uid,
-        email: user.email,
-        name: '',
-        role: 'director', // if you know beforehand
-        company: '',
-        companyCode: '',
-        firstLoginComplete: false,
-        createdAt: new Date().toISOString()
-      })
-      return { isFirstLogin: true, role: 'director', firstLoginComplete: false }
-    } else {
-      const data = userSnap.data()
+      // Don't auto-create! The user must be pre-registered
       return {
-        isFirstLogin: false,
-        role: normalizeRole(data?.role || ''),
-        firstLoginComplete: data?.firstLoginComplete || false
+        error: true,
+        message: '🚫 User not found in the system. Please contact the admin.'
       }
+    }
+
+    const data = userSnap.data()
+
+    return {
+      role: normalizeRole(data.role || ''),
+      firstLoginComplete: !!data.firstLoginComplete
     }
   }
 
   const handleLogin = async (values: any) => {
     try {
       setLoading(true)
+
       const userCred = await signInWithEmailAndPassword(
         auth,
         values.email,
@@ -77,24 +73,31 @@ export const LoginPage: React.FC = () => {
       )
       const user = userCred.user
 
-      const { isFirstLogin, role, firstLoginComplete } =
-        await checkAndSetupUser(user)
+      const result = await checkUser(user)
+
+      if (result.error) {
+        message.error(result.message)
+        return
+      }
+
+      const { role, firstLoginComplete } = result
+
+      console.log('✅ Role:', role)
+      console.log('🧭 firstLoginComplete:', firstLoginComplete)
 
       if (!supportedRoles.includes(role)) {
         message.error(`🚫 The role "${role}" is not recognized.`)
         return
       }
 
-      message.success('🎉 Login successful! Redirecting...', 2)
+      message.success('🎉 Login successful! Redirecting...', 1.5)
       setRedirecting(true)
 
-      setTimeout(() => {
-        if (role === 'director' && !firstLoginComplete) {
-          navigate('/director/onboarding')
-        } else {
-          navigate(`/${role}`)
-        }
-      }, 2000)
+      if (role === 'director' && !firstLoginComplete) {
+        navigate('/director/onboarding')
+      } else {
+        navigate(`/${role}`)
+      }
     } catch (error: any) {
       console.error(error)
       message.error('Invalid email or password.')
@@ -106,30 +109,38 @@ export const LoginPage: React.FC = () => {
   const handleGoogleLogin = async () => {
     try {
       setGoogleLoading(true)
+
       const provider = new GoogleAuthProvider()
       const result = await signInWithPopup(auth, provider)
       const user = result.user
 
-      const { isFirstLogin, role, firstLoginComplete } =
-        await checkAndSetupUser(user)
+      const userData = await checkUser(user)
+
+      if (userData.error) {
+        message.error(userData.message)
+        return
+      }
+
+      const { role, firstLoginComplete } = userData
+
+      console.log('✅ Role:', role)
+      console.log('🧭 firstLoginComplete:', firstLoginComplete)
 
       if (!supportedRoles.includes(role)) {
         message.error(`🚫 The role "${role}" is not recognized.`)
         return
       }
 
-      message.success('✅ Google login successful! Redirecting...', 2)
+      message.success('✅ Google login successful! Redirecting...', 1.5)
       setRedirecting(true)
 
-      setTimeout(() => {
-        if (role === 'director' && !firstLoginComplete) {
-          navigate('/director-onboarding')
-        } else {
-          navigate(`/${role}`)
-        }
-      }, 2000)
+      if (role === 'director' && !firstLoginComplete) {
+        navigate('/director/onboarding')
+      } else {
+        navigate(`/${role}`)
+      }
     } catch (error: any) {
-      console.error(error)
+      console.error('Google login failed:', error)
       message.error('Google login failed.')
     } finally {
       setGoogleLoading(false)
@@ -267,22 +278,22 @@ export const LoginPage: React.FC = () => {
 
       <style>
         {`
-            @keyframes fadeIn {
-              from { opacity: 0; }
-              to { opacity: 1; }
-            }
+              @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+              }
 
-            @keyframes fadeInUp {
-              from {
-                opacity: 0;
-                transform: translateY(20px);
+              @keyframes fadeInUp {
+                from {
+                  opacity: 0;
+                  transform: translateY(20px);
+                }
+                to {
+                  opacity: 1;
+                  transform: translateY(0);
+                }
               }
-              to {
-                opacity: 1;
-                transform: translateY(0);
-              }
-            }
-          `}
+            `}
       </style>
     </Spin>
   )

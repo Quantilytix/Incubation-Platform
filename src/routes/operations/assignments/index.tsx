@@ -12,7 +12,9 @@ import {
   Input,
   message,
   DatePicker,
-  Select
+  Select,
+  Row,
+  Col
 } from 'antd'
 import {
   CalendarOutlined,
@@ -40,13 +42,18 @@ type InterventionType = 'singular' | 'grouped'
 interface Assignment {
   id: string
   participantId: string
-  participantName: string
+  beneficiaryName: string
   interventionTitle: string
   type: InterventionType
   consultantId: string
   consultantName: string
-  status: 'active' | 'completed' | 'cancelled'
+  status: 'assigned' | 'in-progress' | 'completed' | 'cancelled'
+  consultantStatus: 'pending' | 'accepted' | 'declined'
+  userStatus: 'pending' | 'accepted' | 'declined'
+  consultantCompletionStatus: 'pending' | 'done'
+  userCompletionStatus: 'pending' | 'confirmed'
   createdAt: Timestamp
+  updatedAt?: Timestamp
   dueDate?: Timestamp
   notes?: string
   feedback?: {
@@ -69,7 +76,7 @@ interface UserIdentity {
 }
 interface Participant {
   id: string
-  name: string
+  beneficiaryName: string
   requiredInterventions: { id: string; title: string }[]
   completedInterventions: { id: string; title: string }[]
 }
@@ -128,7 +135,7 @@ export const ConsultantAssignments: React.FC = () => {
           const data = doc.data()
           return {
             id: doc.id,
-            name: data.name,
+            beneficiaryName: data.beneficiaryName,
             requiredInterventions: data.interventions?.required || [],
             completedInterventions: data.interventions?.completed || []
           }
@@ -172,46 +179,44 @@ export const ConsultantAssignments: React.FC = () => {
       fetchParticipantsConsultantsAndInterventions()
     }
   }, [user])
-   const fetchAssignments = async () => {
-      try {
-        const snapshot = await getDocs(collection(db, 'assignedInterventions'))
-        const fetchedAssignments: Assignment[] = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Assignment[]
+  const fetchAssignments = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'assignedInterventions'))
+      const fetchedAssignments: Assignment[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Assignment[]
 
-        const currentParticipantMap = new Map(
-          participants.map(p => [p.id, p.name])
+      const currentParticipantMap = new Map(
+        participants.map(p => [p.id, p.beneficiaryName])
+      )
+      const currentConsultantMap = new Map(consultants.map(c => [c.id, c.name]))
+
+      const enrichedAssignments = fetchedAssignments.map(assignment => {
+        const foundArea = interventions.find(
+          i => i.title === assignment.interventionTitle
         )
-        const currentConsultantMap = new Map(
-          consultants.map(c => [c.id, c.name])
-        )
 
-        const enrichedAssignments = fetchedAssignments.map(assignment => {
-          const foundArea = interventions.find(
-            i => i.title === assignment.interventionTitle
-          )
+        return {
+          ...assignment,
+          beneficiaryName:
+            currentParticipantMap.get(assignment.participantId) ||
+            'Unknown Beneficiary',
+          consultantName:
+            currentConsultantMap.get(assignment.consultantId) ||
+            'Unknown Consultant',
+          area: foundArea?.area || 'Unknown Area'
+        }
+      })
 
-          return {
-            ...assignment,
-            participantName:
-              currentParticipantMap.get(assignment.participantId) ||
-              'Unknown Participant',
-            consultantName:
-              currentConsultantMap.get(assignment.consultantId) ||
-              'Unknown Consultant',
-            area: foundArea?.area || 'Unknown Area'
-          }
-        })
-
-        setAssignments(enrichedAssignments)
-      } catch (error) {
-        console.error('Error fetching assignments:', error)
-        message.error('Failed to load assignments')
-      } finally {
-        setLoading(false)
-      }
+      setAssignments(enrichedAssignments)
+    } catch (error) {
+      console.error('Error fetching assignments:', error)
+      message.error('Failed to load assignments')
+    } finally {
+      setLoading(false)
     }
+  }
 
   useEffect(() => {
     if (dataLoaded) {
@@ -319,11 +324,46 @@ export const ConsultantAssignments: React.FC = () => {
     })
   }
 
+  const getCompositeStatus = (assignment: Assignment) => {
+    const {
+      status,
+      consultantStatus,
+      userStatus,
+      consultantCompletionStatus,
+      userCompletionStatus
+    } = assignment
+
+    if (status === 'cancelled') return { label: 'Cancelled', color: 'red' }
+    if (status === 'completed') return { label: 'Completed', color: 'green' }
+
+    if (
+      consultantStatus === 'accepted' &&
+      userStatus === 'accepted' &&
+      consultantCompletionStatus === 'done' &&
+      userCompletionStatus === 'confirmed'
+    ) {
+      return { label: 'Ready to Complete', color: 'blue' }
+    }
+
+    if (consultantStatus === 'pending' || userStatus === 'pending') {
+      return { label: 'Awaiting Acceptance', color: 'orange' }
+    }
+
+    if (
+      consultantCompletionStatus === 'pending' ||
+      userCompletionStatus === 'pending'
+    ) {
+      return { label: 'In Progress', color: 'purple' }
+    }
+
+    return { label: 'Pending', color: 'gold' }
+  }
+
   const columns = [
     {
-      title: 'Participant',
-      dataIndex: 'participantName',
-      key: 'participantName'
+      title: 'Beneficiary',
+      dataIndex: 'beneficiaryName',
+      key: 'beneficiaryName'
     },
     {
       title: 'Consultant',
@@ -337,21 +377,23 @@ export const ConsultantAssignments: React.FC = () => {
     },
     {
       title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => (
-        <Tag
-          color={
-            status === 'active'
-              ? 'green'
-              : status === 'completed'
-              ? 'blue'
-              : 'red'
-          }
-        >
-          {status.toUpperCase()}
-        </Tag>
-      )
+      key: 'compositeStatus',
+      render: (record: Assignment) => {
+        const { label, color } = getCompositeStatus(record)
+        const tooltip = `
+            Overall: ${record.status}
+            • Consultant: ${record.consultantStatus}
+            • User: ${record.userStatus}
+            • Consultant Done: ${record.consultantCompletionStatus}
+            • User Confirmed: ${record.userCompletionStatus}
+          `.trim()
+
+        return (
+          <Tooltip title={<pre style={{ margin: 0 }}>{tooltip}</pre>}>
+            <Tag color={color}>{label}</Tag>
+          </Tooltip>
+        )
+      }
     },
     {
       title: 'Due Date',
@@ -458,23 +500,136 @@ export const ConsultantAssignments: React.FC = () => {
         rowKey='id'
         loading={loading}
         expandable={{
-          expandedRowRender: record => (
-            <div style={{ padding: '20px' }}>
-              <Title level={5}>Assignment Details</Title>
+          expandedRowRender: record => {
+            const {
+              beneficiaryName,
+              consultantName,
+              type,
+              targetType,
+              targetValue,
+              targetMetric,
+              status,
+              consultantStatus,
+              userStatus,
+              consultantCompletionStatus,
+              userCompletionStatus,
+              dueDate,
+              notes
+            } = record
+
+            const formatStatus = (label: string, value: string) => (
               <Paragraph>
-                <Text strong>Assigned: </Text>
-                {record.createdAt?.toMillis
-                  ? new Date(record.createdAt.toMillis()).toLocaleDateString()
-                  : 'No assignment date available'}
+                <Text strong>{label}:</Text> <Tag>{value}</Tag>
               </Paragraph>
-              {record.notes && (
-                <div>
-                  <Text strong>Notes: </Text>
-                  <Paragraph>{record.notes}</Paragraph>
-                </div>
-              )}
-            </div>
-          )
+            )
+
+            const pendingFrom: string[] = []
+            const pendingDetails: string[] = []
+            if (record.consultantStatus === 'pending') {
+              pendingFrom.push('Consultant')
+              pendingDetails.push(
+                'Consultant has not accepted the intervention.'
+              )
+            }
+            if (record.userStatus === 'pending') {
+              pendingFrom.push('Participant')
+              pendingDetails.push(
+                'Participant has not accepted the intervention.'
+              )
+            }
+            if (record.consultantCompletionStatus === 'pending') {
+              if (!pendingFrom.includes('Consultant'))
+                pendingFrom.push('Consultant')
+              pendingDetails.push(
+                'Consultant has not marked the intervention as complete.'
+              )
+            }
+            if (record.userCompletionStatus === 'pending') {
+              if (!pendingFrom.includes('Participant'))
+                pendingFrom.push('Participant')
+              pendingDetails.push('Participant has not confirmed completion.')
+            }
+            return (
+              <div style={{ padding: '20px' }}>
+                <Title level={5}>Assignment Details</Title>
+
+                <Paragraph>
+                  <Text strong>Type:</Text> {type}
+                  <br />
+                  <Text strong>Target:</Text> {targetValue} {targetType} (
+                  {targetMetric})
+                </Paragraph>
+                <Paragraph>
+                  <Text strong>Assigned: </Text>
+                  {record.createdAt?.toMillis
+                    ? new Date(record.createdAt.toMillis()).toLocaleDateString()
+                    : 'No assignment date available'}
+                </Paragraph>
+
+                {dueDate && (
+                  <Paragraph>
+                    <Text strong>Due Date:</Text>{' '}
+                    {typeof dueDate === 'string'
+                      ? new Date(dueDate).toLocaleDateString()
+                      : dueDate.toDate?.()?.toLocaleDateString() ?? 'N/A'}
+                  </Paragraph>
+                )}
+                <>
+                  <Paragraph>
+                    <Text strong>Status Summary:</Text>
+                    <br />
+                    <Tag color='blue'>Overall: {record.status}</Tag>
+                    <Tag color='purple'>
+                      Consultant: {record.consultantStatus}
+                    </Tag>
+                    <Tag color='gold'>User: {record.userStatus}</Tag>
+                    <Tag color='cyan'>
+                      Consultant Completion: {record.consultantCompletionStatus}
+                    </Tag>
+                    <Tag color='lime'>
+                      User Confirmation: {record.userCompletionStatus}
+                    </Tag>
+                  </Paragraph>
+
+                  {record.feedback && (
+                    <Paragraph>
+                      <Text strong>Feedback:</Text>
+                      <br />
+                      <Text italic>"{record.feedback.comments}"</Text>
+                      <br />
+                      <Tag color='green'>
+                        Rating: {record.feedback.rating} / 5
+                      </Tag>
+                    </Paragraph>
+                  )}
+
+                  {record.notes && (
+                    <Paragraph>
+                      <Text strong>Notes:</Text> {record.notes}
+                    </Paragraph>
+                  )}
+                </>
+
+                {pendingDetails.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <Paragraph>
+                      <Text strong>Awaiting Action From:</Text>
+                      <br />
+                      {pendingFrom.join(', ')}
+                    </Paragraph>
+                    <Paragraph>
+                      <Text strong>Actions:</Text>
+                      <ul style={{ paddingLeft: 20 }}>
+                        {pendingDetails.map((action, idx) => (
+                          <li key={idx}>{action}</li>
+                        ))}
+                      </ul>
+                    </Paragraph>
+                  </div>
+                )}
+              </div>
+            )
+          }
         }}
       />
 
@@ -539,7 +694,7 @@ export const ConsultantAssignments: React.FC = () => {
               const newAssignment = {
                 id: newId,
                 participantId: selectedParticipant.id,
-                participantName: selectedParticipant.name,
+                beneficiaryName: selectedParticipant.beneficiaryName,
                 consultantId: selectedConsultant.id,
                 consultantName: selectedConsultant.name,
                 interventionId: selectedIntervention.id,
@@ -548,11 +703,11 @@ export const ConsultantAssignments: React.FC = () => {
                 targetType: values.targetType,
                 targetValue: values.targetValue,
                 targetMetric: values.targetMetric,
-                status: 'assigned', // ✅
-                consultantStatus: 'pending', // ✅
-                userStatus: 'pending', // ✅
-                consultantCompletion: 'pending', // ✅
-                userCompletion: 'pending', // ✅
+                status: 'assigned',
+                consultantStatus: 'pending',
+                userStatus: 'pending',
+                consultantCompletionStatus: 'pending',
+                userCompletionStatus: 'pending',
                 createdAt: Timestamp.now(),
                 updatedAt: Timestamp.now()
               }
@@ -590,18 +745,25 @@ export const ConsultantAssignments: React.FC = () => {
                 selectedParticipant?.requiredInterventions
               )
             }
+            if (changedValues.targetType) {
+              if (changedValues.targetType === 'percentage') {
+                assignmentForm.setFieldsValue({ targetMetric: 'Completion' })
+              } else {
+                assignmentForm.setFieldsValue({ targetMetric: undefined })
+              }
+            }
           }}
         >
           {/* Participant */}
           <Form.Item
             name='participant'
-            label='Select Participant'
+            label='Select Beneficiary'
             rules={[{ required: true, message: 'Please select a participant' }]}
           >
-            <Select placeholder='Choose a participant'>
+            <Select placeholder='Choose a beneficiary'>
               {participants.map(p => (
                 <Select.Option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.beneficiaryName}
                 </Select.Option>
               ))}
             </Select>
@@ -690,22 +852,60 @@ export const ConsultantAssignments: React.FC = () => {
             </Select>
           </Form.Item>
           <Form.Item
-            name='targetMetric'
-            label='Target Metric'
-            rules={[{ required: true, message: 'Please select target metric' }]}
+            shouldUpdate={(prev, curr) => prev.targetType !== curr.targetType}
+            noStyle
           >
-            <Select placeholder='Select or type a target metric' mode='tags'>
-              <Select.Option value='hours'>Hours</Select.Option>
-              <Select.Option value='sessions'>Sessions</Select.Option>
-            </Select>
-          </Form.Item>
+            {({ getFieldValue }) => {
+              const type = getFieldValue('targetType')
 
-          <Form.Item
-            name='targetValue'
-            label='Target Value'
-            rules={[{ required: true, message: 'Please input a target value' }]}
-          >
-            <Input type='number' placeholder='e.g. 10 hours or 100%' />
+              if (type === 'percentage') {
+                return (
+                  <>
+                    <Form.Item
+                      name='targetMetric'
+                      label='Percentage Goal Label'
+                    >
+                      <Input disabled value='Completion' />
+                    </Form.Item>
+                    <Form.Item
+                      name='targetValue'
+                      label='Target Completion (%)'
+                      rules={[{ required: true, message: 'Enter % target' }]}
+                    >
+                      <Input type='number' max={100} min={1} suffix='%' />
+                    </Form.Item>
+                  </>
+                )
+              }
+
+              if (type === 'number') {
+                return (
+                  <>
+                    <Form.Item
+                      name='targetMetric'
+                      label='Unit of Measure'
+                      rules={[{ required: true, message: 'Choose a metric' }]}
+                    >
+                      <Select mode='tags' placeholder='e.g. Hours, Sessions'>
+                        <Select.Option value='hours'>Hours</Select.Option>
+                        <Select.Option value='sessions'>Sessions</Select.Option>
+                      </Select>
+                    </Form.Item>
+                    <Form.Item
+                      name='targetValue'
+                      label='Target Value'
+                      rules={[
+                        { required: true, message: 'Enter numeric goal' }
+                      ]}
+                    >
+                      <Input type='number' placeholder='e.g. 5 or 10' />
+                    </Form.Item>
+                  </>
+                )
+              }
+
+              return null
+            }}
           </Form.Item>
 
           <Form.Item>

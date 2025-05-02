@@ -15,7 +15,8 @@ import {
   notification,
   Tooltip,
   Row,
-  Col
+  Col,
+  Alert
 } from 'antd'
 import {
   PlusOutlined,
@@ -23,7 +24,8 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
-  ExclamationCircleOutlined
+  ExclamationCircleOutlined,
+  FileSearchOutlined
 } from '@ant-design/icons'
 import {
   collection,
@@ -47,21 +49,51 @@ interface RequiredIntervention {
   title: string
   area: string
 }
+interface Resource {
+  type: 'document' | 'link'
+  label: string
+  link: string
+}
+
+interface Feedback {
+  rating: number
+  comments: string
+}
+
+interface Consultant {
+  name: string
+  email: string
+  expertise: string[]
+  rating: number
+}
 
 interface AssignedIntervention {
   id: string
+  interventionId: string
   participantId: string
   consultantId: string
-  areaOfSupport: string
+  beneficiaryName: string
   interventionTitle: string
+  description?: string
+  areaOfSupport: string
   dueDate: any
-  status: string
-  consultant?: {
-    name: string
-    email: string
-    expertise: string[]
-    rating: number
-  }
+  createdAt: string
+  updatedAt: string
+  type: 'singular' | 'recurring'
+  targetType: 'percentage' | 'metric' | 'custom'
+  targetMetric: string
+  targetValue: number
+  timeSpent: number
+
+  status: string // general system status (optional if you're phasing it out)
+  consultantStatus: 'pending' | 'accepted' | 'declined'
+  userStatus: 'pending' | 'accepted' | 'declined'
+  consultantCompletionStatus: 'none' | 'done'
+  userCompletionStatus: 'none' | 'confirmed' | 'rejected'
+
+  consultant?: Consultant
+  feedback?: Feedback
+  resources?: Resource[]
 }
 
 interface InterventionRequest {
@@ -92,6 +124,9 @@ const InterventionsTrackingView: React.FC = () => {
   const auth = getAuth()
   // Decline Modal
   const [isDeclineModalVisible, setIsDeclineModalVisible] = useState(false)
+  const [isDeclineCompletionModalVisible, setIsDeclineCompletionModalVisible] =
+    useState(false)
+  const [rejectCompletionForm] = Form.useForm()
   const [declineForm] = Form.useForm()
   const [declineTargetId, setDeclineTargetId] = useState<string | null>(null)
 
@@ -187,12 +222,63 @@ const InterventionsTrackingView: React.FC = () => {
     fetchRequests()
   }, [participantId])
 
+  const deriveDisplayStatus = (intervention: AssignedIntervention): string => {
+    const {
+      consultantStatus,
+      userStatus,
+      consultantCompletionStatus,
+      userCompletionStatus
+    } = intervention
+
+    // If consultant has not accepted yet
+    if (consultantStatus === 'pending') return 'Awaiting Consultant'
+
+    // Consultant accepted, incubatee has not
+    if (consultantStatus === 'accepted' && userStatus === 'pending')
+      return 'Awaiting Your Acceptance'
+
+    // Either party declined
+    if (consultantStatus === 'declined' || userStatus === 'declined')
+      return 'Declined'
+
+    // Work is underway (both accepted)
+    if (consultantStatus === 'accepted' && userStatus === 'accepted') {
+      // Consultant done, incubatee yet to confirm
+      if (consultantCompletionStatus === 'done') {
+        if (userCompletionStatus === 'none') return 'Awaiting Confirmation'
+        if (userCompletionStatus === 'confirmed') return 'Completed'
+        if (userCompletionStatus === 'rejected') return 'Rejected'
+      }
+      // Still in progress
+      return 'In Progress'
+    }
+
+    return 'Pending'
+  }
+
   // Handle accept intervention
   const handleAccept = async (id: string) => {
     try {
       await updateDoc(doc(db, 'assignedInterventions', id), {
-        status: 'accepted'
+        userStatus: 'accepted'
       })
+
+      await addDoc(collection(db, 'notifications'), {
+        participantId: selectedIntervention?.participantId,
+        consultantId: selectedIntervention?.consultantId,
+        interventionId: selectedIntervention?.id,
+        interventionTitle: selectedIntervention?.interventionTitle,
+        type: 'intervention-accepted',
+        recipientRoles: ['projectadmin', 'consultant'],
+        message: {
+          consultant: `Beneficiary ${selectedIntervention?.beneficiaryName} accepted the intervention: ${selectedIntervention?.interventionTitle}.`,
+          projectadmin: `Beneficiary ${selectedIntervention?.beneficiaryName} accepted the intervention.`,
+          incubatee: `You accepted the intervention: ${selectedIntervention?.interventionTitle}.`
+        },
+        createdAt: new Date(),
+        readBy: {}
+      })
+
       setAssignedInterventions(prev =>
         prev.map(item =>
           item.id === id ? { ...item, status: 'accepted' } : item
@@ -221,9 +307,26 @@ const InterventionsTrackingView: React.FC = () => {
     if (!declineTargetId) return
     try {
       await updateDoc(doc(db, 'assignedInterventions', declineTargetId), {
-        status: 'declined',
+        userStatus: 'declined',
         declineReason: values.reason
       })
+      await addDoc(collection(db, 'notifications'), {
+        interventionId: declineTargetId,
+        participantId: selectedIntervention?.participantId,
+        consultantId: selectedIntervention?.consultantId,
+        interventionTitle: selectedIntervention?.interventionTitle,
+        type: 'intervention-declined',
+        recipientRoles: ['projectadmin', 'consultant'],
+        message: {
+          consultant: `Beneficiary ${selectedIntervention?.beneficiaryName} declined the intervention: ${data.interventionTitle}.`,
+          projectadmin: `Beneficiary ${selectedIntervention?.beneficiaryName} declined the intervention.`,
+          incubatee: `You declined the intervention: ${selectedIntervention?.interventionTitle}.`
+        },
+        reason: values.reason,
+        createdAt: new Date(),
+        readBy: {}
+      })
+
       setAssignedInterventions(prev =>
         prev.map(item =>
           item.id === declineTargetId ? { ...item, status: 'declined' } : item
@@ -246,18 +349,46 @@ const InterventionsTrackingView: React.FC = () => {
       await updateDoc(
         doc(db, 'assignedInterventions', selectedIntervention.id),
         {
-          status: 'completed',
-          feedback: values.feedback,
-          rating: values.rating
+          userCompletionStatus: 'confirmed',
+          feedback: {
+            rating: values.rating,
+            comments: values.feedback
+          }
         }
       )
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          participantId: selectedIntervention.participantId,
+          consultantId: selectedIntervention.consultantId,
+          interventionId: selectedIntervention.id,
+          interventionTitle: selectedIntervention.interventionTitle,
+          type: 'intervention-confirmed',
+          recipientRoles: ['consultant', 'projectadmin'],
+          message: {
+            consultant: `Beneficiary ${selectedIntervention.beneficiaryName} confirmed the intervention.`,
+            projectadmin: `Intervention "${selectedIntervention.interventionTitle}" has been confirmed.`,
+            incubatee: `You confirmed the completion of: ${selectedIntervention.interventionTitle}.`
+          },
+          createdAt: new Date(),
+          readBy: {}
+        })
+      } catch (error) {}
+
       setAssignedInterventions(prev =>
         prev.map(item =>
           item.id === selectedIntervention.id
-            ? { ...item, status: 'completed' }
+            ? {
+                ...item,
+                userCompletionStatus: 'confirmed',
+                feedback: {
+                  rating: values.rating,
+                  comments: values.feedback
+                }
+              }
             : item
         )
       )
+
       setIsConfirmModalVisible(false)
       notification.success({
         message: 'Success',
@@ -269,6 +400,38 @@ const InterventionsTrackingView: React.FC = () => {
         message: 'Error',
         description: 'Failed to confirm completion.'
       })
+    }
+  }
+  const handleRejectCompletion = async (
+    intervention: AssignedIntervention,
+    reason: string
+  ) => {
+    try {
+      await updateDoc(doc(db, 'assignedInterventions', intervention.id), {
+        userCompletionStatus: 'rejected'
+      })
+
+      await addDoc(collection(db, 'notifications'), {
+        interventionId: intervention.id,
+        participantId: intervention.participantId,
+        consultantId: intervention.consultantId,
+        interventionTitle: intervention.interventionTitle,
+        type: 'completion-rejected',
+        recipientRoles: ['projectadmin', 'consultant'],
+        message: {
+          consultant: `Beneficiary ${intervention.beneficiaryName} rejected the completion of: ${intervention.interventionTitle}.`,
+          projectadmin: `Completion was rejected for intervention: ${intervention.interventionTitle}.`,
+          incubatee: `You rejected the completion of: ${intervention.interventionTitle}.`
+        },
+        reason,
+        createdAt: new Date(),
+        readBy: {}
+      })
+
+      notification.success({ message: 'Completion rejected successfully.' })
+    } catch (err) {
+      console.error(err)
+      notification.error({ message: 'Failed to reject completion.' })
     }
   }
 
@@ -297,6 +460,13 @@ const InterventionsTrackingView: React.FC = () => {
       })
     }
   }
+
+  const filteredInterventions = assignedInterventions.filter(item => {
+    if (filters.status === 'all') return true
+    return (
+      deriveDisplayStatus(item).toLowerCase() === filters.status.toLowerCase()
+    )
+  })
 
   // Filter interventions based on status
   const getFilteredInterventions = () => {
@@ -376,8 +546,6 @@ const InterventionsTrackingView: React.FC = () => {
         consultant ? (
           <Space direction='vertical' size={0}>
             <Text strong>{consultant.name}</Text>
-            <Text type='secondary'>{consultant.email}</Text>
-            <Rate disabled value={consultant.rating} />
           </Space>
         ) : (
           <Text type='secondary'>Unassigned</Text>
@@ -387,47 +555,70 @@ const InterventionsTrackingView: React.FC = () => {
       title: 'Due Date',
       dataIndex: 'dueDate',
       key: 'dueDate',
-      render: (dueDate: any) =>
-        dueDate ? dayjs(dueDate.seconds * 1000).format('YYYY-MM-DD') : '-'
+      render: (dueDate: any) => {
+        if (!dueDate) return '-'
+
+        // Handle Firestore Timestamp
+        if (dueDate.seconds) {
+          return dayjs(dueDate.seconds * 1000).format('YYYY-MM-DD')
+        }
+
+        // Handle ISO date strings or other date-valid strings
+        if (dayjs(dueDate).isValid()) {
+          return dayjs(dueDate).format('YYYY-MM-DD')
+        }
+
+        return '-'
+      }
     },
     {
       title: 'Status',
-      dataIndex: 'status',
       key: 'status',
-      render: (status: string) => {
+      render: (_: any, record: AssignedIntervention) => {
+        const status = deriveDisplayStatus(record)
         let color = 'default'
         let icon = null
+
         switch (status) {
-          case 'pendingAssignment':
+          case 'Pending':
+            color = 'default'
+            icon = <ClockCircleOutlined />
+            break
+          case 'Awaiting Consultant':
             color = 'orange'
             icon = <ExclamationCircleOutlined />
             break
-          case 'assigned':
+          case 'Awaiting Your Acceptance':
+            color = 'gold'
+            icon = <ExclamationCircleOutlined />
+            break
+          case 'In Progress':
             color = 'blue'
             icon = <ClockCircleOutlined />
             break
-          case 'requested':
+          case 'Awaiting Confirmation':
             color = 'purple'
-            icon = <FileSearchOutlined />
+            icon = <ClockCircleOutlined />
             break
-          case 'completed':
+          case 'Completed':
             color = 'green'
             icon = <CheckCircleOutlined />
             break
-          case 'ongoing':
-            color = 'blue'
-            icon = <ClockCircleOutlined />
+          case 'Declined':
+          case 'Rejected':
+            color = 'red'
+            icon = <CloseCircleOutlined />
             break
           default:
+            color = 'default'
+            icon = null
             break
         }
+
         return (
-          <Space>
-            {icon}
-            <Tag color={color}>
-              {status.charAt(0).toUpperCase() + status.slice(1)}
-            </Tag>
-          </Space>
+          <Tag color={color} icon={icon}>
+            {status}
+          </Tag>
         )
       }
     },
@@ -437,44 +628,20 @@ const InterventionsTrackingView: React.FC = () => {
       render: (_: any, record: any) => {
         return (
           <Space>
-            {record.status === 'assigned' && (
-              <>
-                <Button
-                  size='small'
-                  type='link'
-                  onClick={() => handleAccept(record.id)}
-                  icon={<CheckCircleOutlined />}
-                >
-                  Accept
-                </Button>
-                <Button
-                  size='small'
-                  danger
-                  type='link'
-                  onClick={() => showDeclineModal(record.id)}
-                  icon={<CloseCircleOutlined />}
-                >
-                  Decline
-                </Button>
-              </>
-            )}
-
-            {record.status === 'completed' && (
-              <>
-                <Tooltip title='Confirm intervention was completed successfully'>
+            {record.consultantStatus === 'accepted' &&
+              record.userStatus === 'pending' && (
+                <>
                   <Button
                     size='small'
                     type='link'
                     icon={<CheckCircleOutlined />}
                     onClick={() => {
                       setSelectedIntervention(record)
-                      setIsConfirmModalVisible(true)
+                      handleAccept(record.id)
                     }}
                   >
-                    Confirm
+                    Accept
                   </Button>
-                </Tooltip>
-                <Tooltip title='Reject completion and provide a reason'>
                   <Button
                     size='small'
                     danger
@@ -484,9 +651,76 @@ const InterventionsTrackingView: React.FC = () => {
                   >
                     Decline
                   </Button>
-                </Tooltip>
-              </>
+                </>
+              )}
+
+            {record.consultantCompletionStatus === 'done' &&
+              record.userCompletionStatus === 'none' && (
+                <>
+                  <Tooltip title='Reject completion and provide a reason'>
+                    <Button
+                      size='small'
+                      danger
+                      type='link'
+                      icon={<CloseCircleOutlined />}
+                      onClick={() => {
+                        setSelectedIntervention(record)
+                        setIsDeclineCompletionModalVisible(true)
+                      }}
+                    >
+                      Decline
+                    </Button>
+                  </Tooltip>
+                </>
+              )}
+
+            {record.consultantCompletionStatus === 'done' &&
+              record.userCompletionStatus === 'none' && (
+                <>
+                  <Tooltip title='Confirm intervention was completed successfully'>
+                    <Button
+                      size='small'
+                      type='link'
+                      icon={<CheckCircleOutlined />}
+                      onClick={() => {
+                        setSelectedIntervention(record)
+                        setIsConfirmModalVisible(true)
+                      }}
+                    >
+                      Confirm
+                    </Button>
+                  </Tooltip>
+                  <Tooltip title='Reject completion and provide a reason'>
+                    <Button
+                      size='small'
+                      danger
+                      type='link'
+                      icon={<CloseCircleOutlined />}
+                      onClick={() => showDeclineModal(record.id)}
+                    >
+                      Decline
+                    </Button>
+                  </Tooltip>
+                </>
+              )}
+            {record.consultantStatus === 'pending' && (
+              <Alert
+                type='info'
+                showIcon
+                message='Waiting for consultant to accept this intervention.'
+                style={{ marginBottom: 12 }}
+              />
             )}
+
+            {record.consultantStatus === 'accepted' &&
+              record.userStatus === 'pending' && (
+                <Alert
+                  type='warning'
+                  showIcon
+                  message='Consultant has accepted the intervention. Please accept to begin.'
+                  style={{ marginBottom: 12 }}
+                />
+              )}
           </Space>
         )
       }
@@ -511,11 +745,11 @@ const InterventionsTrackingView: React.FC = () => {
             style={{ width: '100%' }}
           >
             <Option value='all'>All</Option>
-            <Option value='pendingAssignment'>Pending Assignment</Option>
-            <Option value='assigned'>Assigned</Option>
-            <Option value='requested'>Requested</Option>
-            <Option value='completed'>Completed</Option>
-            <Option value='ongoing'>Ongoing</Option>
+            <Option value='accepted'>Accepted</Option>
+            <Option value='declined'>Declined</Option>
+            <Option value='pending'>Pending</Option>
+            <Option value='confirmed'>Completed</Option>
+            <Option value='rejected'>Rejected</Option>
           </Select>
         </Col>
         <Col xs={24} sm={12}>
@@ -537,13 +771,59 @@ const InterventionsTrackingView: React.FC = () => {
           columns={interventionColumns}
           rowKey='id'
           pagination={{ pageSize: 10 }}
+          expandable={{
+            expandedRowRender: (record: AssignedIntervention) => (
+              <div style={{ padding: '12px 24px' }}>
+                <p>
+                  <strong>Description:</strong>{' '}
+                  {record.description || (
+                    <Text type='secondary'>No description provided.</Text>
+                  )}
+                </p>
+
+                {record.resources?.length > 0 && (
+                  <>
+                    <Divider />
+                    <strong>Resources:</strong>
+                    <ul>
+                      {record.resources?.map((res, idx) => (
+                        <li key={idx}>
+                          {res.type === 'link' ? '🔗' : '📄'}{' '}
+                          <a
+                            href={res.link}
+                            target='_blank'
+                            rel='noopener noreferrer'
+                          >
+                            {res.label}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+
+                {record.feedback && (
+                  <>
+                    <Divider />
+                    <strong>Feedback:</strong>
+                    <p>
+                      <Rate disabled value={record.feedback.rating} />
+                    </p>
+                    <Text>
+                      {record.feedback.comments || 'No comments provided.'}
+                    </Text>
+                  </>
+                )}
+              </div>
+            )
+          }}
         />
       </Card>
 
       {/* Request Intervention Modal */}
       <Modal
         title='Request New Intervention'
-        visible={isRequestModalVisible}
+        open={isRequestModalVisible}
         onCancel={() => setIsRequestModalVisible(false)}
         footer={[
           <Button key='cancel' onClick={() => setIsRequestModalVisible(false)}>
@@ -601,7 +881,7 @@ const InterventionsTrackingView: React.FC = () => {
       {/* Confirm Completion Modal */}
       <Modal
         title='Confirm Completion'
-        visible={isConfirmModalVisible}
+        open={isConfirmModalVisible}
         onCancel={() => setIsConfirmModalVisible(false)}
         footer={[
           <Button key='cancel' onClick={() => setIsConfirmModalVisible(false)}>
@@ -642,11 +922,56 @@ const InterventionsTrackingView: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+      {/* Reject Completion Modal */}
+      <Modal
+        title='Reject Completion'
+        open={isDeclineCompletionModalVisible}
+        onCancel={() => setIsDeclineCompletionModalVisible(false)}
+        footer={[
+          <Button
+            key='cancel'
+            onClick={() => setIsDeclineCompletionModalVisible(false)}
+          >
+            Cancel
+          </Button>,
+          <Button
+            key='submit'
+            type='primary'
+            danger
+            onClick={() => rejectCompletionForm.submit()}
+          >
+            Submit
+          </Button>
+        ]}
+      >
+        <Form
+          form={rejectCompletionForm}
+          layout='vertical'
+          onFinish={values => {
+            if (selectedIntervention) {
+              handleRejectCompletion(selectedIntervention, values.reason)
+              setIsDeclineCompletionModalVisible(false)
+              rejectCompletionForm.resetFields()
+            }
+          }}
+        >
+          <Form.Item
+            name='reason'
+            label='Reason for Rejection'
+            rules={[{ required: true, message: 'Please provide a reason' }]}
+          >
+            <Input.TextArea
+              rows={4}
+              placeholder="Explain why you're rejecting this intervention's completion"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       {/* Decline Intervention Modal */}
       <Modal
         title='Decline Intervention'
-        visible={isDeclineModalVisible}
+        open={isDeclineModalVisible}
         onCancel={() => setIsDeclineModalVisible(false)}
         footer={[
           <Button key='cancel' onClick={() => setIsDeclineModalVisible(false)}>

@@ -34,88 +34,12 @@ import {
   ApartmentOutlined,
   AreaChartOutlined
 } from '@ant-design/icons'
+import { useEffect } from 'react'
+import { collection, getDocs } from 'firebase/firestore'
+import { db } from '@/firebase'
 
 const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
-
-// Sample data - in a real application, this would come from Firebase
-const sampleIncubateesData = [
-  {
-    id: 1,
-    name: 'TechInnovate',
-    status: 'Active',
-    compliance: 95,
-    sector: 'FinTech',
-    progress: 72,
-    risk: 'Low'
-  },
-  {
-    id: 2,
-    name: 'GreenSolutions',
-    status: 'Active',
-    compliance: 87,
-    sector: 'CleanEnergy',
-    progress: 56,
-    risk: 'Medium'
-  },
-  {
-    id: 3,
-    name: 'HealthPlus',
-    status: 'Warning',
-    compliance: 73,
-    sector: 'HealthTech',
-    progress: 45,
-    risk: 'High'
-  },
-  {
-    id: 4,
-    name: 'EduConnect',
-    status: 'Active',
-    compliance: 91,
-    sector: 'EdTech',
-    progress: 81,
-    risk: 'Low'
-  },
-  {
-    id: 5,
-    name: 'AgriTech Systems',
-    status: 'Warning',
-    compliance: 68,
-    sector: 'Agriculture',
-    progress: 38,
-    risk: 'High'
-  }
-]
-
-const sampleProgramsData = [
-  {
-    id: 1,
-    name: 'Accelerator 2024',
-    startups: 12,
-    progress: 65,
-    status: 'Active',
-    budget: 250000,
-    spent: 180000
-  },
-  {
-    id: 2,
-    name: 'Scale-Up Cohort',
-    startups: 8,
-    progress: 92,
-    status: 'Ending',
-    budget: 180000,
-    spent: 162000
-  },
-  {
-    id: 3,
-    name: 'Early Stage Ventures',
-    startups: 15,
-    progress: 38,
-    status: 'Active',
-    budget: 300000,
-    spent: 110000
-  }
-]
 
 const sampleFinancialData = [
   {
@@ -397,6 +321,56 @@ const sampleMilestoneData = [
 
 export const DirectorDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview')
+  const [programs, setPrograms] = useState<any[]>([])
+  const [incubatees, setIncubatees] = useState<any[]>([])
+  const [complianceRecords, setComplianceRecords] = useState<any[]>([])
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const programSnap = await getDocs(collection(db, 'programs'))
+        const participantSnap = await getDocs(collection(db, 'participants'))
+        const snapshot = await getDocs(collection(db, 'complianceRecords'))
+
+        setComplianceRecords(
+          snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        )
+        setPrograms(
+          programSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        )
+        setIncubatees(
+          participantSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        )
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  const getOverallComplianceRate = () => {
+    if (complianceRecords.length === 0) return 0
+    const avg =
+      complianceRecords.reduce((sum, r) => sum + r.complianceRate, 0) /
+      complianceRecords.length
+    return Math.round(avg)
+  }
+
+  const getComplianceRate = (participantId: string) => {
+    const record = complianceRecords.find(
+      r => r.participantId === participantId
+    )
+    return record?.complianceRate ?? 0
+  }
+
+  const overallCompliance = () => {
+    if (!complianceRecords.length) return 0
+    const avg =
+      complianceRecords.reduce((acc, r) => acc + (r.complianceRate || 0), 0) /
+      complianceRecords.length
+    return Math.round(avg)
+  }
 
   // Format currency values
   const formatCurrency = (value: number) => {
@@ -433,7 +407,7 @@ export const DirectorDashboard: React.FC = () => {
                       <Card>
                         <Statistic
                           title='Total Programs'
-                          value={3}
+                          value={programs.length}
                           prefix={<ProjectOutlined />}
                         />
                       </Card>
@@ -442,7 +416,9 @@ export const DirectorDashboard: React.FC = () => {
                       <Card>
                         <Statistic
                           title='Active Startups'
-                          value={sampleAnalytics.totalIncubatees}
+                          value={
+                            incubatees.filter(p => p.stage === 'Startup').length
+                          }
                           prefix={<TeamOutlined />}
                         />
                       </Card>
@@ -462,12 +438,12 @@ export const DirectorDashboard: React.FC = () => {
                       <Card>
                         <Statistic
                           title='Program Compliance'
-                          value={sampleAnalytics.complianceRate}
+                          value={getOverallComplianceRate()}
                           suffix='%'
                           prefix={<CheckCircleOutlined />}
                           valueStyle={{
                             color:
-                              sampleAnalytics.complianceRate > 80
+                              getOverallComplianceRate() > 80
                                 ? '#3f8600'
                                 : '#cf1322'
                           }}
@@ -477,21 +453,13 @@ export const DirectorDashboard: React.FC = () => {
                   </Row>
 
                   <Card title='Incubation Programs' style={{ marginTop: 16 }}>
-                    <Table
-                      dataSource={sampleProgramsData}
-                      rowKey='id'
-                      pagination={false}
-                    >
+                    <Table dataSource={programs} rowKey='id' pagination={false}>
                       <Table.Column
                         title='Program'
                         dataIndex='name'
                         key='name'
                       />
-                      <Table.Column
-                        title='Startups'
-                        dataIndex='startups'
-                        key='startups'
-                      />
+                      <Table.Column title='Type' dataIndex='type' key='type' />
                       <Table.Column
                         title='Progress'
                         dataIndex='progress'
@@ -510,10 +478,17 @@ export const DirectorDashboard: React.FC = () => {
                           />
                         )}
                       />
+
                       <Table.Column
                         title='Status'
                         dataIndex='status'
                         key='status'
+                        filters={[
+                          { text: 'Active', value: 'Active' },
+                          { text: 'Completed', value: 'Completed' },
+                          { text: 'Upcoming', value: 'Upcoming' }
+                        ]}
+                        onFilter={(value, record) => record.status === value}
                         render={status => (
                           <Tag
                             color={
@@ -538,12 +513,17 @@ export const DirectorDashboard: React.FC = () => {
                           return (
                             <div>
                               <Progress
-                                percent={utilization}
+                                percent={Math.round(
+                                  (record.spent / record.budget) * 100
+                                )}
                                 size='small'
                                 status={
-                                  utilization > 90 ? 'exception' : 'normal'
+                                  record.spent / record.budget > 0.9
+                                    ? 'exception'
+                                    : 'normal'
                                 }
                               />
+
                               <div style={{ fontSize: '12px', color: '#888' }}>
                                 {formatCurrency(record.spent)} of{' '}
                                 {formatCurrency(record.budget)}
@@ -722,8 +702,10 @@ export const DirectorDashboard: React.FC = () => {
                     <Col xs={24} md={8}>
                       <Card>
                         <Statistic
-                          title='Active Projects'
-                          value={sampleAnalytics.activeProjects}
+                          title='Active Programs'
+                          value={
+                            programs.filter(p => p.status === 'Active').length
+                          }
                           prefix={<ProjectOutlined />}
                         />
                       </Card>
@@ -963,7 +945,7 @@ export const DirectorDashboard: React.FC = () => {
             <Card>
               <Statistic
                 title='Total Incubatees'
-                value={sampleAnalytics.totalIncubatees}
+                value={incubatees.length}
                 prefix={<TeamOutlined />}
               />
             </Card>
@@ -971,8 +953,8 @@ export const DirectorDashboard: React.FC = () => {
           <Col xs={24} sm={12} md={8} lg={6}>
             <Card>
               <Statistic
-                title='Active Projects'
-                value={sampleAnalytics.activeProjects}
+                title='Active Programs'
+                value={programs.filter(p => p.status === 'Active').length}
                 prefix={<BarChartOutlined />}
                 valueStyle={{ color: '#3f8600' }}
               />
@@ -982,12 +964,11 @@ export const DirectorDashboard: React.FC = () => {
             <Card>
               <Statistic
                 title='Compliance Rate'
-                value={sampleAnalytics.complianceRate}
+                value={overallCompliance()}
                 suffix='%'
                 prefix={<CheckCircleOutlined />}
                 valueStyle={{
-                  color:
-                    sampleAnalytics.complianceRate > 80 ? '#3f8600' : '#cf1322'
+                  color: overallCompliance() > 80 ? '#3f8600' : '#cf1322'
                 }}
               />
             </Card>
@@ -1056,30 +1037,25 @@ export const DirectorDashboard: React.FC = () => {
             >
               <List
                 size='small'
-                dataSource={sampleIncubateesData}
+                dataSource={incubatees}
                 renderItem={item => (
                   <List.Item>
                     <div>
-                      <Text strong>{item.name}</Text>
+                      <Text strong>{item.beneficiaryName}</Text>
                       <br />
                       <Text type='secondary'>{item.sector}</Text>
                     </div>
                     <Space>
                       <Tag
                         color={
-                          item.compliance > 80
+                          getComplianceRate(item.id) > 80
                             ? 'green'
-                            : item.compliance > 70
+                            : getComplianceRate(item.id) > 60
                             ? 'orange'
                             : 'red'
                         }
                       >
-                        {item.compliance}% Compliance
-                      </Tag>
-                      <Tag
-                        color={item.status === 'Active' ? 'blue' : 'volcano'}
-                      >
-                        {item.status}
+                        {getComplianceRate(item.id)}% Compliance
                       </Tag>
                     </Space>
                   </List.Item>

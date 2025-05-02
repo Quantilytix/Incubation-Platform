@@ -15,6 +15,7 @@ import {
 import { auth } from '@/firebase'
 import { doc, setDoc } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { useSearchParams } from 'react-router-dom'
 
 const { Title } = Typography
 
@@ -24,6 +25,8 @@ export const RegisterPage: React.FC = () => {
   const [loading, setLoading] = React.useState(false)
   const [googleLoading, setGoogleLoading] = React.useState(false)
   const [redirecting, setRedirecting] = React.useState(false)
+  const [searchParams] = useSearchParams()
+  const code = searchParams.get('code') || ''
 
   React.useEffect(() => {
     document.title = 'Register • Incubation Platform'
@@ -47,7 +50,8 @@ export const RegisterPage: React.FC = () => {
         uid: user.uid,
         email: user.email,
         name: values.name || '',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        companyCode: code
       })
 
       // 3. Notify + Redirect

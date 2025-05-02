@@ -15,13 +15,21 @@ import {
   Modal,
   message
 } from 'antd'
-import { collection, getDocs, addDoc, query, where } from 'firebase/firestore'
+import {
+  collection,
+  getDocs,
+  setDoc,
+  query,
+  where,
+  doc,
+  addDoc
+} from 'firebase/firestore'
 import { db, auth } from '@/firebase'
 import { useNavigate } from 'react-router-dom'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { PlusOutlined } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth'
+import { createUserWithEmailAndPassword } from 'firebase/auth'
 
 const { Title } = Typography
 const { Option } = Select
@@ -125,7 +133,7 @@ export const OperationsOnboardingDashboard: React.FC = () => {
         createdAt: new Date()
       }
 
-      await addDoc(collection(db, 'users'), newUserDetails)
+      await setDoc(doc(db, 'users', firebaseUser.uid), newUserDetails)
 
       // Step 3: Add the user details to the `operationsStaff` collection
       const newOperationsStaff = {
@@ -271,7 +279,6 @@ export const OperationsOnboardingDashboard: React.FC = () => {
             <Select placeholder='Select gender'>
               <Option value='Male'>Male</Option>
               <Option value='Female'>Female</Option>
-              <Option value='Other'>Other</Option>
             </Select>
           </Form.Item>
 

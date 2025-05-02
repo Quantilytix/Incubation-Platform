@@ -122,8 +122,8 @@ const ApplicationsPage: React.FC = () => {
   const columns = [
     {
       title: 'Enterprise Name',
-      dataIndex: 'enterpriseName',
-      key: 'enterpriseName'
+      dataIndex: 'beneficiaryName',
+      key: 'beneficiaryName'
     },
     {
       title: 'Owner Gender',
@@ -259,29 +259,85 @@ const ApplicationsPage: React.FC = () => {
           </Card>
         </Col>
 
-        <Col xs={24} md={8}>
-          <Card title='Applicant Details'>
-            {selectedApplication ? (
-              <Space direction='vertical'>
-                <Text strong>Enterprise:</Text>{' '}
-                <Text>{selectedApplication.enterpriseName}</Text>
-                <Divider />
-                <Text strong>Gender:</Text>{' '}
-                <Text>{selectedApplication.gender}</Text>
-                <Divider />
-                <Text strong>Age Group:</Text>{' '}
-                <Text>{selectedApplication.ageGroup}</Text>
-                <Divider />
-                <Text strong>Sector:</Text>{' '}
-                <Text>{selectedApplication.sector}</Text>
-                <Divider />
-                <Text strong>Province:</Text>{' '}
-                <Text>{selectedApplication.province}</Text>
-              </Space>
-            ) : (
-              <Text type='secondary'>Click a row to view details</Text>
-            )}
-          </Card>
+        <Col xs={24} md={10}>
+          {/* Increased from md={8} to md={12} */}
+          <Col xs={24} md={8}>
+            {/* Increased from md={10} to md={24} */}
+            <Card
+              title='Applicant Details'
+              style={{
+                width: '100%', // Ensure the card takes full width
+                padding: '16px', // Add padding for spacing
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)' // Optional: Add shadow for better UI
+              }}
+            >
+              {selectedApplication ? (
+                <Space direction='vertical' style={{ width: '100%' }}>
+                  <Text strong>Enterprise:</Text>
+                  <Text>{selectedApplication.beneficiaryName}</Text>
+                  <Divider />
+                  <Text strong>Owner Name:</Text>
+                  <Text>{selectedApplication.participantName || 'N/A'}</Text>
+                  <Divider />
+                  <Text strong>Email:</Text>
+                  <Text>{selectedApplication.email}</Text>
+                  <Divider />
+                  <Text strong>ID Number:</Text>
+                  <Text>{selectedApplication.idNumber}</Text>
+                  <Divider />
+                  <Text strong>Gender:</Text>
+                  <Text>{selectedApplication.gender}</Text>
+                  <Divider />
+                  <Text strong>Age Group:</Text>
+                  <Text>{selectedApplication.ageGroup}</Text>
+                  <Divider />
+                  <Text strong>Stage:</Text>
+                  <Text>{selectedApplication.stage || 'N/A'}</Text>
+                  <Divider />
+                  <Text strong>Sector:</Text>
+                  <Text>{selectedApplication.sector}</Text>
+                  <Divider />
+                  <Text strong>Nature of Business:</Text>
+                  <Text>{selectedApplication.natureOfBusiness || 'N/A'}</Text>
+                  <Divider />
+                  <Text strong>Location:</Text>
+                  <Text>{selectedApplication.location || 'N/A'}</Text>
+                  <Divider />
+                  <Text strong>Business Address:</Text>
+                  <Text>{selectedApplication.businessAddress || 'N/A'}</Text>
+                  <Divider />
+                  <Text strong>Province:</Text>
+                  <Text>{selectedApplication.province || 'N/A'}</Text>
+                  <Divider />
+                  <Text strong>Registration Number:</Text>
+                  <Text>{selectedApplication.registrationNumber || 'N/A'}</Text>
+                  <Divider />
+                  <Text strong>Date of Registration:</Text>
+                  <Text>{selectedApplication.dateOfRegistration || 'N/A'}</Text>
+                  <Divider />
+                  <Text strong>Years of Trading:</Text>
+                  <Text>{selectedApplication.yearsOfTrading || 'N/A'}</Text>
+                  <Divider />
+                  <Text strong>Website:</Text>
+                  <Text>
+                    {selectedApplication.websiteUrl ? (
+                      <a
+                        href={selectedApplication.websiteUrl}
+                        target='_blank'
+                        rel='noopener noreferrer'
+                      >
+                        {selectedApplication.websiteUrl}
+                      </a>
+                    ) : (
+                      'N/A'
+                    )}
+                  </Text>
+                </Space>
+              ) : (
+                <Text type='secondary'>Click a row to view details</Text>
+              )}
+            </Card>
+          </Col>
         </Col>
       </Row>
 
