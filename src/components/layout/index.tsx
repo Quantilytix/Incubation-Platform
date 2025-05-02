@@ -369,7 +369,7 @@ export const CustomLayout: React.FC = () => {
           }}
         >
           <img
-            src='/assets/images/Lepharo.png'
+            src='/assets/images/Impala.png'
             alt='Lepharo Logo'
             style={{
               maxHeight: '60px',
