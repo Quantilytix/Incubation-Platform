@@ -309,9 +309,9 @@ const ParticipantRegistrationStepForm = () => {
 
     const complianceRate = calculateCompliance()
 
-    if (complianceRate < 60) {
+    if (complianceRate < 10) {
       message.error(
-        'Compliance must be 90% or higher to approve this application.'
+        'Compliance must be 10% or higher to approve this application.'
       )
       return
     }
