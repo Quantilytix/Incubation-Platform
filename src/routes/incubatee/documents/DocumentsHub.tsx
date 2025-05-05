@@ -22,6 +22,45 @@ export const DocumentHub: React.FC = () => {
       <Title level={4}>Upload Compliance & Brand Documents</Title>
 
       <Form layout='vertical' form={form} onFinish={onFinish}>
+         <Form.Item
+          name='cipc'
+          label='CIPC'
+          valuePropName='fileList'
+          getValueFromEvent={normFile}
+          rules={[
+            { required: true, message: 'Please upload your CIPC' }
+          ]}
+        >
+          <Upload beforeUpload={() => false} multiple={false}>
+            <Button icon={<UploadOutlined />}>Select File</Button>
+          </Upload>
+        </Form.Item>
+         <Form.Item
+          name='csd'
+          label='CSD Report'
+          valuePropName='fileList'
+          getValueFromEvent={normFile}
+          rules={[
+            { required: true, message: 'Please upload your CSD report' }
+          ]}
+        >
+          <Upload beforeUpload={() => false} multiple={false}>
+            <Button icon={<UploadOutlined />}>Select File</Button>
+          </Upload>
+        </Form.Item>
+         <Form.Item
+          name='employeeContracts'
+          label='Employee Contacts'
+          valuePropName='fileList'
+          getValueFromEvent={normFile}
+          rules={[
+            { required: false, message: 'Please upload your employee contracts' }
+          ]}
+        >
+          <Upload beforeUpload={() => false} multiple={false}>
+            <Button icon={<UploadOutlined />}>Select File</Button>
+          </Upload>
+        </Form.Item>
         <Form.Item
           name='beee'
           label='BEEE Certificate'
