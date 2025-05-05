@@ -160,7 +160,7 @@ export const AssignedInterventions: React.FC = () => {
 
   // Table columns
   const columns = [
-    { title: 'SME', dataIndex: 'smeName' },
+    { title: 'Beneficiary Name', dataIndex: 'beneficiaryName' },
     { title: 'Intervention', dataIndex: 'interventionTitle' },
     {
       title: 'Time Spent (hrs)',
@@ -280,14 +280,14 @@ export const AssignedInterventions: React.FC = () => {
   return (
     <>
       <Helmet>
-        <title>Assigned Interventions | Consultant Workspace</title>
+        <title>Ongoing Interventions | Consultant Workspace</title>
         <meta
           name='description'
           content='View and manage your assigned interventions as a consultant.'
         />
       </Helmet>
 
-      <Title level={4}>Assigned Interventions</Title>
+      <Title level={4}>Ongoing Interventions</Title>
       <Table
         dataSource={assignedInterventions}
         columns={columns}

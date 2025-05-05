@@ -22,7 +22,7 @@ import {
 } from '@ant-design/icons'
 import { db } from '@/firebase'
 import { Helmet } from 'react-helmet'
-import { addDoc, collection, getDocs } from 'firebase/firestore' // addDoc to create
+import { addDoc, collection, doc, getDocs, updateDoc } from 'firebase/firestore' // addDoc to create
 import { useNavigate } from 'react-router-dom'
 
 const { Option } = Select
@@ -30,12 +30,6 @@ const { Option } = Select
 const calculateProgress = (required: number, completed: number) => {
   if (!required || required === 0) return 0
   return Math.round((completed / required) * 100)
-}
-
-const getStatus = (progress: number) => {
-  if (progress >= 70) return 'active'
-  if (progress >= 30) return 'warning'
-  return 'inactive'
 }
 
 const OperationsParticipantsManagement: React.FC = () => {
@@ -139,6 +133,23 @@ const OperationsParticipantsManagement: React.FC = () => {
       message.error('Failed to add participant.')
     }
   }
+  const handleToggleStatus = async (participant: any) => {
+    const newStatus = participant.status === 'active' ? 'inactive' : 'active'
+    try {
+      const ref = doc(db, 'participants', participant.id)
+      await updateDoc(ref, { status: newStatus })
+      message.success(`Participant status set to ${newStatus}`)
+      // Refresh participants list
+      const snapshot = await getDocs(collection(db, 'participants'))
+      const updatedList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      setParticipants(updatedList)
+    } catch (error) {
+      message.error('Failed to update status')
+    }
+  }
 
   const columns = [
     {
@@ -195,11 +206,11 @@ const OperationsParticipantsManagement: React.FC = () => {
         const required = record.interventions?.required?.length ?? 0
         const completed = record.interventions?.completed?.length ?? 0
         const progress = calculateProgress(required, completed)
-        const status = getStatus(progress)
+        const status = record.status.toLowerCase()
 
         let color = 'default'
         if (status === 'active') color = 'green'
-        else if (status === 'warning') color = 'orange'
+        else if (status === 'inactive') color = 'orange'
         else color = 'gray'
 
         return <Tag color={color}>{status.toUpperCase()}</Tag>
@@ -208,7 +219,18 @@ const OperationsParticipantsManagement: React.FC = () => {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: any, record: any) => <Button type='link'>View</Button>
+      render: (_: any, record: any) => {
+        const isActive = record.status.toLowerCase() === 'active'
+        return (
+          <Button
+            type={isActive ? 'default' : 'primary'}
+            danger={isActive}
+            onClick={() => handleToggleStatus(record)}
+          >
+            {isActive ? 'Inactivate' : 'Activate'}
+          </Button>
+        )
+      }
     }
   ]
 

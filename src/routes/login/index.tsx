@@ -4,7 +4,7 @@ import {
   GoogleOutlined
 } from '@ant-design/icons'
 import { Button, Form, Input, Typography, message, Spin } from 'antd'
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ThemedTitleV2 } from '@refinedev/antd'
 import {
@@ -12,7 +12,15 @@ import {
   GoogleAuthProvider,
   signInWithPopup
 } from 'firebase/auth'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  where
+} from 'firebase/firestore'
 import { auth, db } from '@/firebase'
 
 const { Title } = Typography
@@ -23,10 +31,29 @@ export const LoginPage: React.FC = () => {
   const [loading, setLoading] = React.useState(false)
   const [googleLoading, setGoogleLoading] = React.useState(false)
   const [redirecting, setRedirecting] = React.useState(false)
+  const [companyCode, setCompanyCode] = useState('')
 
-  React.useEffect(() => {
-    document.title = 'Login • Incubation Platform'
-  }, [])
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const user = auth.currentUser
+        if (!user) return
+
+        const userRef = doc(db, 'users', user.uid)
+        const userSnap = await getDoc(userRef)
+        const userData = userSnap.data()
+        const code = userData?.companyCode || ''
+        setCompanyCode(code)
+      } catch (err) {
+        console.error(err)
+        message.error('Failed to load application data')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [navigate])
 
   const normalizeRole = (role: string): string => {
     return role.toLowerCase().replace(/\s+/g, '')
@@ -39,7 +66,9 @@ export const LoginPage: React.FC = () => {
     'incubatee',
     'operations',
     'director',
-    'projectadmin'
+    'projectadmin',
+    'investor',
+    'government'
   ]
 
   async function checkUser (user) {
@@ -65,7 +94,6 @@ export const LoginPage: React.FC = () => {
   const handleLogin = async (values: any) => {
     try {
       setLoading(true)
-
       const userCred = await signInWithEmailAndPassword(
         auth,
         values.email,
@@ -74,7 +102,6 @@ export const LoginPage: React.FC = () => {
       const user = userCred.user
 
       const result = await checkUser(user)
-
       if (result.error) {
         message.error(result.message)
         return
@@ -82,17 +109,27 @@ export const LoginPage: React.FC = () => {
 
       const { role, firstLoginComplete } = result
 
-      console.log('✅ Role:', role)
-      console.log('🧭 firstLoginComplete:', firstLoginComplete)
+      // 🔍 Check incubatee applicationStatus
+      if (role === 'incubatee') {
+        const appsSnap = await getDocs(
+          query(
+            collection(db, 'participants'),
+            where('email', '==', user.email)
+          )
+        )
+        const apps = appsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        const hasPending = apps.some(
+          app => app.applicationStatus?.toLowerCase() === 'pending'
+        )
 
-      if (!supportedRoles.includes(role)) {
-        message.error(`🚫 The role "${role}" is not recognized.`)
-        return
+        console.log(hasPending)
+        if (hasPending) {
+          navigate('/incubatee/tracker')
+          return
+        }
       }
 
-      message.success('🎉 Login successful! Redirecting...', 1.5)
-      setRedirecting(true)
-
+      // 🧭 Default role-based navigation
       if (role === 'director' && !firstLoginComplete) {
         navigate('/director/onboarding')
       } else {
@@ -278,22 +315,22 @@ export const LoginPage: React.FC = () => {
 
       <style>
         {`
-              @keyframes fadeIn {
-                from { opacity: 0; }
-                to { opacity: 1; }
-              }
+                @keyframes fadeIn {
+                  from { opacity: 0; }
+                  to { opacity: 1; }
+                }
 
-              @keyframes fadeInUp {
-                from {
-                  opacity: 0;
-                  transform: translateY(20px);
+                @keyframes fadeInUp {
+                  from {
+                    opacity: 0;
+                    transform: translateY(20px);
+                  }
+                  to {
+                    opacity: 1;
+                    transform: translateY(0);
+                  }
                 }
-                to {
-                  opacity: 1;
-                  transform: translateY(0);
-                }
-              }
-            `}
+              `}
       </style>
     </Spin>
   )

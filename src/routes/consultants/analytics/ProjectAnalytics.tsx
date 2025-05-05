@@ -37,7 +37,7 @@ export const ProjectAnalytics: React.FC = () => {
 
           return {
             id: doc.id,
-            name: p.enterpriseName || 'Unknown SME',
+            name: p.beneficiaryName || 'Unknown SME',
             interventions: totalInterventions,
             revenue: revenue,
             headCount: headCount,

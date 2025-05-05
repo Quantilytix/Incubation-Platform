@@ -35,8 +35,11 @@ import {
 } from 'firebase/firestore'
 import { auth, db } from '@/firebase'
 import { getAuth } from 'firebase/auth'
+import dayjs from 'dayjs'
 
 const { Title } = Typography
+
+const { Text } = Typography
 
 const ProgramManager: React.FC = () => {
   const [programs, setPrograms] = useState<any[]>([])
@@ -94,18 +97,24 @@ const ProgramManager: React.FC = () => {
         return
       }
 
-      await addDoc(collection(db, 'programs'), {
+      const payload = {
         ...values,
         companyCode,
-        status: values.status || 'Active'
-      })
+        status: values.status || 'Active',
+        startDate: values.startDate?.toDate?.() || null,
+        endDate: values.endDate?.toDate?.() || null,
+        registrationLink: `/registration?code=${companyCode}`
+      }
+
+      await addDoc(collection(db, 'programs'), payload)
+
       message.success('Program added successfully')
       fetchPrograms()
       setModalVisible(false)
       form.resetFields()
     } catch (err) {
-      message.error('Failed to add program')
       console.error(err)
+      message.error('Failed to add program')
     }
   }
 
@@ -259,8 +268,32 @@ const ProgramManager: React.FC = () => {
               <Tag color={status === 'Active' ? 'green' : 'red'}>{status}</Tag>
             )}
           />
-          <Table.Column title='Start Date' dataIndex='startDate' />
-          <Table.Column title='End Date' dataIndex='endDate' />
+          <Table.Column
+            title='Start Date'
+            dataIndex='startDate'
+            render={val =>
+              val?.toDate ? dayjs(val.toDate()).format('YYYY-MM-DD') : 'N/A'
+            }
+          />
+          <Table.Column
+            title='End Date'
+            dataIndex='endDate'
+            render={val =>
+              val?.toDate ? dayjs(val.toDate()).format('YYYY-MM-DD') : 'N/A'
+            }
+          />
+          <Table.Column
+            title='Registration Link'
+            dataIndex='registrationLink'
+            render={(link: string) => (
+              <Text strong>
+                <a href={link} target='_blank' rel='noopener noreferrer'>
+                  Registration Link
+                </a>
+              </Text>
+            )}
+          />
+
           <Table.Column
             title='Actions'
             key='actions'
@@ -285,6 +318,13 @@ const ProgramManager: React.FC = () => {
             <Form.Item
               name='name'
               label='Program Name'
+              rules={[{ required: true }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              name='description'
+              label='Program Description'
               rules={[{ required: true }]}
             >
               <Input />

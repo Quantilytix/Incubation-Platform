@@ -82,8 +82,8 @@ interface Participant {
 }
 interface Intervention {
   id: string
-  title: string
-  area: string
+  interventionTitle: string
+  areaOfSupport: string
 }
 
 export const ConsultantAssignments: React.FC = () => {
@@ -135,9 +135,13 @@ export const ConsultantAssignments: React.FC = () => {
           const data = doc.data()
           return {
             id: doc.id,
-            beneficiaryName: data.beneficiaryName,
-            requiredInterventions: data.interventions?.required || [],
-            completedInterventions: data.interventions?.completed || []
+            beneficiaryName: data.beneficiaryName || data.name,
+            sector: data.sector,
+            stage: data.stage,
+            province: data.province,
+            city: data.city,
+            location: data.location,
+            interventions: data.interventions || { required: [], completed: [] }
           }
         })
 
@@ -146,17 +150,21 @@ export const ConsultantAssignments: React.FC = () => {
           name: doc.data().name
         }))
 
-        const fetchedInterventions = interventionsSnapshot.docs.flatMap(doc =>
-          doc.data().interventions.map(intervention => ({
-            id: intervention.id,
-            title: intervention.title,
-            area: doc.data().area
-          }))
-        )
+        const fetchedInterventions = interventionsSnapshot.docs.map(doc => {
+          const data = doc.data()
+          return {
+            id: data.interventionId,
+            interventionTitle: data.interventionTitle,
+            areaOfSupport: data.areaOfSupport,
+            programId: data.programId,
+            type: data.interventionType
+          }
+        })
 
+        // Map participantId to required intervention ids
         const map: Record<string, string[]> = {}
         fetchedParticipants.forEach(p => {
-          map[p.id] = p.requiredInterventions.map(i => i.id)
+          map[p.id] = (p.interventions.required || []).map(i => i.id)
         })
 
         setParticipants(fetchedParticipants)
@@ -669,15 +677,11 @@ export const ConsultantAssignments: React.FC = () => {
               const selectedParticipant = participants.find(
                 p => p.id === values.participant
               )
-
               const selectedConsultant = consultants.find(
                 c => c.id === values.consultant
               )
-
-              const requiredInterventions =
-                selectedParticipant?.requiredInterventions || []
-              const selectedIntervention = requiredInterventions.find(
-                (i: any) => i.id === values.intervention
+              const selectedIntervention = interventions.find(
+                i => i.id === values.intervention
               )
 
               if (
@@ -685,6 +689,14 @@ export const ConsultantAssignments: React.FC = () => {
                 !selectedConsultant ||
                 !selectedIntervention
               ) {
+                console.warn('DEBUG:', {
+                  participant: values.participant,
+                  consultant: values.consultant,
+                  intervention: values.intervention,
+                  selectedParticipant,
+                  selectedConsultant,
+                  selectedIntervention
+                })
                 message.error('Invalid data selected. Please retry.')
                 return
               }
@@ -698,11 +710,14 @@ export const ConsultantAssignments: React.FC = () => {
                 consultantId: selectedConsultant.id,
                 consultantName: selectedConsultant.name,
                 interventionId: selectedIntervention.id,
-                interventionTitle: selectedIntervention.title,
+                interventionTitle: selectedIntervention.interventionTitle,
                 type: values.type,
                 targetType: values.targetType,
                 targetValue: values.targetValue,
                 targetMetric: values.targetMetric,
+                dueDate: values.dueDate
+                  ? Timestamp.fromDate(values.dueDate.toDate())
+                  : null, // ✅ ADD THIS
                 status: 'assigned',
                 consultantStatus: 'pending',
                 userStatus: 'pending',
@@ -798,7 +813,8 @@ export const ConsultantAssignments: React.FC = () => {
                         key={intervention.id}
                         value={intervention.id}
                       >
-                        {intervention.title} ({intervention.area})
+                        {intervention.interventionTitle} (
+                        {intervention.areaOfSupport})
                       </Select.Option>
                     ))}
                   </Select>
@@ -906,6 +922,13 @@ export const ConsultantAssignments: React.FC = () => {
 
               return null
             }}
+          </Form.Item>
+          <Form.Item
+            name='dueDate'
+            label='Due Date'
+            rules={[{ required: true, message: 'Please select a due date' }]}
+          >
+            <DatePicker style={{ width: '100%' }} />
           </Form.Item>
 
           <Form.Item>

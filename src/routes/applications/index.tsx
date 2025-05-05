@@ -12,10 +12,10 @@ import {
   Typography,
   Divider,
   Select,
-  Badge
+  message
 } from 'antd'
 import { db } from '@/firebase'
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs, doc, updateDoc } from 'firebase/firestore'
 import { EyeOutlined, FileOutlined } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import HighchartsReact from 'highcharts-react-official'
@@ -25,36 +25,38 @@ const { Title, Text } = Typography
 const { Option } = Select
 
 const ApplicationsPage: React.FC = () => {
-  const [participants, setParticipants] = useState<any[]>([])
   const [applications, setApplications] = useState<any[]>([])
   const [filteredApplications, setFilteredApplications] = useState<any[]>([])
   const [selectedApplication, setSelectedApplication] = useState<any>(null)
   const [aiModalVisible, setAiModalVisible] = useState(false)
   const [documentsModalVisible, setDocumentsModalVisible] = useState(false)
-  const [genderFilter, setGenderFilter] = useState<string | undefined>(
-    undefined
-  )
-  const [ageGroupFilter, setAgeGroupFilter] = useState<string | undefined>(
-    undefined
-  )
-  const [filters, setFilters] = useState({ gender: '', ageGroup: '' })
+  const [genderFilter, setGenderFilter] = useState<string | undefined>()
+  const [ageGroupFilter, setAgeGroupFilter] = useState<string | undefined>()
+
+  const fetchApplications = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'participants'))
+      const apps = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      setApplications(apps)
+      setFilteredApplications(apps)
+    } catch (error) {
+      console.error('Error fetching applications:', error)
+      message.error('Failed to fetch applications')
+    }
+  }
 
   useEffect(() => {
-    const fetchApplications = async () => {
-      try {
-        const snapshot = await getDocs(collection(db, 'participants'))
-        const apps = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        setApplications(apps)
-        setFilteredApplications(apps)
-      } catch (error) {
-        console.error('Error fetching applications:', error)
-      }
-    }
     fetchApplications()
   }, [])
+
+  const updateStatus = async (newStatus: string, docId: string) => {
+    const ref = doc(db, 'participants', docId)
+    await updateDoc(ref, { applicationStatus: newStatus })
+    fetchApplications()
+  }
 
   const handleGenderFilter = (value: string | undefined) => {
     setGenderFilter(value)
@@ -136,29 +138,24 @@ const ApplicationsPage: React.FC = () => {
       key: 'ageGroup'
     },
     {
-      title: 'AI Recommendation',
-      key: 'aiRecommendation',
-      render: (record: any) => (
-        <Tag color={record.aiRecommendation === 'Accepted' ? 'green' : 'red'}>
-          {record.aiRecommendation || 'Pending'}
-        </Tag>
-      )
+      title: 'Decision',
+      key: 'applicationStatus',
+      render: (record: any) => {
+        const status = record.applicationStatus || 'Pending'
+        const color =
+          status === 'Accepted'
+            ? 'green'
+            : status === 'Rejected'
+            ? 'red'
+            : 'gold'
+        return <Tag color={color}>{status}</Tag>
+      }
     },
     {
       title: 'Actions',
       key: 'actions',
       render: (_: any, record: any) => (
         <Space>
-          <Button
-            size='small'
-            icon={<EyeOutlined />}
-            onClick={() => {
-              setSelectedApplication(record)
-              setAiModalVisible(true)
-            }}
-          >
-            View AI
-          </Button>
           <Button
             size='small'
             icon={<FileOutlined />}
@@ -243,9 +240,9 @@ const ApplicationsPage: React.FC = () => {
         </Select>
       </Space>
 
-      {/* Table + Details Card */}
+      {/* Table & Detail Card */}
       <Row gutter={16}>
-        <Col xs={24} md={16}>
+        <Col xs={24} md={14}>
           <Card>
             <Table
               columns={columns}
@@ -258,90 +255,155 @@ const ApplicationsPage: React.FC = () => {
             />
           </Card>
         </Col>
-
         <Col xs={24} md={10}>
-          {/* Increased from md={8} to md={12} */}
-          <Col xs={24} md={8}>
-            {/* Increased from md={10} to md={24} */}
-            <Card
-              title='Applicant Details'
-              style={{
-                width: '100%', // Ensure the card takes full width
-                padding: '16px', // Add padding for spacing
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)' // Optional: Add shadow for better UI
-              }}
-            >
-              {selectedApplication ? (
-                <Space direction='vertical' style={{ width: '100%' }}>
-                  <Text strong>Enterprise:</Text>
-                  <Text>{selectedApplication.beneficiaryName}</Text>
-                  <Divider />
-                  <Text strong>Owner Name:</Text>
-                  <Text>{selectedApplication.participantName || 'N/A'}</Text>
-                  <Divider />
-                  <Text strong>Email:</Text>
-                  <Text>{selectedApplication.email}</Text>
-                  <Divider />
-                  <Text strong>ID Number:</Text>
-                  <Text>{selectedApplication.idNumber}</Text>
-                  <Divider />
-                  <Text strong>Gender:</Text>
-                  <Text>{selectedApplication.gender}</Text>
-                  <Divider />
-                  <Text strong>Age Group:</Text>
-                  <Text>{selectedApplication.ageGroup}</Text>
-                  <Divider />
-                  <Text strong>Stage:</Text>
-                  <Text>{selectedApplication.stage || 'N/A'}</Text>
-                  <Divider />
-                  <Text strong>Sector:</Text>
-                  <Text>{selectedApplication.sector}</Text>
-                  <Divider />
-                  <Text strong>Nature of Business:</Text>
-                  <Text>{selectedApplication.natureOfBusiness || 'N/A'}</Text>
-                  <Divider />
-                  <Text strong>Location:</Text>
-                  <Text>{selectedApplication.location || 'N/A'}</Text>
-                  <Divider />
-                  <Text strong>Business Address:</Text>
-                  <Text>{selectedApplication.businessAddress || 'N/A'}</Text>
-                  <Divider />
-                  <Text strong>Province:</Text>
-                  <Text>{selectedApplication.province || 'N/A'}</Text>
-                  <Divider />
-                  <Text strong>Registration Number:</Text>
-                  <Text>{selectedApplication.registrationNumber || 'N/A'}</Text>
-                  <Divider />
-                  <Text strong>Date of Registration:</Text>
-                  <Text>{selectedApplication.dateOfRegistration || 'N/A'}</Text>
-                  <Divider />
-                  <Text strong>Years of Trading:</Text>
-                  <Text>{selectedApplication.yearsOfTrading || 'N/A'}</Text>
-                  <Divider />
-                  <Text strong>Website:</Text>
-                  <Text>
-                    {selectedApplication.websiteUrl ? (
-                      <a
-                        href={selectedApplication.websiteUrl}
-                        target='_blank'
-                        rel='noopener noreferrer'
+          <Card
+            title={
+              selectedApplication ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  {/* Left Block: AI and Status Info */}
+                  <div style={{ maxWidth: '70%' }}>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>Current Status: </Text>
+                      <Tag
+                        color={
+                          selectedApplication.applicationStatus === 'Accepted'
+                            ? 'green'
+                            : selectedApplication.applicationStatus ===
+                              'Rejected'
+                            ? 'red'
+                            : 'gold'
+                        }
                       >
-                        {selectedApplication.websiteUrl}
-                      </a>
-                    ) : (
-                      'N/A'
-                    )}
-                  </Text>
-                </Space>
+                        {selectedApplication.applicationStatus || 'Pending'}
+                      </Tag>
+                    </div>
+
+                    <div style={{ marginBottom: 8 }}>
+                      <Text type='secondary'>
+                        <strong>AI Recommendation:</strong>{' '}
+                        {selectedApplication.aiRecommendation || 'N/A'}
+                      </Text>
+                    </div>
+
+                    <div style={{ marginBottom: 8 }}>
+                      <Text>
+                        <strong>Score:</strong>{' '}
+                        {selectedApplication.aiScore ?? 'N/A'}
+                      </Text>
+                    </div>
+
+                    <div style={{ marginBottom: 8 }}>
+                      <Text>
+                        <strong>Justification:</strong>{' '}
+                        {selectedApplication.aiJustification ?? 'N/A'}
+                      </Text>
+                    </div>
+                  </div>
+
+                  {/* Right Block: Status Select */}
+                  <div>
+                    <Text>
+                      <strong>Alter Desicion:</strong>{' '}
+                    </Text>
+                    <Select
+                      style={{ width: 160, marginBottom: 5 }}
+                      placeholder='Set Status'
+                      value={selectedApplication.applicationStatus || undefined}
+                      onChange={async value => {
+                        try {
+                          await updateStatus(value, selectedApplication.id)
+                          message.success(`Status updated to ${value}`)
+                          setApplications(prev =>
+                            prev.map(app =>
+                              app.id === selectedApplication.id
+                                ? { ...app, applicationStatus: value }
+                                : app
+                            )
+                          )
+                          setFilteredApplications(prev =>
+                            prev.map(app =>
+                              app.id === selectedApplication.id
+                                ? { ...app, applicationStatus: value }
+                                : app
+                            )
+                          )
+                          setSelectedApplication(prev =>
+                            prev ? { ...prev, applicationStatus: value } : prev
+                          )
+                        } catch (err) {
+                          message.error('Failed to update status')
+                        }
+                      }}
+                    >
+                      <Option value='Accepted'>Accept</Option>
+                      <Option value='Rejected'>Reject</Option>
+                      <Option value='Pending'>Pending</Option>
+                    </Select>
+                  </div>
+                </div>
               ) : (
-                <Text type='secondary'>Click a row to view details</Text>
-              )}
-            </Card>
-          </Col>
+                'Applicant Details'
+              )
+            }
+            style={{
+              width: '100%',
+              height: '100%',
+              padding: '12px',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+            }}
+          >
+            {selectedApplication ? (
+              <div style={{ padding: '8px 16px' }}>
+                {selectedApplication ? (
+                  <>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>Enterprise:</Text>
+                      <div>{selectedApplication.beneficiaryName || 'N/A'}</div>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>Email:</Text>
+                      <div>{selectedApplication.email || 'N/A'}</div>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>Gender:</Text>
+                      <div>{selectedApplication.gender || 'N/A'}</div>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>Stage:</Text>
+                      <div>{selectedApplication.stage || 'N/A'}</div>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>Hub:</Text>
+                      <div>{selectedApplication.hub || 'N/A'}</div>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>Motivation:</Text>
+                      <div>{selectedApplication.motivation || 'N/A'}</div>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>Challenges:</Text>
+                      <div>{selectedApplication.challenges || 'N/A'}</div>
+                    </div>
+                  </>
+                ) : (
+                  <Text type='secondary'>Click a row to view details</Text>
+                )}
+              </div>
+            ) : (
+              <Text type='secondary'>Click a row to view details</Text>
+            )}
+          </Card>
         </Col>
       </Row>
 
-      {/* AI Recommendation Modal */}
+      {/* AI Modal */}
       <Modal
         title='AI Recommendation'
         open={aiModalVisible}

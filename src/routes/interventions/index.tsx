@@ -11,7 +11,8 @@ import {
   Col,
   notification,
   Button,
-  Modal
+  Modal,
+  Input
 } from 'antd'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -32,9 +33,6 @@ const InterventionDatabaseView = () => {
     area: 'all'
   })
   const [programMap, setProgramMap] = useState<{ [key: string]: string }>({})
-  const [participantMap, setParticipantMap] = useState<{
-    [key: string]: string
-  }>({})
   const [consultantMap, setConsultantMap] = useState<{ [key: string]: string }>(
     {}
   )
@@ -42,6 +40,11 @@ const InterventionDatabaseView = () => {
     [key: string]: number
   }>({})
   const [selectedView, setSelectedView] = useState<any | null>(null)
+  const [password, setPassword] = useState('')
+  const [showDetails, setShowDetails] = useState(false)
+  const [participantMap, setParticipantMap] = useState<{
+    [key: string]: string
+  }>({})
 
   useEffect(() => {
     const fetchConsultants = async () => {
@@ -49,7 +52,7 @@ const InterventionDatabaseView = () => {
       const rateMap: any = {}
       snapshot.forEach(doc => {
         const data = doc.data()
-        rateMap[doc.id] = data.rate || 0 // assumes `rate` field in consultant doc
+        rateMap[doc.id] = data.rate || 0
       })
       setConsultantRates(rateMap)
     }
@@ -62,26 +65,13 @@ const InterventionDatabaseView = () => {
     onAuthStateChanged(auth, async user => {
       if (!user) return
 
-      // Fetch user profile to get companyCode
       const userSnap = await getDocs(
         query(collection(db, 'users'), where('email', '==', user.email))
       )
       if (userSnap.empty) {
-        notification.error({
-          message: 'User not found in participants collection.'
-        })
+        notification.error({ message: 'User not found' })
         return
       }
-
-      // Fetch program names from 'programs' collection
-      const programsSnap = await getDocs(collection(db, 'programs'))
-      const progMap: any = {}
-      programsSnap.forEach(doc => {
-        const data = doc.data()
-        progMap[doc.id] = data.name
-      })
-      setProgramMap(progMap)
-
       const participantsSnap = await getDocs(collection(db, 'participants'))
       const pMap: any = {}
       participantsSnap.forEach(doc => {
@@ -93,8 +83,7 @@ const InterventionDatabaseView = () => {
       const consultantSnap = await getDocs(collection(db, 'consultants'))
       const cMap: any = {}
       consultantSnap.forEach(doc => {
-        const data = doc.data()
-        cMap[doc.id] = data.name
+        cMap[doc.id] = doc.data().name
       })
       setConsultantMap(cMap)
 
@@ -108,12 +97,10 @@ const InterventionDatabaseView = () => {
           where('companyCode', '==', code)
         )
       )
-
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
       setRecords(data)
       setFiltered(data)
 
-      // Collect program names dynamically
       const uniquePrograms = [...new Set(data.map(d => d.programId))]
       setProgramOptions(uniquePrograms)
     })
@@ -132,17 +119,15 @@ const InterventionDatabaseView = () => {
         (newFilters.area === 'all' || item.areaOfSupport === newFilters.area)
       )
     })
-
     setFiltered(result)
   }
 
   const columns = [
     {
       title: 'Beneficiary',
-      dataIndex: 'participantId',
-      key: 'participantId',
-      render: (id: string) =>
-        participantMap[id] ?? <Text type='secondary'>Unknown</Text>
+      dataIndex: 'beneficiaryName',
+      key: 'beneficiaryName',
+      render: text => text || <Text type='secondary'>Unknown</Text>
     },
     {
       title: 'Location',
@@ -156,54 +141,50 @@ const InterventionDatabaseView = () => {
       )
     },
     {
-      title: 'Intervention',
-      dataIndex: 'interventionTitle',
-      key: 'interventionTitle',
-      render: (text: string, record: any) => (
-        <Space direction='vertical' size={0}>
-          <Text strong>{text}</Text>
-          <Text type='secondary'>{record.areaOfSupport}</Text>
-        </Space>
-      )
-    },
-    {
       title: 'Program',
       dataIndex: 'programId',
       key: 'programId',
       render: (id: string) => programMap[id] || id
     },
     {
-      title: 'Consultants',
-      dataIndex: 'consultantIds',
-      key: 'consultantIds',
-      render: (ids: string[]) =>
-        ids.map(id => <Tag key={id}>{consultantMap[id] || id}</Tag>)
+      title: 'Intervention Key',
+      dataIndex: 'interventionKey',
+      key: 'interventionKey',
+      render: (key: string | undefined, record: any) =>
+        key ? (
+          <Tag
+            color='blue'
+            style={{ cursor: 'pointer' }}
+            onClick={() => {
+              setSelectedView(record)
+              setShowDetails(false)
+              setPassword('')
+            }}
+          >
+            {key}
+          </Tag>
+        ) : (
+          <Text type='secondary'>-</Text>
+        )
     },
     {
-      title: 'Time Spent',
-      dataIndex: 'timeSpent',
-      key: 'timeSpent',
-      render: (arr: number[]) => arr.reduce((a, b) => a + b, 0) + ' hrs'
-    },
-    {
-      title: 'Confirmed At',
-      dataIndex: 'confirmedAt',
-      key: 'confirmedAt',
-      sorter: (a, b) =>
-        new Date(a.confirmedAt).getTime() - new Date(b.confirmedAt).getTime(),
-      render: (date: any) =>
-        date
-          ? dayjs(date.toDate ? date.toDate() : date).format('YYYY-MM-DD')
-          : '-'
-    },
-    {
-      title: 'P.O.E',
+      title: 'Actions',
       key: 'actions',
-      render: (_: any, record: any) => (
-        <Button type='link' onClick={() => setSelectedView(record)}>
-          View
-        </Button> 
-      )
+      render: (_: any, record: any) =>
+        record.interventionKey ? (
+          <Button
+            type='link'
+            onClick={() => {
+              setSelectedView(record)
+              setShowDetails(false)
+              setPassword('')
+            }}
+          >
+            View
+          </Button>
+        ) : (
+          <Text type='secondary'>Pending</Text>
+        )
     }
   ]
 
@@ -250,77 +231,19 @@ const InterventionDatabaseView = () => {
       </Row>
 
       <Card>
-        <Table
-          columns={columns}
-          dataSource={filtered}
-          rowKey='id'
-          expandable={{
-            expandedRowRender: record => {
-              const isGrouped = record.interventionType === 'grouped'
-              const consultants = record.consultantIds || []
-              const hours = record.timeSpent || []
-
-              return (
-                <div>
-                  <p>
-                    <strong>Target:</strong> {record.targetValue}{' '}
-                    {record.targetMetric}
-                  </p>
-                  <p>
-                    <strong>Feedback:</strong>{' '}
-                    {record.feedback?.comments || 'No feedback'}
-                  </p>
-
-                  {isGrouped ? (
-                    <div>
-                      <Divider />
-                      <strong>Consultant Contributions:</strong>
-                      <ul style={{ paddingLeft: 20 }}>
-                        {consultants.map((id: string, idx: number) => {
-                          const name = consultantMap[id] || id
-                          const hoursSpent = hours[idx] || 0
-                          const rate = consultantRates[id] || 0
-                          const amount = rate * hoursSpent
-                          return (
-                            <li key={id}>
-                              {name} — {hoursSpent} hrs × R{rate}/hr ={' '}
-                              <b>R{amount.toFixed(2)}</b>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    </div>
-                  ) : (
-                    <div>
-                      <Divider />
-                      <strong>Consultant:</strong>{' '}
-                      {consultantMap[record.consultantIds?.[0]] || 'Unknown'}{' '}
-                      <br />
-                      <strong>Hours:</strong> {record.timeSpent?.[0] || 0} hrs{' '}
-                      <br />
-                      <strong>Rate:</strong> R
-                      {consultantRates[record.consultantIds?.[0]] || 0}/hr{' '}
-                      <br />
-                      <strong>Amount Due:</strong>{' '}
-                      <b>
-                        R
-                        {(
-                          (record.timeSpent?.[0] || 0) *
-                          (consultantRates[record.consultantIds?.[0]] || 0)
-                        ).toFixed(2)}
-                      </b>
-                    </div>
-                  )}
-                </div>
-              )
-            }
-          }}
-        />
+        <Table columns={columns} dataSource={filtered} rowKey='id' />
       </Card>
+
       <Modal
-        title='View Intervention Details'
+        title={`Completed Interventions for ${
+          participantMap[selectedView?.participantId] || 'Beneficiary'
+        }`}
         open={!!selectedView}
-        onCancel={() => setSelectedView(null)}
+        onCancel={() => {
+          setSelectedView(null)
+          setShowDetails(false)
+          setPassword('')
+        }}
         footer={[
           <Button key='close' onClick={() => setSelectedView(null)}>
             Close
@@ -330,31 +253,100 @@ const InterventionDatabaseView = () => {
         {selectedView && (
           <>
             <p>
-              <strong>Title:</strong> {selectedView.interventionTitle}
-            </p>
-            <p>
-              <strong>Area:</strong> {selectedView.areaOfSupport}
+              <strong>Participant:</strong>{' '}
+              {participantMap[selectedView.participantId]}
             </p>
             <Divider />
-            <strong>Resources:</strong>
-            {selectedView.resources && selectedView.resources.length > 0 ? (
-              <ul>
-                {selectedView.resources.map((res: any, idx: number) => (
-                  <li key={idx}>
-                    {res.type === 'link' ? '🔗' : '📄'}{' '}
-                    <a
-                      href={res.link}
-                      target='_blank'
-                      rel='noopener noreferrer'
+
+            <ul>
+              {records.map((item, index) => (
+                <li key={index} style={{ marginBottom: 12 }}>
+                  <Space direction='vertical'>
+                    <Text strong>{item.interventionTitle}</Text>
+                    <Button
+                      type='link'
+                      onClick={() => {
+                        setShowDetails(item.id)
+                        setPassword('')
+                      }}
                     >
-                      {res.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>No files uploaded.</p>
-            )}
+                      🔑 {item.interventionKey}
+                    </Button>
+                  </Space>
+
+                  {/* Password prompt */}
+                  {showDetails === item.id && (
+                    <div style={{ marginTop: 8 }}>
+                      {!password ? (
+                        <Space direction='vertical' style={{ width: '100%' }}>
+                          <input
+                            type='password'
+                            placeholder='Enter password'
+                            style={{ width: '100%', padding: 8 }}
+                            onChange={e => setPassword(e.target.value)}
+                          />
+                          <Button
+                            type='primary'
+                            onClick={() => {
+                              if (password === 'admin') {
+                                // do nothing, show details already
+                              } else {
+                                notification.error({
+                                  message: 'Incorrect password'
+                                })
+                                setPassword('')
+                              }
+                            }}
+                          >
+                            Reveal Details
+                          </Button>
+                        </Space>
+                      ) : (
+                        <>
+                          <Divider />
+                          <p>
+                            <strong>Completed At:</strong>{' '}
+                            {dayjs(item.confirmedAt.toDate()).format(
+                              'YYYY-MM-DD'
+                            )}
+                          </p>
+                          <p>
+                            <strong>Consultants:</strong>{' '}
+                            {(item.consultantIds || [])
+                              .map(id => consultantMap[id] || id)
+                              .join(', ')}
+                          </p>
+                          <p>
+                            <strong>Time Spent:</strong>{' '}
+                            {(item.timeSpent || []).join(', ')} hrs
+                          </p>
+                          <p>
+                            <strong>POE:</strong>{' '}
+                            {item.resources?.length ? (
+                              <ul>
+                                {item.resources.map((res: any, i: number) => (
+                                  <li key={i}>
+                                    <a
+                                      href={res.link}
+                                      target='_blank'
+                                      rel='noopener noreferrer'
+                                    >
+                                      {res.label}
+                                    </a>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              'None'
+                            )}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
           </>
         )}
       </Modal>

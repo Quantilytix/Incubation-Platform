@@ -68,13 +68,26 @@ import { ConsultantPage } from './routes/operations/consultants'
 // ───────────────────────────────────────────────────────────
 import { FunderDashboard } from '@/routes/funder/funderDashboard'
 import { FunderAnalytics } from '@/routes/funder/analytics/funderAnalytics'
-
+// ───────────────────────────────────────────────────────────
+// 🔹 Funder Routes
+// ───────────────────────────────────────────────────────────
+import InvestorDashboard from './routes/investor/investor/Dashboard'
+import { FunderOpportunities } from './routes/investor/opportunities'
+import { FunderPortfolio } from './routes/investor/portfolio'
+import { InvestorAnalytics } from './routes/investor/analytics'
+import { FunderDocuments } from './routes/investor/documents'
+import { FunderDueDiligence } from './routes/investor/due-diligence'
+import FunderCalendarPage from './routes/investor/calendar'
+import { GovernmentDashboard, ParticipantDirectory } from './routes/government'
+import ProgramsDirectory from './routes/government/programs'
+import { ImpactReports } from './routes/government/reports'
 // ───────────────────────────────────────────────────────────
 // 🔹 Incubatee Routes
 // ───────────────────────────────────────────────────────────
 import { IncubateeDashboard } from '@/routes/incubatee'
 import { MonthlyPerformanceForm } from '@/routes/incubatee/projects/projectSubmission'
 import { DocumentHub } from './routes/incubatee/documents/DocumentsHub'
+import InterventionsTrackingView from './routes/incubatee/interventions'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Consultant Routes
@@ -91,7 +104,6 @@ import { ProjectAnalytics } from '@/routes/consultants/analytics/ProjectAnalytic
 import { ProjectAdminDashboard } from './routes/projectadmin/projectAdminDashboard'
 import MonitoringEvaluationSection from '@/routes/projectadmin/monitoring'
 import { ImpactAnalysisForm } from './routes/projectadmin/impact'
-import InterventionsTrackingView from './routes/incubatee/interventions'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Registration Routes
@@ -112,6 +124,9 @@ import ProgramExpenseForm from './routes/expenses'
 import GenericProgramExpenseForm from './routes/expenses'
 import SystemSetupForm from './routes/system'
 import InterventionDatabaseView from './routes/interventions'
+import ProjectAdminReports from './routes/projectadmin/reports'
+import FinancialReportsInterface from './routes/incubatee/financials'
+import ApplicationTracker from './routes/incubatee/tracker'
 
 const queryClient = new QueryClient()
 
@@ -147,10 +162,12 @@ const App = () => {
                       </Authenticated>
                     }
                   >
+                    {/* System Admin Routes */}
                     <Route path='admin'>
                       <Route index element={<AdminDashboard />} />
                       <Route path='forms' element={<FormManagement />} />
                     </Route>
+                    {/* Project Admin Routes */}
                     <Route path='projectadmin'>
                       <Route index element={<ProjectAdminDashboard />} />
                       <Route path='impact' element={<ImpactAnalysisForm />} />
@@ -158,7 +175,9 @@ const App = () => {
                         path='monitoring'
                         element={<MonitoringEvaluationSection />}
                       />
+                      <Route path='reports' element={<ProjectAdminReports />} />
                     </Route>
+                    {/* Director Routes */}
                     <Route path='director'>
                       <Route index element={<DirectorDashboard />} />
                       <Route
@@ -171,6 +190,7 @@ const App = () => {
                       <Route index element={<FunderDashboard />} />
                       <Route path='analytics' element={<FunderAnalytics />} />
                     </Route>
+                    {/* Incubatee Routes */}
                     <Route path='incubatee'>
                       <Route index element={<IncubateeDashboard />} />
                       <Route
@@ -181,8 +201,29 @@ const App = () => {
                         path='projects'
                         element={<MonthlyPerformanceForm />}
                       />
+                      <Route
+                        path='financials'
+                        element={<FinancialReportsInterface />}
+                      />
                       <Route path='documents' element={<DocumentHub />} />
                     </Route>
+                    {/* Investor Routes */}
+                    <Route path='investor'>
+                      <Route index element={<InvestorDashboard />} />
+                      <Route
+                        path='opportunities'
+                        element={<FunderOpportunities />}
+                      />
+                      <Route path='portfolio' element={<FunderPortfolio />} />
+                      <Route
+                        path='due-diligence'
+                        element={<FunderDueDiligence />}
+                      />
+                      <Route path='analytics' element={<FunderAnalytics />} />
+                      <Route path='documents' element={<FunderDocuments />} />
+                      <Route path='calendar' element={<FunderCalendarPage />} />
+                    </Route>
+                    {/* Consultant Routes */}
                     <Route path='consultant'>
                       <Route index element={<ConsultantDashboard />} />
                       <Route path='feedback' element={<FeedbackWorkspace />} />
@@ -209,6 +250,7 @@ const App = () => {
                         />
                       </Route>
                     </Route>
+                    {/* Operations Routes */}
                     <Route path='operations'>
                       <Route index element={<OperationsDashboard />} />
                       <Route
@@ -240,6 +282,18 @@ const App = () => {
                       />
                       <Route path='reports' element={<OperationsReports />} />
                     </Route>
+                    {/* Government Routes */}
+                    <Route path='government'>
+                      <Route index element={<GovernmentDashboard />} />
+                      <Route path='analytics' element={<FunderAnalytics />} />
+                      <Route index element={<GovernmentDashboard />} />
+                      <Route
+                        path='participants'
+                        element={<ParticipantDirectory />}
+                      />
+                      <Route path='programs' element={<ProgramsDirectory />} />
+                      <Route path='reports' element={<ImpactReports />} />
+                    </Route>
                     <Route
                       path='interventions'
                       element={<InterventionDatabaseView />}
@@ -256,9 +310,14 @@ const App = () => {
                   </Route>
                   <Route path='/' element={<LoginPage />} />
                   <Route path='/login' element={<LoginPage />} />
+
                   <Route
                     path='/director/onboarding'
                     element={<DirectorOnboardingPage />}
+                  />
+                  <Route
+                    path='/incubatee/tracker'
+                    element={<ApplicationTracker />}
                   />
                   <Route path='/registration'>
                     <Route index element={<RegisterPage />} />

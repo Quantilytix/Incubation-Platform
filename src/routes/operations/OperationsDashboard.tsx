@@ -533,12 +533,13 @@ export const OperationsDashboard: React.FC = () => {
               >
                 <List
                   size='small'
-                 dataSource={[...tasks].sort((a, b) => {
-  if (a.status === 'Completed' && b.status !== 'Completed') return 1
-  if (a.status !== 'Completed' && b.status === 'Completed') return -1
-  return 0
-})}
-
+                  dataSource={[...tasks].sort((a, b) => {
+                    if (a.status === 'Completed' && b.status !== 'Completed')
+                      return 1
+                    if (a.status !== 'Completed' && b.status === 'Completed')
+                      return -1
+                    return 0
+                  })}
                   renderItem={task => (
                     <List.Item
                       actions={[

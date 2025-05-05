@@ -32,7 +32,8 @@ import {
   doc,
   query,
   where,
-  Timestamp
+  Timestamp,
+  getDoc
 } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { Helmet } from 'react-helmet'
@@ -125,14 +126,11 @@ export const ConsultantDashboard: React.FC = () => {
             let location = 'Unknown'
 
             if (data.participantId) {
-              const participantSnap = await getDocs(
-                query(
-                  collection(db, 'participants'),
-                  where('id', '==', data.participantId)
-                )
-              )
-              if (!participantSnap.empty) {
-                const participant = participantSnap.docs[0].data()
+              const participantRef = doc(db, 'participants', data.participantId)
+              const participantSnap = await getDoc(participantRef)
+
+              if (participantSnap.exists()) {
+                const participant = participantSnap.data()
                 sector = participant.sector || sector
                 stage = participant.stage || stage
                 location = participant.location || location
@@ -141,7 +139,7 @@ export const ConsultantDashboard: React.FC = () => {
 
             return {
               id: docSnap.id,
-              sme: data.smeName,
+              beneficiaryName: data.beneficiaryName,
               intervention: data.interventionTitle,
               sector,
               stage,
@@ -154,9 +152,7 @@ export const ConsultantDashboard: React.FC = () => {
         )
 
         const assigned = allInterventions.filter(i => i.status === 'assigned')
-        const inProgress = allInterventions.filter(
-          i => i.status === 'in-progress'
-        )
+        const inProgress = allInterventions.filter(i => i.status === 'assigned')
 
         setInterventions(assigned)
         setOngoingCount(inProgress.length)
@@ -298,7 +294,11 @@ export const ConsultantDashboard: React.FC = () => {
   }
 
   const columns = [
-    { title: 'SME Name', dataIndex: 'sme', key: 'sme' },
+    {
+      title: 'Beneficiary Name',
+      dataIndex: 'beneficiaryName',
+      key: 'beneficiaryName'
+    },
     { title: 'Intervention', dataIndex: 'intervention', key: 'intervention' },
     { title: 'Sector', dataIndex: 'sector', key: 'sector' },
     { title: 'Lifecycle Stage', dataIndex: 'stage', key: 'stage' },
