@@ -44,6 +44,8 @@ type UserRole =
   | 'operations'
   | 'director'
   | 'projectadmin'
+  | 'investor'
+  | 'government'
 
 export const CustomLayout: React.FC = () => {
   const { data: identity } = useGetIdentity()
@@ -74,8 +76,11 @@ export const CustomLayout: React.FC = () => {
       operations: 'Operations',
       admin: 'Admin',
       director: 'Director',
-      incubatee: 'Incubatee'
+      incubatee: 'Incubatee',
+      investor: 'Investor',
+      government: 'Government'
     }
+
     return `Smart Incubation : ${nameMap[role] || role} Dashboard`
   }
 
@@ -94,25 +99,88 @@ export const CustomLayout: React.FC = () => {
         icon: <BarChartOutlined />
       }
     ],
-
+    investor: [
+      {
+        key: 'dashboard',
+        to: '/investor',
+        label: 'Dashboard',
+        icon: <DashboardOutlined />
+      },
+      {
+        key: 'opportunities',
+        to: '/investor/opportunities',
+        label: 'Opportunities',
+        icon: <FundProjectionScreenOutlined />
+      },
+      {
+        key: 'portfolio',
+        to: '/investor/portfolio',
+        label: 'Portfolio',
+        icon: <ProfileOutlined />
+      },
+      {
+        key: 'due-diligence',
+        to: '/investor/due-diligence',
+        label: 'Due Diligence',
+        icon: <AuditOutlined />
+      },
+      {
+        key: 'analytics',
+        to: '/investor/analytics',
+        label: 'Analytics',
+        icon: <BarChartOutlined />
+      },
+      {
+        key: 'documents',
+        to: '/investor/documents',
+        label: 'Documents',
+        icon: <FileTextOutlined />
+      },
+      {
+        key: 'calendar',
+        to: '/investor/calendar',
+        label: 'Calendar',
+        icon: <CalendarOutlined />
+      }
+    ],
+    government: [
+      {
+        key: 'dashboard',
+        to: '/government',
+        label: 'Dashboard',
+        icon: <DashboardOutlined />
+      },
+      {
+        key: 'analytics',
+        to: '/government/analytics',
+        label: 'Analytics',
+        icon: <BarChartOutlined />
+      },
+      {
+        key: 'participants',
+        to: '/government/participants',
+        label: 'Participants',
+        icon: <TeamOutlined />
+      },
+      {
+        key: 'programs',
+        to: '/government/programs',
+        label: 'Programs',
+        icon: <ProjectOutlined />
+      },
+      {
+        key: 'reports',
+        to: '/government/reports',
+        label: 'Reports',
+        icon: <ReadOutlined />
+      }
+    ],
     projectadmin: [
       {
         key: 'dashboard',
         to: '/projectadmin',
         label: 'Dashboard',
         icon: <DashboardOutlined />
-      },
-      {
-        key: 'programs',
-        to: '/programs',
-        label: 'Programs Onboarding',
-        icon: <LaptopOutlined />
-      },
-      {
-        key: 'expenses',
-        to: '/expenses',
-        label: 'Program Expenses',
-        icon: <FundProjectionScreenOutlined />
       },
       {
         key: 'analytics',
@@ -128,7 +196,7 @@ export const CustomLayout: React.FC = () => {
       },
       {
         key: 'reports',
-       to: '/operations/reports',
+        to: '/projectadmin/reports',
         label: 'Reports',
         icon: <ReadOutlined />
       }
@@ -235,6 +303,12 @@ export const CustomLayout: React.FC = () => {
         icon: <SolutionOutlined />
       },
       {
+        key: 'financials',
+        to: '/incubatee/financials',
+        label: 'Financial Portal',
+        icon: <SolutionOutlined />
+      },
+      {
         key: 'projects',
         to: '/incubatee/projects',
         label: 'Key Metrics',
@@ -254,12 +328,6 @@ export const CustomLayout: React.FC = () => {
         to: '/operations',
         label: 'Dashboard',
         icon: <DashboardOutlined />
-      },
-      {
-        key: 'programs',
-        to: '/programs',
-        label: 'Programs Onboarding',
-        icon: <LaptopOutlined />
       },
       {
         key: 'assignments',
@@ -386,7 +454,7 @@ export const CustomLayout: React.FC = () => {
         >
           <img
             src='/assets/images/impala.png'
-            alt='Lepharo Logo'
+            alt='Logo'
             style={{
               maxHeight: '60px',
               width: collapsed ? '40px' : '120px',
