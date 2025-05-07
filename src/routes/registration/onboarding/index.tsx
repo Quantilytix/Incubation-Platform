@@ -15,15 +15,28 @@ import {
   Col,
   Checkbox,
   Collapse,
-  Spin
+  Spin,
+  Divider
 } from 'antd'
-
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  HeadingLevel,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  BorderStyle
+} from 'docx'
+import { saveAs } from 'file-saver'
+import SHA256 from 'crypto-js/sha256'
 import { UploadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { auth, db, storage } from '@/firebase'
 import {
   collection,
-  addDoc,
   getDoc,
   doc,
   getDocs,
@@ -31,6 +44,7 @@ import {
   where,
   updateDoc
 } from 'firebase/firestore'
+import moment from 'moment'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useEffect } from 'react'
 
@@ -68,6 +82,7 @@ const ParticipantRegistrationStepForm = () => {
   const [interventionSelections, setInterventionSelections] = useState<
     Record<string, string[]>
   >({})
+  const [participantData, setParticipantData] = useState<any>({})
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -89,6 +104,7 @@ const ParticipantRegistrationStepForm = () => {
               where('companyCode', '==', companyCode)
             )
           )
+          console.log(companyCode)
           console.log(interventionGroups)
 
           const rawInterventions = interventionsSnapshot.docs.map(doc => ({
@@ -126,6 +142,185 @@ const ParticipantRegistrationStepForm = () => {
     fetchUserData()
   }, [])
 
+  const generateSignature = (data: any) =>
+    SHA256(`${data.email}|${data.participantName}|${Date.now()}`)
+      .toString()
+      .substring(0, 16)
+
+  const generateGrowthPlanDoc = (data: any) => {
+    const safeText = (text: any) =>
+      new Paragraph({ children: [new TextRun(text ?? 'N/A')] })
+
+    const createCell = (text: string | number, isHeader = false) =>
+      new TableCell({
+        children: [
+          new Paragraph({
+            children: [new TextRun({ text: text.toString(), bold: isHeader })]
+          })
+        ],
+        shading: isHeader ? { fill: 'D9D9D9' } : undefined,
+        width: { size: 25, type: WidthType.PERCENTAGE },
+        borders: {
+          top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+          bottom: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+          left: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+          right: { style: BorderStyle.SINGLE, size: 1, color: '000000' }
+        }
+      })
+
+    const annualTable = new Table({
+      rows: [
+        new TableRow({
+          children: ['Year', 'Perm Emp', 'Temp Emp', 'Revenue'].map(h =>
+            createCell(h, true)
+          )
+        }),
+        ...[2023, 2024].map(
+          year =>
+            new TableRow({
+              children: [
+                year,
+                data[`empPerm${year}`],
+                data[`empTemp${year}`],
+                `R${data[`revenue${year}`] ?? 0}`
+              ].map(val => createCell(val))
+            })
+        )
+      ],
+      width: { size: 100, type: WidthType.PERCENTAGE }
+    })
+
+    const monthlyTable = new Table({
+      rows: [
+        new TableRow({
+          children: ['Month', 'Perm Emp', 'Temp Emp', 'Revenue'].map(h =>
+            createCell(h, true)
+          )
+        }),
+        ...['Jan', 'Feb', 'Mar'].map(
+          month =>
+            new TableRow({
+              children: [
+                month,
+                data[`empPerm${month}`],
+                data[`empTemp${month}`],
+                `R${data[`revenue${month}`] ?? 0}`
+              ].map(val => createCell(val))
+            })
+        )
+      ],
+      width: { size: 100, type: WidthType.PERCENTAGE }
+    })
+
+    const digitalSignature = SHA256(
+      `${data.email}|${data.participantName}|${data.dateOfRegistration}`
+    )
+      .toString()
+      .substring(0, 16)
+
+    const doc = new Document({
+      sections: [
+        {
+          children: [
+            new Paragraph({
+              text: `${data.beneficiaryName || 'Participant'} Growth Plan`,
+              heading: HeadingLevel.TITLE,
+              spacing: { after: 300 }
+            }),
+
+            new Paragraph({
+              text: '1. Business Overview',
+              heading: HeadingLevel.HEADING_1
+            }),
+            ...[
+              `Business Name: ${data.beneficiaryName}`,
+              `Business Owner: ${data.participantName}`,
+              `Sector: ${data.sector}`,
+              `Nature of Business: ${data.natureOfBusiness}`,
+              `Stage: ${data.stage}`,
+              `Province: ${data.province}`,
+              `City: ${data.city}`,
+              `Location Type: ${data.location}`,
+              `Date of Registration: ${data.dateOfRegistration}`,
+              `Registration Number: ${data.registrationNumber}`,
+              `Years of Trading: ${data.yearsOfTrading}`
+            ].map(line => safeText(line)),
+
+            new Paragraph({
+              text: '2. Business Summary',
+              heading: HeadingLevel.HEADING_1
+            }),
+            safeText(data.motivation),
+
+            new Paragraph({
+              text: 'Challenges',
+              heading: HeadingLevel.HEADING_2
+            }),
+            safeText(data.challenges),
+
+            new Paragraph({
+              text: '3. Staffing and Revenue History',
+              heading: HeadingLevel.HEADING_1
+            }),
+            new Paragraph({
+              text: 'Annual Overview',
+              heading: HeadingLevel.HEADING_2
+            }),
+            annualTable,
+            new Paragraph({
+              text: 'Monthly Snapshot',
+              heading: HeadingLevel.HEADING_2
+            }),
+            monthlyTable,
+
+            new Paragraph({
+              text: '4. Compliance Summary',
+              heading: HeadingLevel.HEADING_1
+            }),
+            safeText(`Compliance Score: ${data.complianceRate ?? 0}%`),
+
+            new Paragraph({
+              text: '5. Selected Interventions',
+              heading: HeadingLevel.HEADING_1
+            }),
+            ...(data.interventions?.required?.length
+              ? data.interventions.required.map(i =>
+                  safeText(`- ${i.title} (${i.area})`)
+                )
+              : [safeText('No interventions selected.')]),
+
+            new Paragraph({
+              text: '6. Online Presence',
+              heading: HeadingLevel.HEADING_1
+            }),
+            safeText(`Facebook: ${data.facebook}`),
+            safeText(`Instagram: ${data.instagram}`),
+            safeText(`LinkedIn: ${data.linkedIn}`),
+
+            new Paragraph({
+              text: '7. Prepared By',
+              heading: HeadingLevel.HEADING_1
+            }),
+            safeText(`Submitted on: ${new Date().toLocaleDateString()}`),
+
+            new Paragraph({
+              text: '8. Digital Acknowledgment',
+              heading: HeadingLevel.HEADING_1
+            }),
+            safeText(
+              'This document was system-generated based on participant-submitted data.'
+            ),
+            safeText(`Digital Signature: ${digitalSignature}`)
+          ]
+        }
+      ]
+    })
+
+    Packer.toBlob(doc).then(blob => {
+      saveAs(blob, `${data.beneficiaryName || 'Participant'}_Growth_Plan.docx`)
+    })
+  }
+
   const navigate = useNavigate()
 
   const getAgeGroup = (age: number): 'Youth' | 'Adult' | 'Senior' => {
@@ -133,6 +328,20 @@ const ParticipantRegistrationStepForm = () => {
     if (age <= 59) return 'Adult'
     return 'Senior'
   }
+
+  const getYearFields = () => {
+    const currentYear = moment().year()
+    return [currentYear - 1, currentYear - 2] // e.g., [2023, 2024]
+  }
+
+  const getLast3Months = () => {
+    const result = []
+    for (let i = 1; i <= 3; i++) {
+      result.push(moment().subtract(i, 'months').format('MMMM')) // e.g. ["April", "March", "February"]
+    }
+    return result.reverse()
+  }
+
   const formatReviewData = (values: any) => {
     return (
       <div>
@@ -350,26 +559,27 @@ const ParticipantRegistrationStepForm = () => {
         }
       }
 
-      await addDoc(collection(db, 'participants'), participant)
+      // await addDoc(collection(db, 'participants'), participant)
       message.success('Participant successfully applied!')
 
       // ✅ Update user role
-      const userEmail = auth.currentUser?.email
-      if (userEmail) {
-        const usersRef = collection(db, 'users')
-        const q = query(usersRef, where('email', '==', userEmail))
-        const snapshot = await getDocs(q)
+      //   const userEmail = auth.currentUser?.email
+      //   if (userEmail) {
+      //     const usersRef = collection(db, 'users')
+      //     const q = query(usersRef, where('email', '==', userEmail))
+      //     const snapshot = await getDocs(q)
 
-        if (!snapshot.empty) {
-          const userDoc = snapshot.docs[0]
-          await updateDoc(doc(db, 'users', userDoc.id), {
-            role: 'Incubatee'
-          })
-        }
-      }
+      //     if (!snapshot.empty) {
+      //       const userDoc = snapshot.docs[0]
+      //       await updateDoc(doc(db, 'users', userDoc.id), {
+      //         role: 'Incubatee'
+      //       })
+      //     }
+      //   }
 
       // ✅ Redirect to login
-      navigate('/')
+      //   navigate('/')
+      navigate('/registration/growth-plan', { state: { participant } })
 
       // Optional: Reset form state
       setCurrent(0)
@@ -645,6 +855,7 @@ const ParticipantRegistrationStepForm = () => {
       title: 'Documents',
       content: (
         <Space direction='vertical' style={{ width: '100%' }}>
+          <Title>Upload Your Documents</Title>
           {documentFields.map((doc, index) => (
             <Row gutter={16} key={index} align='middle'>
               <Col span={4}>
@@ -685,31 +896,98 @@ const ParticipantRegistrationStepForm = () => {
       )
     },
     {
+      title: 'Employees & Revenue',
+      content: (
+        <Card style={{ backgroundColor: '#e6f7ff' }}>
+          <Title level={4}>Annual Data</Title>
+          {getYearFields().map(year => (
+            <div key={year}>
+              <Title level={5}>{year}</Title>
+              <Form.Item
+                name={`empPerm${year}`}
+                label={`Permanent Employees (${year})`}
+                rules={[{ required: true }]}
+              >
+                <Input type='number' />
+              </Form.Item>
+              <Form.Item
+                name={`empTemp${year}`}
+                label={`Temporary Employees (${year})`}
+                rules={[{ required: true }]}
+              >
+                <Input type='number' />
+              </Form.Item>
+              <Form.Item
+                name={`revenue${year}`}
+                label={`Revenue (${year})`}
+                rules={[{ required: true }]}
+              >
+                <Input prefix='R' type='number' />
+              </Form.Item>
+            </div>
+          ))}
+
+          <Divider />
+
+          <Title level={4}>Monthly Data</Title>
+          {getLast3Months().map(month => (
+            <div key={month}>
+              <Title level={5}>{month}</Title>
+              <Form.Item
+                name={`empPerm${month}`}
+                label={`Permanent Employees (${month})`}
+                rules={[{ required: true }]}
+              >
+                <Input type='number' />
+              </Form.Item>
+              <Form.Item
+                name={`empTemp${month}`}
+                label={`Temporary Employees (${month})`}
+                rules={[{ required: true }]}
+              >
+                <Input type='number' />
+              </Form.Item>
+              <Form.Item
+                name={`revenue${month}`}
+                label={`Revenue (${month})`}
+                rules={[{ required: true }]}
+              >
+                <Input prefix='R' type='number' />
+              </Form.Item>
+            </div>
+          ))}
+        </Card>
+      )
+    },
+    {
       title: 'Interventions',
       content: (
-        <Collapse>
-          {interventionGroups.map(group => (
-            <Collapse.Panel header={group.area} key={group.id}>
-              <Checkbox.Group
-                value={interventionSelections[group.area] || []}
-                onChange={val => {
-                  setInterventionSelections(prev => ({
-                    ...prev,
-                    [group.area]: val as string[]
-                  }))
-                }}
-              >
-                <Space direction='vertical'>
-                  {group.interventions.map(i => (
-                    <Checkbox key={i.id} value={i.id}>
-                      {i.title}
-                    </Checkbox>
-                  ))}
-                </Space>
-              </Checkbox.Group>
-            </Collapse.Panel>
-          ))}
-        </Collapse>
+        <>
+          <Title>Pick Your Required Interventions</Title>
+          <Collapse>
+            {interventionGroups.map(group => (
+              <Collapse.Panel header={group.area} key={group.id}>
+                <Checkbox.Group
+                  value={interventionSelections[group.area] || []}
+                  onChange={val => {
+                    setInterventionSelections(prev => ({
+                      ...prev,
+                      [group.area]: val as string[]
+                    }))
+                  }}
+                >
+                  <Space direction='vertical'>
+                    {group.interventions.map(i => (
+                      <Checkbox key={i.id} value={i.id}>
+                        {i.title}
+                      </Checkbox>
+                    ))}
+                  </Space>
+                </Checkbox.Group>
+              </Collapse.Panel>
+            ))}
+          </Collapse>
+        </>
       )
     },
     {
@@ -766,13 +1044,54 @@ const ParticipantRegistrationStepForm = () => {
                 </Button>
               )}
               {current === steps.length - 1 && (
-                <Button
-                  type='primary'
-                  onClick={handleSubmit}
-                  loading={uploading}
-                >
-                  Submit
-                </Button>
+                <>
+                  {' '}
+                  <Button
+                    type='primary'
+                    onClick={handleSubmit}
+                    loading={uploading}
+                  >
+                    Submit
+                  </Button>
+                  <Button
+                    type='primary'
+                    onClick={() => {
+                      const formData = form.getFieldsValue(true)
+                      const interventionRequired = Object.values(
+                        interventionSelections
+                      )
+                        .flat()
+                        .map(id => {
+                          const match = interventionGroups
+                            .flatMap(group => group.interventions)
+                            .find(i => i.id === id)
+
+                          return {
+                            id: match?.id,
+                            title: match?.title,
+                            area: interventionGroups.find(g =>
+                              g.interventions.some(i => i.id === id)
+                            )?.area
+                          }
+                        })
+
+                      const finalData = {
+                        ...formData,
+                        interventions: {
+                          required: interventionRequired,
+                          assigned: [],
+                          completed: [],
+                          participationRate: 0
+                        },
+                        complianceRate: calculateCompliance()
+                      }
+
+                      generateGrowthPlanDoc(finalData)
+                    }}
+                  >
+                    Download Prelim Diagnostic Assessment (.docx)
+                  </Button>
+                </>
               )}
             </Space>
           </Form.Item>
