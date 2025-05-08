@@ -499,214 +499,200 @@ export const OperationsDashboard: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Main dashboard tabs */}
-      <Tabs activeKey={activeTab} onChange={setActiveTab}>
-        <TabPane
-          tab={
-            <span>
-              <BarsOutlined />
-              Daily Operations
-            </span>
-          }
-          key='1'
-        >
-          <Row gutter={[16, 16]}>
-            {/* Task Management */}
-            <Col xs={24} lg={14}>
-              <Card
-                title={
-                  <Space>
-                    <CheckCircleOutlined />
-                    <span>Task Management</span>
-                  </Space>
-                }
-                extra={
-                  <Button
-                    type='primary'
-                    size='small'
-                    onClick={() => setTaskModalOpen(true)}
-                  >
-                    Add Task
-                  </Button>
-                }
-                style={{ marginBottom: '24px' }}
+      {/* Main dashboard  */}
+      <Row gutter={[16, 16]}>
+        {/* Task Management */}
+        <Col xs={24} lg={14}>
+          <Card
+            title={
+              <Space>
+                <CheckCircleOutlined />
+                <span>Task Management</span>
+              </Space>
+            }
+            extra={
+              <Button
+                type='primary'
+                size='small'
+                onClick={() => setTaskModalOpen(true)}
               >
-                <List
-                  size='small'
-                  dataSource={[...tasks].sort((a, b) => {
-                    if (a.status === 'Completed' && b.status !== 'Completed')
-                      return 1
-                    if (a.status !== 'Completed' && b.status === 'Completed')
-                      return -1
-                    return 0
-                  })}
-                  renderItem={task => (
-                    <List.Item
-                      actions={[
-                        task.status !== 'Completed' && (
-                          <Button
-                            key='complete'
-                            type='link'
-                            size='small'
-                            onClick={() => handleCompleteTask(task.id)}
-                          >
-                            Complete
-                          </Button>
-                        )
-                      ]}
-                    >
-                      <List.Item.Meta
-                        title={
-                          <Space>
-                            <Text
-                              style={{
-                                textDecoration:
-                                  task.status === 'Completed'
-                                    ? 'line-through'
-                                    : 'none'
-                              }}
-                            >
-                              {task.title}
-                            </Text>
-                            <Tag color={getPriorityColor(task.priority)}>
-                              {task.priority}
-                            </Tag>
-                          </Space>
-                        }
-                        description={`Due: ${dayjs(
-                          task.dueDate.toDate
-                            ? task.dueDate.toDate()
-                            : task.dueDate
-                        ).format('YYYY-MM-DD')}`}
-                      />
-                      <Badge
-                        status={getStatusColor(task.status) as any}
-                        text={task.status}
-                      />
-                    </List.Item>
-                  )}
-                />
-              </Card>
-
-              {/* Compliance Tracking */}
-
-              <Card
-                title={
-                  <Space>
-                    <FileSearchOutlined />
-                    <span>Compliance Tracking</span>
-                  </Space>
-                }
-                style={{ marginBottom: '24px' }}
-              >
-                {/* ➡️ First line - Horizontal Compliance Metrics */}
-                <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-                  <Col span={8}>
-                    <Statistic
-                      title='Up-to-date'
-                      value={upToDate}
-                      suffix={`/ ${total}`}
-                      valueStyle={{ color: '#52c41a' }} // ✅ green
-                    />
-                  </Col>
-                  <Col span={8}>
-                    <Statistic
-                      title='Needs Review'
-                      value={needsReview}
-                      suffix={`/ ${total}`}
-                      valueStyle={{ color: '#faad14' }} // ✅ orange
-                    />
-                  </Col>
-                  <Col span={8}>
-                    <Statistic
-                      title='Overdue'
-                      value={overdue}
-                      suffix={`/ ${total}`}
-                      valueStyle={{ color: '#ff4d4f' }} // ✅ red
-                    />
-                  </Col>
-                </Row>
-
-                {/* ➡️ Second line - Progress Bar */}
-                <Paragraph>
-                  <Text strong>Overall Compliance Status</Text>
-                </Paragraph>
-                <Progress
-                  percent={Math.round((upToDate / total) * 100)}
-                  success={{
-                    percent: Math.round((upToDate / total) * 100)
-                  }}
-                  format={percent => `${percent}% Compliant`}
-                />
-
-                <Divider style={{ margin: '12px 0' }} />
-
-                {/* Optional: Generate report button */}
-                <Button type='primary' block>
-                  Generate Compliance Report
-                </Button>
-              </Card>
-            </Col>
-
-            {/* Calendar & Events */}
-            <Col xs={24} lg={10}>
-              <Card
-                title={
-                  <Space>
-                    <ScheduleOutlined />
-                    <span>Upcoming Events</span>
-                  </Space>
-                }
-                extra={
-                  <Button
-                    type='primary'
-                    size='small'
-                    onClick={() => setEventModalOpen(true)}
-                  >
-                    Add Event
-                  </Button>
-                }
-                style={{ marginBottom: '24px' }}
-              >
-                <Timeline mode='left'>
-                  {events.map((event, index) => (
-                    <Timeline.Item key={index} dot={getEventIcon(event.type)}>
-                      <Text strong>
-                        {event.date} - {event.title}
-                      </Text>
-                      <br />
+                Add Task
+              </Button>
+            }
+            style={{ marginBottom: '24px' }}
+          >
+            <List
+              size='small'
+              dataSource={[...tasks].sort((a, b) => {
+                if (a.status === 'Completed' && b.status !== 'Completed')
+                  return 1
+                if (a.status !== 'Completed' && b.status === 'Completed')
+                  return -1
+                return 0
+              })}
+              renderItem={task => (
+                <List.Item
+                  actions={[
+                    task.status !== 'Completed' && (
+                      <Button
+                        key='complete'
+                        type='link'
+                        size='small'
+                        onClick={() => handleCompleteTask(task.id)}
+                      >
+                        Complete
+                      </Button>
+                    )
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={
                       <Space>
-                        <Text type='secondary'>Time: {event.time}</Text>
-                        <Tag
-                          color={
-                            event.type === 'meeting'
-                              ? 'blue'
-                              : event.type === 'deadline'
-                              ? 'red'
-                              : event.type === 'event'
-                              ? 'green'
-                              : 'purple'
-                          }
+                        <Text
+                          style={{
+                            textDecoration:
+                              task.status === 'Completed'
+                                ? 'line-through'
+                                : 'none'
+                          }}
                         >
-                          {event.type.charAt(0).toUpperCase() +
-                            event.type.slice(1)}
+                          {task.title}
+                        </Text>
+                        <Tag color={getPriorityColor(task.priority)}>
+                          {task.priority}
                         </Tag>
                       </Space>
-                    </Timeline.Item>
-                  ))}
-                </Timeline>
-                <Button
-                  type='link'
-                  style={{ padding: 0 }}
-                  onClick={() => setCalendarModalOpen(true)}
-                >
-                  View Full Calendar
-                </Button>
-              </Card>
-            </Col>
-          </Row>
-        </TabPane>
-      </Tabs>
+                    }
+                    description={`Due: ${dayjs(
+                      task.dueDate.toDate ? task.dueDate.toDate() : task.dueDate
+                    ).format('YYYY-MM-DD')}`}
+                  />
+                  <Badge
+                    status={getStatusColor(task.status) as any}
+                    text={task.status}
+                  />
+                </List.Item>
+              )}
+            />
+          </Card>
+
+          {/* Compliance Tracking */}
+
+          <Card
+            title={
+              <Space>
+                <FileSearchOutlined />
+                <span>Compliance Tracking</span>
+              </Space>
+            }
+            style={{ marginBottom: '24px' }}
+          >
+            {/* ➡️ First line - Horizontal Compliance Metrics */}
+            <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
+              <Col span={8}>
+                <Statistic
+                  title='Up-to-date'
+                  value={upToDate}
+                  suffix={`/ ${total}`}
+                  valueStyle={{ color: '#52c41a' }} // ✅ green
+                />
+              </Col>
+              <Col span={8}>
+                <Statistic
+                  title='Needs Review'
+                  value={needsReview}
+                  suffix={`/ ${total}`}
+                  valueStyle={{ color: '#faad14' }} // ✅ orange
+                />
+              </Col>
+              <Col span={8}>
+                <Statistic
+                  title='Overdue'
+                  value={overdue}
+                  suffix={`/ ${total}`}
+                  valueStyle={{ color: '#ff4d4f' }} // ✅ red
+                />
+              </Col>
+            </Row>
+
+            {/* ➡️ Second line - Progress Bar */}
+            <Paragraph>
+              <Text strong>Overall Compliance Status</Text>
+            </Paragraph>
+            <Progress
+              percent={Math.round((upToDate / total) * 100)}
+              success={{
+                percent: Math.round((upToDate / total) * 100)
+              }}
+              format={percent => `${percent}% Compliant`}
+            />
+
+            <Divider style={{ margin: '12px 0' }} />
+
+            {/* Optional: Generate report button */}
+            <Button type='primary' block>
+              Generate Compliance Report
+            </Button>
+          </Card>
+        </Col>
+
+        {/* Calendar & Events */}
+        <Col xs={24} lg={10}>
+          <Card
+            title={
+              <Space>
+                <ScheduleOutlined />
+                <span>Upcoming Events</span>
+              </Space>
+            }
+            extra={
+              <Button
+                type='primary'
+                size='small'
+                onClick={() => setEventModalOpen(true)}
+              >
+                Add Event
+              </Button>
+            }
+            style={{ marginBottom: '24px' }}
+          >
+            <Timeline mode='left'>
+              {events.map((event, index) => (
+                <Timeline.Item key={index} dot={getEventIcon(event.type)}>
+                  <Text strong>
+                    {event.date} - {event.title}
+                  </Text>
+                  <br />
+                  <Space>
+                    <Text type='secondary'>Time: {event.time}</Text>
+                    <Tag
+                      color={
+                        event.type === 'meeting'
+                          ? 'blue'
+                          : event.type === 'deadline'
+                          ? 'red'
+                          : event.type === 'event'
+                          ? 'green'
+                          : 'purple'
+                      }
+                    >
+                      {event.type.charAt(0).toUpperCase() + event.type.slice(1)}
+                    </Tag>
+                  </Space>
+                </Timeline.Item>
+              ))}
+            </Timeline>
+            <Button
+              type='link'
+              style={{ padding: 0 }}
+              onClick={() => setCalendarModalOpen(true)}
+            >
+              View Full Calendar
+            </Button>
+          </Card>
+        </Col>
+      </Row>
+
       {/* Add Task Modal */}
       <Modal
         title='Add New Task'
