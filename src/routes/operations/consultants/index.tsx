@@ -266,14 +266,17 @@ export const ConsultantPage: React.FC = () => {
         <title>Consultants | Smart Incubation</title>
       </Helmet>
 
-      <Row justify='space-between' align='middle' style={{ marginBottom: 24 }}>
-        <Col>
-          <Title level={3}>Consultants</Title>
-        </Col>
-      </Row>
-
       {loading ? (
-        <Spin size='large' />
+        <div
+          style={{
+            display: 'flex',
+            height: '100vh',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <Spin tip='Loading Consultants' size='large' />
+        </div>
       ) : (
         <>
           <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
