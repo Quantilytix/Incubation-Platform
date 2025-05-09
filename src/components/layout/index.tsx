@@ -183,6 +183,12 @@ export const CustomLayout: React.FC = () => {
         icon: <DashboardOutlined />
       },
       {
+        key: 'programs',
+        to: '/programs',
+        label: 'Programs Onboarding',
+        icon: <LaptopOutlined />
+      },
+      {
         key: 'analytics',
         to: '/projectadmin/monitoring',
         label: 'M & E Monitoring',
@@ -328,6 +334,12 @@ export const CustomLayout: React.FC = () => {
         to: '/operations',
         label: 'Dashboard',
         icon: <DashboardOutlined />
+      },
+      {
+        key: 'programs',
+        to: '/programs',
+        label: 'Programs Onboarding',
+        icon: <LaptopOutlined />
       },
       {
         key: 'assignments',
