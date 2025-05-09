@@ -57,6 +57,7 @@ import {
 
 import { ComplianceDocument, documentTypes, documentStatuses } from './types'
 import EDAgreementModal from './EDAgreementModal'
+import { Helmet } from 'react-helmet'
 
 const { Title, Text } = Typography
 const { TabPane } = Tabs
@@ -104,16 +105,44 @@ const OperationsCompliance: React.FC = () => {
     const fetchDocuments = async () => {
       setLoading(true)
       try {
-        const snapshot = await getDocs(collection(db, 'complianceDocuments'))
-        const fetchedDocuments = snapshot.docs.map(docSnap => ({
-          id: docSnap.id,
-          ...docSnap.data()
-        })) as ComplianceDocument[]
+        const snapshot = await getDocs(collection(db, 'participants'))
+
+        const fetchedDocuments: ComplianceDocument[] = []
+
+        snapshot.forEach(participantDoc => {
+          const participantData = participantDoc.data()
+          const participantId = participantDoc.id
+          const participantName = participantData.beneficiaryName || 'Unknown'
+
+          const docs = participantData.complianceDocuments || []
+
+          docs.forEach((doc: any, index: number) => {
+            fetchedDocuments.push({
+              id: `${participantId}-${index}`,
+              participantId,
+              participantName,
+              documentType: doc.type,
+              documentName: doc.fileName,
+              status: doc.status,
+              issueDate: doc.issueDate,
+              expiryDate: doc.expiryDate,
+              fileUrl: doc.url,
+              notes: doc.notes || '',
+              uploadedBy: doc.uploadedBy || 'N/A',
+              uploadedAt: doc.uploadedAt || 'N/A',
+              lastVerifiedBy: doc.lastVerifiedBy || '',
+              lastVerifiedAt: doc.lastVerifiedAt || ''
+            })
+          })
+        })
 
         setDocuments(fetchedDocuments)
       } catch (error) {
-        console.error('Error fetching documents:', error)
-        message.error('Failed to load compliance documents.')
+        console.error(
+          'Error fetching compliance docs from participants:',
+          error
+        )
+        message.error('Failed to load documents.')
       } finally {
         setLoading(false)
       }
@@ -129,7 +158,6 @@ const OperationsCompliance: React.FC = () => {
       form.setFieldsValue({
         participantId: document.participantId,
         documentType: document.documentType,
-        documentName: document.documentName,
         status: document.status,
         issueDate: document.issueDate ? moment(document.issueDate) : null,
         expiryDate: document.expiryDate ? moment(document.expiryDate) : null,
@@ -338,17 +366,20 @@ const OperationsCompliance: React.FC = () => {
 
   // Search functionality
   const filteredDocuments = searchText
-    ? documents.filter(
-        doc =>
+    ? documents.filter(doc => {
+        const docTypeLabel =
+          documentTypes.find(
+            t => t.value === doc.documentType || t.label === doc.documentType
+          )?.label || ''
+
+        return (
           doc.participantName
             .toLowerCase()
             .includes(searchText.toLowerCase()) ||
-          doc.documentName.toLowerCase().includes(searchText.toLowerCase()) ||
-          documentTypes
-            .find(type => type.value === doc.documentType)
-            ?.label.toLowerCase()
-            .includes(searchText.toLowerCase())
-      )
+          doc.documentType.toLowerCase().includes(searchText.toLowerCase()) ||
+          docTypeLabel.toLowerCase().includes(searchText.toLowerCase())
+        )
+      })
     : documents
 
   // Get compliance statistics
@@ -374,19 +405,15 @@ const OperationsCompliance: React.FC = () => {
       title: 'Document Type',
       dataIndex: 'documentType',
       key: 'documentType',
-      render: (type: string) =>
-        documentTypes.find(t => t.value === type)?.label || type,
+      render: (value: string) =>
+        documentTypes.find(t => t.value === value || t.label === value)
+          ?.label || value,
       filters: documentTypes.map(type => ({
         text: type.label,
         value: type.value
       })),
       onFilter: (value: any, record: ComplianceDocument) =>
         record.documentType === value
-    },
-    {
-      title: 'Document Name',
-      dataIndex: 'documentName',
-      key: 'documentName'
     },
     {
       title: 'Status',
@@ -453,6 +480,10 @@ const OperationsCompliance: React.FC = () => {
 
   return (
     <div style={{ padding: '20px' }}>
+      <Helmet>
+        <title>Compliance Management | Smart Incubation</title>
+      </Helmet>
+
       <Title level={2}>Compliance Management</Title>
       <Text>Track and manage compliance documents for participants.</Text>
 

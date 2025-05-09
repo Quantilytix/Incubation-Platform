@@ -52,22 +52,24 @@ const ProgramManager: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [filteredStatus, setFilteredStatus] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string | null>(null)
 
   const user = auth.currentUser
 
   useEffect(() => {
-    const fetchUserCompanyCode = async () => {
+    const fetchUserCompanyCodeAndRole = async () => {
       if (user?.uid) {
         const userRef = doc(db, 'users', user.uid)
         const userSnap = await getDoc(userRef)
         if (userSnap.exists()) {
           const userData = userSnap.data()
           setCompanyCode(userData.companyCode || '')
+          setUserRole(userData.role || '')
         }
       }
     }
 
-    fetchUserCompanyCode()
+    fetchUserCompanyCodeAndRole()
   }, [user])
 
   const fetchPrograms = async () => {
@@ -205,13 +207,17 @@ const ProgramManager: React.FC = () => {
             display: 'flex'
           }}
         >
-          <Button
-            type='primary'
-            icon={<PlusOutlined />}
-            onClick={() => setModalVisible(true)}
-          >
-            Add Program
-          </Button>
+          {userRole !== 'director' && (
+            <Button
+              type='primary'
+              icon={<PlusOutlined />}
+              onClick={() => {
+                if (userRole !== 'Director') setModalVisible(true)
+              }}
+            >
+              Add Program
+            </Button>
+          )}
         </Space>
         <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
           <Col xs={24} sm={12} md={8}>

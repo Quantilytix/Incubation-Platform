@@ -80,10 +80,10 @@ export const InterventionTrack: React.FC = () => {
             const participantData = participantSnap.data()
             console.log('Fetched participant data:', participantData)
 
-            setCompanyName(participantData.enterpriseName || 'Unknown Company')
+            setCompanyName(participantData.beneficiaryName || 'Unknown Company')
             console.log(
               'Set companyName to:',
-              participantData.enterpriseName || 'Unknown Company'
+              participantData.beneficiaryName || 'Unknown Company'
             )
           }
         } else {

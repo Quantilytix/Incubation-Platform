@@ -18,6 +18,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { db } from '@/firebase'
 import dayjs from 'dayjs'
+import { Helmet } from 'react-helmet'
 
 const { Text } = Typography
 const { Option } = Select
@@ -190,6 +191,9 @@ const InterventionDatabaseView = () => {
 
   return (
     <div style={{ padding: 24 }}>
+      <Helmet>
+        <title>Interventions Database</title>
+      </Helmet>
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
           <Select

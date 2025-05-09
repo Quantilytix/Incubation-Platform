@@ -1,20 +1,20 @@
 export interface ComplianceDocument {
-  id: string;
-  participantId: string;
-  participantName: string;
-  documentType: string;
-  documentName: string;
-  status: 'valid' | 'expiring' | 'expired' | 'missing' | 'pending';
-  issueDate: string;
-  expiryDate: string;
-  notes?: string;
-  fileUrl?: string;
-  uploadedBy: string;
-  uploadedAt: string;
-  lastVerifiedBy?: string;
-  lastVerifiedAt?: string;
-  metadata?: Record<string, any>;
-}
+    id: string
+    participantId: string
+    participantName: string
+    documentType: string
+    documentName: string
+    status: 'valid' | 'expiring' | 'expired' | 'missing' | 'pending';
+    issueDate?: string
+    expiryDate?: string
+    notes?: string
+    fileUrl?: string
+    uploadedBy?: string
+    uploadedAt?: string
+    lastVerifiedBy?: string
+    lastVerifiedAt?: string
+  }
+
 
 export interface Participant {
   id: string;
@@ -51,4 +51,4 @@ export const documentStatuses = [
   { value: 'expired', label: 'Expired', color: 'red' },
   { value: 'missing', label: 'Missing', color: 'volcano' },
   { value: 'pending', label: 'Pending Review', color: 'blue' },
-]; 
+];

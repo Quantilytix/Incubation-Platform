@@ -48,6 +48,34 @@ export const Chat = () => {
     fetchUserRole()
   }, [identity])
 
+  const sendToAI = async (query: string) => {
+    try {
+      console.log(identity?.id)
+      const response = await fetch('https://rairo-incu-api.hf.space/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_id: identity?.id || 'unknown',
+          role: userRole || 'guest',
+          user_query: query
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`)
+      }
+
+      const data = await response.json()
+      return data.reply || '🤖 No meaningful response received.'
+    } catch (error) {
+      console.error('Error communicating with AI:', error)
+      AntdMessage.error('AI service error: ' + String(error))
+      return '⚠️ Failed to fetch AI response.'
+    }
+  }
+
   const handleSend = async () => {
     if (!input.trim()) return
 
@@ -64,50 +92,25 @@ export const Chat = () => {
 
     setMessages(prev => [...prev, userMessage])
     setInput('')
-    await sendToAI(input)
+    await respondToUser(input)
   }
 
-  const sendToAI = async (query: string) => {
-    setIsTyping(true)
-
-    try {
-      const response = await fetch('https://rairo-incu-api.hf.space/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          user_query: query
+  const respondToUser = async (query: string) => {
+    const replyText = await sendToAI(query) // 🔄 Wait for the real AI response
+    setMessages(prev => [
+      ...prev,
+      {
+        id: prev.length + 1,
+        sender: 'system',
+        avatar: '🤖',
+        content: replyText,
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit'
         })
-      })
-
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status}`)
       }
-
-      const data = await response.json()
-
-      const replyText = data.reply || '🤖 No meaningful response received.'
-
-      setMessages(prev => [
-        ...prev,
-        {
-          id: prev.length + 1,
-          sender: 'system',
-          avatar: '🤖',
-          content: replyText,
-          timestamp: new Date().toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit'
-          })
-        }
-      ])
-    } catch (error) {
-      console.error('Error communicating with AI:', error)
-      AntdMessage.error('AI service error: ' + String(error))
-    } finally {
-      setIsTyping(false)
-    }
+    ])
+    setIsTyping(false)
   }
 
   useEffect(() => {

@@ -8,7 +8,9 @@ import {
   List,
   Card,
   Space,
-  message
+  message,
+  Progress,
+  Spin
 } from 'antd'
 import {
   CheckOutlined,
@@ -16,7 +18,7 @@ import {
   LinkOutlined,
   PictureOutlined
 } from '@ant-design/icons'
-import { db } from '@/firebase'
+import { auth, db } from '@/firebase'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
@@ -28,7 +30,7 @@ interface AssignedIntervention {
   id: string
   participantId: string
   consultantId: string
-  smeName: string
+  beneficiaryName: string
   interventionTitle: string
   description: string
   timeSpent: number
@@ -42,8 +44,9 @@ interface AssignedIntervention {
 }
 
 export const AssignedInterventions: React.FC = () => {
-  const auth = getAuth()
   const navigate = useNavigate()
+  const [loading, setLoading] = useState(true)
+
   const [consultantId, setConsultantId] = useState<string | null>(null)
   const [selected, setSelected] = useState<AssignedIntervention | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -131,11 +134,13 @@ export const AssignedInterventions: React.FC = () => {
   useEffect(() => {
     const fetchAssignedInterventions = async () => {
       if (!consultantId) return
+      setLoading(true) // 🔄 Begin loading
+
       try {
         const q = query(
           collection(db, 'assignedInterventions'),
           where('consultantId', '==', consultantId),
-          where('status', 'in', ['assigned', 'in-progress']) // 👈 only fetch active
+          where('status', 'in', ['assigned', 'in-progress'])
         )
         const snapshot = await getDocs(q)
         const data = snapshot.docs.map(doc => ({
@@ -145,6 +150,9 @@ export const AssignedInterventions: React.FC = () => {
         setAssignedInterventions(data)
       } catch (error) {
         console.error('Error fetching assigned interventions:', error)
+        message.error('Failed to load assigned interventions.')
+      } finally {
+        setLoading(false) // ✅ End loading
       }
     }
 
@@ -168,11 +176,45 @@ export const AssignedInterventions: React.FC = () => {
       render: (timeSpent: number) => timeSpent || 0 // Default to 0 if undefined
     },
     {
+      title: 'Progress',
+      dataIndex: 'progress',
+      key: 'progress',
+      render: (value: number) => (
+        <Progress percent={value || 0} size='small' strokeColor='#52c41a' />
+      )
+    },
+    {
       title: 'Status',
       dataIndex: 'status',
-      render: (status: string) => (
-        <Tag color={status === 'Completed' ? 'green' : 'blue'}>{status}</Tag>
-      )
+      render: (status: string) => {
+        let color = 'default'
+
+        switch (status.toLowerCase()) {
+          case 'assigned':
+            color = 'gold'
+            break
+          case 'in-progress':
+            color = 'blue'
+            break
+          case 'completed':
+            color = 'green'
+            break
+          case 'declined':
+            color = 'red'
+            break
+          case 'pending':
+            color = 'orange'
+            break
+          default:
+            color = 'default'
+        }
+
+        return (
+          <Tag color={color} style={{ textTransform: 'capitalize' }}>
+            {status}
+          </Tag>
+        )
+      }
     },
     {
       title: 'Action',
@@ -287,34 +329,36 @@ export const AssignedInterventions: React.FC = () => {
         />
       </Helmet>
 
-      <Title level={4}>Ongoing Interventions</Title>
-      <Table
-        dataSource={assignedInterventions}
-        columns={columns}
-        rowKey='id'
-        onRow={record => ({
-          onClick: () => {
-            setSelected(record)
-            setSelectedParticipantId(record.participantId)
-          }
-        })}
-      />
-
-      <Card
-        style={{ marginTop: 32 }}
-        title={`Completed Interventions for ${
-          assignedInterventions.find(
-            i => i.participantId === selectedParticipantId
-          )?.smeName || 'this SME'
-        }`}
-      >
+      <Spin tip='Loaing interventions' spinning={loading} size='large'>
+        <Title level={4}>Ongoing Interventions</Title>
         <Table
-          dataSource={completedInterventions}
-          columns={completedColumns}
+          dataSource={assignedInterventions}
+          columns={columns}
           rowKey='id'
-          pagination={{ pageSize: 5 }}
+          onRow={record => ({
+            onClick: () => {
+              setSelected(record)
+              setSelectedParticipantId(record.participantId)
+            }
+          })}
         />
-      </Card>
+
+        <Card
+          style={{ marginTop: 32 }}
+          title={`Completed Interventions for ${
+            assignedInterventions.find(
+              i => i.participantId === selectedParticipantId
+            )?.beneficiaryName || 'this SME'
+          }`}
+        >
+          <Table
+            dataSource={completedInterventions}
+            columns={completedColumns}
+            rowKey='id'
+            pagination={{ pageSize: 5 }}
+          />
+        </Card>
+      </Spin>
 
       <Modal
         open={modalOpen}
@@ -326,7 +370,7 @@ export const AssignedInterventions: React.FC = () => {
           <>
             <Title level={5}>{selected.interventionTitle}</Title>
             <Paragraph>
-              <b>SME:</b> {selected.smeName}
+              <b>SME:</b> {selected.beneficiaryName}
               <br />
               <b>Time Spent:</b> {selected.timeSpent || 0} hours
               <br />

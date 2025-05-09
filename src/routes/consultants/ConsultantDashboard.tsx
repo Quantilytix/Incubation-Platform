@@ -24,7 +24,7 @@ import {
   BarChartOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { db } from '@/firebase'
+import { auth, db } from '@/firebase'
 import {
   collection,
   getDocs,
@@ -33,12 +33,15 @@ import {
   query,
   where,
   Timestamp,
-  getDoc
+  getDoc,
+  addDoc
 } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
+
+type ConsultantStatus = 'pending' | 'accepted' | 'declined'
 
 interface Intervention {
   id: string
@@ -48,6 +51,7 @@ interface Intervention {
   stage: string
   location: string
   status: string
+  consultantStatus: ConsultantStatus
   declined: boolean
   declineReason: string
 }
@@ -60,7 +64,6 @@ interface Feedback {
 
 export const ConsultantDashboard: React.FC = () => {
   const navigate = useNavigate()
-  const auth = getAuth()
 
   const [interventions, setInterventions] = useState<Intervention[]>([])
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([])
@@ -145,14 +148,20 @@ export const ConsultantDashboard: React.FC = () => {
               stage,
               location,
               status: data.status,
-              declined: data.status === 'declined',
+              consultantStatus: data.consultantStatus || 'pending',
+              declined: data.consultantStatus === 'declined',
               declineReason: data.declineReason || ''
             }
           })
         )
 
-        const assigned = allInterventions.filter(i => i.status === 'assigned')
-        const inProgress = allInterventions.filter(i => i.status === 'assigned')
+        const assigned = allInterventions.filter(
+          i => i.status === 'assigned' && i.consultantStatus === 'pending'
+        )
+
+        const inProgress = allInterventions.filter(
+          i => i.status === 'in-progress'
+        )
 
         setInterventions(assigned)
         setOngoingCount(inProgress.length)
@@ -244,18 +253,32 @@ export const ConsultantDashboard: React.FC = () => {
 
       const interventionData = interventionSnap.data()
 
-      // Update consultantStatus
       await updateDoc(interventionRef, {
         consultantStatus: 'accepted',
         updatedAt: Timestamp.now()
       })
 
-      // If userStatus was already accepted → set to in-progress
       if (interventionData.userStatus === 'accepted') {
         await updateDoc(interventionRef, {
           status: 'in-progress'
         })
       }
+
+      // ✅ Add notification
+      await addDoc(collection(db, 'notifications'), {
+        participantId: interventionData.participantId,
+        participantName: interventionData.beneficiaryName,
+        interventionId: id,
+        interventionTitle: interventionData.interventionTitle,
+        type: 'consultant-accepted',
+        recipientRoles: ['admin', 'participant'],
+        createdAt: new Date(),
+        readBy: {},
+        message: {
+          admin: `Consultant accepted: ${interventionData.interventionTitle}`,
+          participant: `Your intervention "${interventionData.interventionTitle}" was accepted.`
+        }
+      })
 
       message.success('Intervention accepted!')
       setInterventions(prev => prev.filter(item => item.id !== id))
@@ -272,12 +295,39 @@ export const ConsultantDashboard: React.FC = () => {
 
   const confirmDecline = async () => {
     if (!currentDeclineId) return
+
     try {
-      await updateDoc(doc(db, 'assignedInterventions', currentDeclineId), {
+      const interventionRef = doc(db, 'assignedInterventions', currentDeclineId)
+      const interventionSnap = await getDoc(interventionRef)
+
+      if (!interventionSnap.exists()) {
+        message.error('Intervention not found.')
+        return
+      }
+
+      const data = interventionSnap.data()
+
+      await updateDoc(interventionRef, {
         consultantStatus: 'declined',
         status: 'declined',
         declineReason,
         updatedAt: Timestamp.now()
+      })
+
+      // ✅ Add notification
+      await addDoc(collection(db, 'notifications'), {
+        participantId: data.participantId,
+        participantName: data.beneficiaryName,
+        interventionId: currentDeclineId,
+        interventionTitle: data.interventionTitle,
+        type: 'consultant-declined',
+        recipientRoles: ['admin', 'participant'],
+        createdAt: new Date(),
+        readBy: {},
+        message: {
+          admin: `Consultant declined: ${data.interventionTitle}`,
+          participant: `Your intervention "${data.interventionTitle}" was declined.`
+        }
       })
 
       message.success('Intervention declined.')
