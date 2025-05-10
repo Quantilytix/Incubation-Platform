@@ -127,6 +127,10 @@ import InterventionDatabaseView from './routes/interventions'
 import ProjectAdminReports from './routes/projectadmin/reports'
 import FinancialReportsInterface from './routes/incubatee/financials'
 import ApplicationTracker from './routes/incubatee/tracker'
+import GrowthPlanDocument from './routes/registration/onboarding/ParticipantGrowthPlanDocument'
+import LandingPage from './routes/landing'
+import RoleDetailPage from './routes/landing/role'
+import SMEDashboard from './routes/landing/sme'
 
 const queryClient = new QueryClient()
 
@@ -308,7 +312,10 @@ const App = () => {
                     <Route path='applications' element={<ApplicationsPage />} />
                     <Route path='programs' element={<ProgramManager />} />
                   </Route>
-                  <Route path='/' element={<LoginPage />} />
+                  {/* <Route path='/' element={<LoginPage />} /> */}
+                  <Route path='/' element={<LandingPage />} />
+                  <Route path='/role/:roleId' element={<RoleDetailPage />} />
+                  <Route path='/landing/sme' element={<SMEDashboard />} />
                   <Route path='/login' element={<LoginPage />} />
 
                   <Route
@@ -324,6 +331,10 @@ const App = () => {
                     <Route
                       path='/registration/onboarding/:userId'
                       element={<ParticipantFormalRegistration />}
+                    />
+                    <Route
+                      path='/registration/growth-plan'
+                      element={<GrowthPlanDocument />}
                     />
                   </Route>
 
