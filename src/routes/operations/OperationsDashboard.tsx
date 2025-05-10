@@ -35,7 +35,8 @@ import {
   ApartmentOutlined,
   TeamOutlined,
   BarsOutlined,
-  BellOutlined
+  BellOutlined,
+  DeleteOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
@@ -46,14 +47,14 @@ import {
   setDoc,
   doc,
   Timestamp,
-  getDoc
+  getDoc,
+  updateDoc
 } from 'firebase/firestore'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
 import dayjs from 'dayjs'
-
 
 export const OperationsDashboard: React.FC = () => {
   const navigate = useNavigate()
@@ -82,6 +83,9 @@ export const OperationsDashboard: React.FC = () => {
   const [declineModalOpen, setDeclineModalOpen] = useState(false)
   const [declineReason, setDeclineReason] = useState('')
   const [declining, setDeclining] = useState(false)
+  const [directCosts, setDirectCosts] = useState([
+    { description: '', amount: '' }
+  ])
 
   useEffect(() => {
     const fetchNotifications = async () => {
@@ -114,6 +118,19 @@ export const OperationsDashboard: React.FC = () => {
       message.error('Error loading intervention')
     }
   }
+  const addCostField = () => {
+    setDirectCosts([...directCosts, { description: '', amount: '' }])
+  }
+
+  const updateCostField = (
+    index: number,
+    field: 'description' | 'amount',
+    value: string
+  ) => {
+    const updated = [...directCosts]
+    updated[index][field] = value
+    setDirectCosts(updated)
+  }
 
   const markAsRead = async (id: string) => {
     await setDoc(doc(db, 'notifications', id), {
@@ -128,6 +145,12 @@ export const OperationsDashboard: React.FC = () => {
         n.id === id ? { ...n, readBy: { ...n.readBy, operations: true } } : n
       )
     )
+  }
+
+  const removeCostField = (index: number) => {
+    const updated = [...directCosts]
+    updated.splice(index, 1)
+    setDirectCosts(updated.length ? updated : [{ description: '', amount: '' }])
   }
 
   const markAsUnread = async (id: string) => {
@@ -150,8 +173,8 @@ export const OperationsDashboard: React.FC = () => {
     try {
       const ref = doc(db, 'assignedInterventions', selectedIntervention.id)
       await updateDoc(ref, {
-        userCompletionStatus: 'confirmed',
-        status: 'completed'
+        operationsCompletionStatus: 'confirmed',
+        status: 'pending'
       })
 
       await setDoc(doc(db, 'notifications', `notif-${Date.now()}`), {
@@ -175,42 +198,6 @@ export const OperationsDashboard: React.FC = () => {
     } catch (err) {
       console.error(err)
       message.error('Failed to confirm intervention.')
-    } finally {
-      setConfirming(false)
-    }
-  }
-
-  const handleDeclineCompletion = async () => {
-    if (!selectedIntervention) return
-    setConfirming(true)
-    try {
-      const ref = doc(db, 'assignedInterventions', selectedIntervention.id)
-      await updateDoc(ref, {
-        userCompletionStatus: 'rejected',
-        status: 'assigned'
-      })
-
-      await setDoc(doc(db, 'notifications', `notif-${Date.now()}`), {
-        type: 'intervention-declined-by-operations',
-        interventionId: selectedIntervention.id,
-        interventionTitle: selectedIntervention.interventionTitle,
-        participantId: selectedIntervention.participantId,
-        consultantId: selectedIntervention.consultantId,
-        createdAt: Timestamp.now(),
-        readBy: {},
-        recipientRoles: ['projectadmin', 'consultant', 'operations'],
-        message: {
-          operations: `You declined the intervention "${selectedIntervention.interventionTitle}".`,
-          consultant: `Operations declined the intervention "${selectedIntervention.interventionTitle}".`,
-          projectadmin: `Operations declined "${selectedIntervention.interventionTitle}".`
-        }
-      })
-
-      message.success('Intervention declined.')
-      setInterventionDetailModalOpen(false)
-    } catch (err) {
-      console.error(err)
-      message.error('Failed to decline intervention.')
     } finally {
       setConfirming(false)
     }
@@ -951,7 +938,7 @@ export const OperationsDashboard: React.FC = () => {
           height={600}
         />
       </Modal>
-      {/* V */}
+      {/* Calender Event Details */}
       <Modal
         title='Event Details'
         open={eventDetailModalOpen}
@@ -1088,6 +1075,9 @@ export const OperationsDashboard: React.FC = () => {
               {selectedIntervention.beneficiaryName || 'N/A'}
             </p>
             <p>
+              <strong>Consultant:</strong> {selectedIntervention.consultantName}
+            </p>
+            <p>
               <strong>Time Spent:</strong> {selectedIntervention.timeSpent || 0}{' '}
               hours
             </p>
@@ -1119,6 +1109,56 @@ export const OperationsDashboard: React.FC = () => {
             ) : (
               <p>No POE uploaded yet.</p>
             )}
+            <Divider />
+            <Title level={5}>Direct Project Costs</Title>
+
+            {directCosts.map((cost, index) => (
+              <Row
+                gutter={12}
+                key={index}
+                style={{ marginBottom: 8, alignItems: 'center' }}
+              >
+                <Col span={10}>
+                  <Input
+                    placeholder='Description'
+                    value={cost.description}
+                    onChange={e =>
+                      updateCostField(index, 'description', e.target.value)
+                    }
+                  />
+                </Col>
+                <Col span={8}>
+                  <Input
+                    placeholder='Amount'
+                    value={cost.amount}
+                    onChange={e =>
+                      updateCostField(index, 'amount', e.target.value)
+                    }
+                    prefix='R'
+                    type='number'
+                    min='0'
+                  />
+                </Col>
+                <Col span={6}>
+                  <Button
+                    icon={<DeleteOutlined />}
+                    style={{ width: 50 }}
+                    danger
+                    onClick={() => removeCostField(index)}
+                    block
+                  ></Button>
+                </Col>
+              </Row>
+            ))}
+
+            <Button
+              type='dashed'
+              onClick={addCostField}
+              block
+              style={{ marginTop: 12 }}
+            >
+              + Add Cost Item
+            </Button>
           </div>
         ) : (
           <p>Loading...</p>
@@ -1144,7 +1184,7 @@ export const OperationsDashboard: React.FC = () => {
               selectedIntervention.id
             )
             await updateDoc(ref, {
-              userCompletionStatus: 'rejected',
+              operationsCompletionStatus: 'rejected',
               status: 'assigned'
             })
 

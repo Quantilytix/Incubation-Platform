@@ -27,39 +27,50 @@ const cardData = [
 
 const LandingPage = () => {
   const navigate = useNavigate()
+  const cardData = [
+    {
+      key: 'sme',
+      title: 'Startup  | SMME | Cooperative ',
+      image: '/assets/images/icons/Company.png',
+      description: 'Support and opportunities for Small and Medium Enterprises.'
+    },
+    {
+      key: 'incubate',
+      title: 'Incubation | ESD Program Implementor',
+      image: '/assets/images/icons/Business presentation.png',
+      description: 'Tools and resources for incubation program implementors.'
+    },
+    {
+      key: 'government',
+      title: 'Public Sector | International and Supranational Entity',
+      image: '/assets/images/icons/Government Building.png',
+      description: 'Policies and partnerships for government stakeholders.'
+    }
+  ]
 
   return (
-    <Layout>
+    <Layout style={{ minHeight: '100vh' }}>
       <Header
         style={{
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center'
+          alignItems: 'center',
+          paddingInline: 20
         }}
       >
         <div className='logo' style={{ color: 'white', fontSize: 20 }}>
           Smart Incubation Platform
-        </div>
-        <div>
-          <Button
-            icon={<UserOutlined />}
-            type='primary'
-            style={{ marginRight: 10 }}
-          >
-            Register
-          </Button>
-          <Button icon={<LoginOutlined />} onClick={() => navigate('/login')}>
-            Login
-          </Button>
         </div>
       </Header>
 
       <Content
         style={{
           padding: '50px 20px',
+          flexGrow: 1,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center'
+          alignItems: 'center',
+          overflow: 'auto'
         }}
       >
         <Title level={2}>Welcome to the Smart Incubation Platform</Title>
@@ -76,6 +87,8 @@ const LandingPage = () => {
               <div className='hover-card'>
                 <Card
                   hoverable
+                  className='custom-card'
+                  onClick={() => navigate(`/role/${card.key}`)}
                   cover={
                     <img
                       alt={card.title}
@@ -83,10 +96,9 @@ const LandingPage = () => {
                       className='card-img'
                     />
                   }
-                  bodyStyle={{ padding: 0 }}
                 >
+                  <div className='card-title'>{card.title}</div>
                   <div className='card-overlay'>
-                    <h3>{card.title}</h3>
                     <p>{card.description}</p>
                   </div>
                 </Card>

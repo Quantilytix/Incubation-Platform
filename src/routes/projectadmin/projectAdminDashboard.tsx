@@ -172,14 +172,19 @@ export const ProjectAdminDashboard: React.FC = () => {
           </Card>
         </Col>
       </Row>
-      <Tooltip title='Notifications'>
-        <Badge count={unreadCount}>
-          <FloatButton
-            icon={<BellOutlined />}
-            onClick={() => setNotificationModalVisible(true)}
-          />
-        </Badge>
-      </Tooltip>
+      <div style={{ position: 'fixed', bottom: 48, right: 48, zIndex: 1000 }}>
+        <Tooltip title='Notifications'>
+          <Badge count={unreadCount} offset={[-4, 4]}>
+            <Button
+              shape='circle'
+              icon={<BellOutlined />}
+              size='large'
+              onClick={() => setNotificationModalVisible(true)}
+            />
+          </Badge>
+        </Tooltip>
+      </div>
+
       <Modal
         title='Notifications'
         open={notificationModalVisible}

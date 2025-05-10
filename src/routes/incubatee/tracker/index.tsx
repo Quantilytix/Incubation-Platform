@@ -34,6 +34,7 @@ const ApplicationTracker = () => {
   const [loading, setLoading] = useState(true)
   const [availablePrograms, setAvailablePrograms] = useState<any[]>([])
   const [beneficiaryName, setBeneficiaryName] = useState('')
+  const [interventionGroups, setInterventionGroups] = useState<any[]>([])
 
   const navigate = useNavigate()
 
@@ -41,82 +42,107 @@ const ApplicationTracker = () => {
     const fetchUserData = async () => {
       const currentUser = auth.currentUser
       if (!currentUser) return
+      console.log(currentUser)
 
-      const userRef = doc(db, 'users', currentUser.uid)
-      const userSnap = await getDoc(userRef)
+      try {
+        const userRef = doc(db, 'users', currentUser.uid)
+        const userSnap = await getDoc(userRef)
+        if (!userSnap.exists()) return
 
-      if (!userSnap.exists()) return
+        const userData = userSnap.data()
+        const companyCode = userData.companyCode || ''
+        setCompanyCode(companyCode)
 
-      const userData = userSnap.data()
-      const companyCode = userData.companyCode || ''
-      form.setFieldsValue({ companyCode })
-
-      // 🔄 Save Beneficiary name if available
-      if (userData.beneficiaryName) {
-        setBeneficiaryName(userData.beneficiaryName)
-      }
-
-      // 🔽 Fetch all programs
-      const programsSnap = await getDocs(
-        query(
-          collection(db, 'programs'),
-          where('companyCode', '==', companyCode)
-        )
-      )
-      const allPrograms = programsSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
-
-      // 🔎 Fetch user's participants (applications)
-      const participantSnap = await getDocs(
-        query(
-          collection(db, 'participants'),
-          where('email', '==', currentUser.email)
-        )
-      )
-
-      const appliedProgramIds = new Set<string>()
-      participantSnap.docs.forEach(doc => {
-        const interventions = doc.data().interventions?.required || []
-        interventions.forEach((i: any) => {
-          if (i.id) appliedProgramIds.add(i.id)
-        })
-      })
-
-      // ❌ Filter out already-applied programs
-      const filteredPrograms = allPrograms.filter(
-        p => !appliedProgramIds.has(p.id)
-      )
-      setAvailablePrograms(filteredPrograms)
-
-      // 🎯 Prepare interventions for selection step (if needed)
-      const rawInterventions = filteredPrograms.map(p => ({
-        id: p.id,
-        title: p.interventionTitle,
-        area: p.areaOfSupport
-      }))
-
-      // 🧠 Group interventions by area
-      const areaMap: Record<string, { id: string; title: string }[]> = {}
-      rawInterventions.forEach(intervention => {
-        if (!areaMap[intervention.area]) {
-          areaMap[intervention.area] = []
+        if (userData.beneficiaryName) {
+          setBeneficiaryName(userData.beneficiaryName)
         }
-        areaMap[intervention.area].push({
-          id: intervention.id,
-          title: intervention.title
-        })
-      })
 
-      const fetchedGroups = Object.entries(areaMap).map(
-        ([area, interventions]) => ({
-          area,
-          interventions
-        })
-      )
+        // Programs
+        const programsSnap = await getDocs(
+          query(
+            collection(db, 'programs'),
+            where('companyCode', '==', companyCode)
+          )
+        )
+        const allPrograms = programsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        setPrograms(allPrograms)
 
-      setInterventionGroups(fetchedGroups)
+        // Applications
+        const applicationsSnap = await getDocs(
+          query(
+            collection(db, 'participants'),
+            where('email', '==', currentUser.email)
+          )
+        )
+        const appList = applicationsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        // Add programName from `programs`
+        const appsWithNames = appList.map(app => {
+          const matchedProgram = allPrograms.find(p => p.id === app.programId)
+          return {
+            ...app,
+            programName: matchedProgram?.programName || 'Unnamed Program'
+          }
+        })
+        setApplications(appsWithNames)
+
+        // Participants for checking applied interventions
+        const participantSnap = await getDocs(
+          query(
+            collection(db, 'participants'),
+            where('email', '==', currentUser.email)
+          )
+        )
+
+        const appliedProgramIds = new Set<string>()
+        participantSnap.docs.forEach(doc => {
+          const interventions = doc.data().interventions?.required || []
+          interventions.forEach((i: any) => {
+            if (i.id) appliedProgramIds.add(i.id)
+          })
+        })
+
+        const filteredPrograms = allPrograms.filter(
+          p => !appliedProgramIds.has(p.id)
+        )
+        setAvailablePrograms(filteredPrograms)
+
+        // Prepare groups
+        const rawInterventions = filteredPrograms.map(p => ({
+          id: p.id,
+          title: p.interventionTitle,
+          area: p.areaOfSupport
+        }))
+
+        const areaMap: Record<string, { id: string; title: string }[]> = {}
+        rawInterventions.forEach(intervention => {
+          if (!areaMap[intervention.area]) {
+            areaMap[intervention.area] = []
+          }
+          areaMap[intervention.area].push({
+            id: intervention.id,
+            title: intervention.title
+          })
+        })
+
+        const fetchedGroups = Object.entries(areaMap).map(
+          ([area, interventions]) => ({
+            area,
+            interventions
+          })
+        )
+        setInterventionGroups(fetchedGroups)
+      } catch (err) {
+        console.error('Error loading application data:', err)
+        message.error('Failed to load application data')
+      } finally {
+        setLoading(false)
+      }
     }
 
     fetchUserData()
@@ -164,7 +190,7 @@ const ApplicationTracker = () => {
   const programColumns = [
     {
       title: 'Title',
-      dataIndex: 'name'
+      dataIndex: 'programName'
     },
     {
       title: 'Type',
@@ -255,7 +281,7 @@ const ApplicationTracker = () => {
               <Table
                 rowKey='id'
                 columns={programColumns}
-                dataSource={availablePrograms} // ✅ FIXED: show correct programs
+                dataSource={availablePrograms}
                 loading={loading}
                 pagination={{ pageSize: 5 }}
                 scroll={{ x: true }}

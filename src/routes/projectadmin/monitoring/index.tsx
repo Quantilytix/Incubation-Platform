@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Card, Select, Typography, Row, Col } from 'antd'
+import { Card, Select, Typography, Row, Col, Button, Modal } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 
@@ -16,6 +16,10 @@ const MonitoringEvaluationEvaluation = () => {
   const [companyChart, setCompanyChart] = useState(
     'Interventions per Month (Companies)'
   )
+  const [expandedChart, setExpandedChart] = useState<Highcharts.Options | null>(
+    null
+  )
+  const [expandedVisible, setExpandedVisible] = useState(false)
 
   const months = ['Jan', 'Feb', 'Mar', 'Apr']
   const categories = ['Training', 'Funding', 'Mentoring']
@@ -33,6 +37,12 @@ const MonitoringEvaluationEvaluation = () => {
   const expensePerType = [18000, 22000, 14000]
   const interventionsBySector = [25, 40, 30]
   const interventionsByCategory = [50, 35, 20]
+  const revenue = [60000, 55000, 48000, 39000, 32000]
+  const permanent = [30, 25, 20, 15, 10]
+  const temporary = [15, 10, 8, 5, 4]
+  const productivity = revenue.map(
+    (rev, i) => rev / (permanent[i] + temporary[i])
+  )
 
   const companyMonthly = {
     BrightTech: [10, 12, 8, 14],
@@ -42,7 +52,7 @@ const MonitoringEvaluationEvaluation = () => {
     EduLift: [5, 4, 3, 6]
   }
 
-  const incomeByCompany = [60000, 55000, 48000, 39000, 32000]
+  const incomeByCompany = revenue
   const expenseByCompany = [30000, 25000, 23000, 18000, 15000]
   const categoriesByCompany = [
     { name: 'Training', data: [4, 6, 5, 2, 1] },
@@ -57,6 +67,9 @@ const MonitoringEvaluationEvaluation = () => {
       title: { text: 'Interventions per Month' },
       xAxis: { categories: months },
       yAxis: { title: { text: 'Count' } },
+      plotOptions: {
+        column: { dataLabels: { enabled: true, format: '{point.y}' } }
+      },
       series: [{ name: 'Interventions', data: interventionsByMonth }]
     },
     'Income vs Expense (Type)': {
@@ -64,6 +77,9 @@ const MonitoringEvaluationEvaluation = () => {
       title: { text: 'Income vs Expense per Type' },
       xAxis: { categories },
       yAxis: { title: { text: 'Rands (R)' } },
+      plotOptions: {
+        column: { dataLabels: { enabled: true, format: 'R{point.y}' } }
+      },
       series: [
         { name: 'Income', data: incomePerType },
         { name: 'Expense', data: expensePerType }
@@ -74,11 +90,19 @@ const MonitoringEvaluationEvaluation = () => {
       title: { text: 'Interventions by Sector' },
       xAxis: { categories: sectors },
       yAxis: { title: { text: 'Total Interventions' } },
+      plotOptions: {
+        bar: { dataLabels: { enabled: true, format: '{point.y}' } }
+      },
       series: [{ name: 'Sector Count', data: interventionsBySector }]
     },
     'Intervention Categories': {
       chart: { type: 'pie' },
       title: { text: 'Intervention Categories' },
+      plotOptions: {
+        pie: {
+          dataLabels: { enabled: true, format: '{point.name}: {point.y}' }
+        }
+      },
       series: [
         {
           name: 'Categories',
@@ -87,6 +111,58 @@ const MonitoringEvaluationEvaluation = () => {
             name: cat,
             y: interventionsByCategory[i]
           }))
+        }
+      ]
+    },
+    'Compliance Overview': {
+      chart: { type: 'pie' },
+      title: { text: 'Compliance Status Overview' },
+      plotOptions: {
+        pie: {
+          dataLabels: { enabled: true, format: '{point.name}: {point.y}' }
+        }
+      },
+      series: [
+        {
+          name: 'Companies',
+          colorByPoint: true,
+          data: [
+            { name: 'Valid', y: 120 },
+            { name: 'Expiring Soon', y: 30 },
+            { name: 'Expired', y: 20 },
+            { name: 'Missing', y: 10 },
+            { name: 'Pending Review', y: 15 }
+          ]
+        }
+      ]
+    },
+    'Revenue vs Workers': {
+      chart: { type: 'column' },
+      title: { text: 'Revenue vs Workers (Permanent & Temporary)' },
+      xAxis: { categories: companies },
+      yAxis: { title: { text: 'Values' } },
+      plotOptions: {
+        column: { dataLabels: { enabled: true, format: '{point.y}' } }
+      },
+      series: [
+        { name: 'Revenue', data: revenue },
+        { name: 'Permanent Workers', data: permanent },
+        { name: 'Temporary Workers', data: temporary }
+      ]
+    },
+    'Revenue vs Productivity': {
+      chart: { type: 'line' },
+      title: { text: 'Revenue per Worker (Productivity)' },
+      xAxis: { categories: companies },
+      yAxis: { title: { text: 'Rands per Headcount' } },
+      plotOptions: {
+        line: { dataLabels: { enabled: true, format: 'R {point.y:.0f}' } }
+      },
+      series: [
+        {
+          name: 'Productivity',
+          data: productivity,
+          color: '#722ed1'
         }
       ]
     }
@@ -133,32 +209,43 @@ const MonitoringEvaluationEvaluation = () => {
     }
   }
 
+  const openExpand = (chart: Highcharts.Options) => {
+    setExpandedChart(chart)
+    setExpandedVisible(true)
+  }
+
   return (
     <div style={{ padding: 24 }}>
+      <Title level={3}>📈 Monitoring & Evaluation Dashboard</Title>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col>
+          <Select value={gender} onChange={setGender} style={{ width: 120 }}>
+            <Option value='All'>All</Option>
+            <Option value='Male'>Male</Option>
+            <Option value='Female'>Female</Option>
+          </Select>
+        </Col>
+        <Col>
+          <Select value={ageGroup} onChange={setAgeGroup}>
+            <Option value='All'>All Ages</Option>
+            <Option value='Youth'>Youth</Option>
+            <Option value='Adult'>Adult</Option>
+            <Option value='Senior'>Senior</Option>
+          </Select>
+        </Col>
+      </Row>
+
       <Row gutter={[24, 24]}>
-        <Col span={24}>
-          <Card title='📊 Interventions Overview (Aggregated)'>
-            <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col>
-                <Select value={gender} onChange={setGender}>
-                  <Option value='All'>All Genders</Option>
-                  <Option value='Male'>Male</Option>
-                  <Option value='Female'>Female</Option>
-                </Select>
-              </Col>
-              <Col>
-                <Select value={ageGroup} onChange={setAgeGroup}>
-                  <Option value='All'>All Ages</Option>
-                  <Option value='Youth'>Youth</Option>
-                  <Option value='Adult'>Adult</Option>
-                  <Option value='Senior'>Senior</Option>
-                </Select>
-              </Col>
-              <Col>
+        <Col xs={24} lg={12}>
+          <Card
+            title='📊 Interventions Overview'
+            extra={
+              <>
                 <Select
                   value={interventionChart}
                   onChange={setInterventionChart}
-                  style={{ width: 250 }}
+                  style={{ width: 250, marginRight: 12 }}
                 >
                   {Object.keys(interventionCharts).map(key => (
                     <Option key={key} value={key}>
@@ -166,9 +253,16 @@ const MonitoringEvaluationEvaluation = () => {
                     </Option>
                   ))}
                 </Select>
-              </Col>
-            </Row>
-
+                <Button
+                  onClick={() =>
+                    openExpand(interventionCharts[interventionChart])
+                  }
+                >
+                  Expand
+                </Button>
+              </>
+            }
+          >
             <HighchartsReact
               highcharts={Highcharts}
               options={interventionCharts[interventionChart]}
@@ -176,23 +270,15 @@ const MonitoringEvaluationEvaluation = () => {
           </Card>
         </Col>
 
-        <Col span={24}>
-          <Card title='🏢 Company-Level Breakdowns'>
-            <Row gutter={16} style={{ marginBottom: 16 }}>
-              <Col>
-                <Select value={topN} onChange={setTopN}>
-                  {[5, 3, 10].map(n => (
-                    <Option key={n} value={n}>
-                      Top {n}
-                    </Option>
-                  ))}
-                </Select>
-              </Col>
-              <Col>
+        <Col xs={24} lg={12}>
+          <Card
+            title='🏢 Company-Level Breakdowns'
+            extra={
+              <>
                 <Select
                   value={companyChart}
                   onChange={setCompanyChart}
-                  style={{ width: 250 }}
+                  style={{ width: 250, marginRight: 12 }}
                 >
                   {Object.keys(companyCharts).map(key => (
                     <Option key={key} value={key}>
@@ -200,8 +286,23 @@ const MonitoringEvaluationEvaluation = () => {
                     </Option>
                   ))}
                 </Select>
-              </Col>
-            </Row>
+                <Button onClick={() => openExpand(companyCharts[companyChart])}>
+                  Expand
+                </Button>
+              </>
+            }
+          >
+            <Select
+              value={topN}
+              onChange={setTopN}
+              style={{ marginBottom: 16, width: 120 }}
+            >
+              {[5, 3, 10].map(n => (
+                <Option key={n} value={n}>
+                  Top {n}
+                </Option>
+              ))}
+            </Select>
 
             <HighchartsReact
               highcharts={Highcharts}
@@ -210,6 +311,17 @@ const MonitoringEvaluationEvaluation = () => {
           </Card>
         </Col>
       </Row>
+
+      <Modal
+        open={expandedVisible}
+        onCancel={() => setExpandedVisible(false)}
+        width='80%'
+        footer={null}
+      >
+        {expandedChart && (
+          <HighchartsReact highcharts={Highcharts} options={expandedChart} />
+        )}
+      </Modal>
     </div>
   )
 }

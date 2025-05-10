@@ -31,8 +31,10 @@ const InterventionDatabaseView = () => {
   const [filters, setFilters] = useState({
     programId: 'all',
     type: 'all',
-    area: 'all'
+    area: 'all',
+    quarter: 'all'
   })
+
   const [programMap, setProgramMap] = useState<{ [key: string]: string }>({})
   const [consultantMap, setConsultantMap] = useState<{ [key: string]: string }>(
     {}
@@ -88,6 +90,13 @@ const InterventionDatabaseView = () => {
       })
       setConsultantMap(cMap)
 
+      const programsSnap = await getDocs(collection(db, 'programs'))
+      const prMap: any = {}
+      programsSnap.forEach(doc => {
+        prMap[doc.id] = doc.data().programName
+      })
+      setProgramMap(prMap)
+
       const userData = userSnap.docs[0].data()
       const code = userData.companyCode
       setCompanyCode(code)
@@ -98,11 +107,48 @@ const InterventionDatabaseView = () => {
           where('companyCode', '==', code)
         )
       )
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      setRecords(data)
-      setFiltered(data)
+      const grouped = new Map()
 
-      const uniquePrograms = [...new Set(data.map(d => d.programId))]
+      snapshot.docs.forEach(doc => {
+        const data = doc.data()
+
+        const key = `${data.programId}_${data.participantId}`
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            programId: data.programId,
+            participantId: data.participantId,
+            beneficiaryName: data.beneficiaryName,
+            province: data.province,
+            quarter: data.quarter,
+            hub: data.hub,
+            interventions: []
+          })
+        }
+
+        grouped.get(key).interventions.push({ id: doc.id, ...data })
+
+        const flattened = snapshot.docs.map(doc => {
+          const data = doc.data()
+          return {
+            id: doc.id,
+            ...data,
+            programName: pMap[data.programId] || data.programId,
+            participantName: pMap[data.participantId] || data.participantId,
+            quarter: `Q${
+              Math.floor((dayjs(data.confirmedAt?.toDate()).month() || 0) / 3) +
+              1
+            }`
+          }
+        })
+        setRecords(flattened)
+        setFiltered(flattened)
+      })
+
+      const groupedRecords = Array.from(grouped.values())
+      setRecords(groupedRecords)
+      setFiltered(groupedRecords)
+
+      const uniquePrograms = [...new Set(groupedRecords.map(d => d.programId))]
       setProgramOptions(uniquePrograms)
     })
   }, [])
@@ -117,7 +163,8 @@ const InterventionDatabaseView = () => {
           item.programId === newFilters.programId) &&
         (newFilters.type === 'all' ||
           item.interventionType === newFilters.type) &&
-        (newFilters.area === 'all' || item.areaOfSupport === newFilters.area)
+        (newFilters.area === 'all' || item.areaOfSupport === newFilters.area) &&
+        (newFilters.quarter === 'all' || item.quarter === newFilters.quarter)
       )
     })
     setFiltered(result)
@@ -127,16 +174,13 @@ const InterventionDatabaseView = () => {
     {
       title: 'Beneficiary',
       dataIndex: 'beneficiaryName',
-      key: 'beneficiaryName',
       render: text => text || <Text type='secondary'>Unknown</Text>
     },
     {
       title: 'Location',
-      dataIndex: 'province',
-      key: 'province',
-      render: (text: string, record: any) => (
+      render: (_, record) => (
         <Space direction='vertical' size={0}>
-          <Text strong>{text}</Text>
+          <Text strong>{record.province}</Text>
           <Text type='secondary'>{record.hub}</Text>
         </Space>
       )
@@ -144,58 +188,30 @@ const InterventionDatabaseView = () => {
     {
       title: 'Program',
       dataIndex: 'programId',
-      key: 'programId',
-      render: (id: string) => programMap[id] || id
+      render: id => programMap[id] || id
     },
     {
-      title: 'Intervention Key',
-      dataIndex: 'interventionKey',
-      key: 'interventionKey',
-      render: (key: string | undefined, record: any) =>
-        key ? (
-          <Tag
-            color='blue'
-            style={{ cursor: 'pointer' }}
-            onClick={() => {
-              setSelectedView(record)
-              setShowDetails(false)
-              setPassword('')
-            }}
-          >
-            {key}
-          </Tag>
-        ) : (
-          <Text type='secondary'>-</Text>
-        )
+      title: 'Quarter',
+      dataIndex: 'quarter',
+      render: text => text || <Text type='secondary'>Unknown</Text>
     },
     {
       title: 'Actions',
-      key: 'actions',
-      render: (_: any, record: any) =>
-        record.interventionKey ? (
-          <Button
-            type='link'
-            onClick={() => {
-              setSelectedView(record)
-              setShowDetails(false)
-              setPassword('')
-            }}
-          >
-            View
-          </Button>
-        ) : (
-          <Text type='secondary'>Pending</Text>
-        )
+      render: (_, record) => (
+        <Button type='link' onClick={() => setSelectedView(record)}>
+          View
+        </Button>
+      )
     }
   ]
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: 24, height: '100vh' }}>
       <Helmet>
         <title>Interventions Database</title>
       </Helmet>
       <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={8}>
+        <Col span={6}>
           <Select
             style={{ width: '100%' }}
             value={filters.programId}
@@ -209,7 +225,22 @@ const InterventionDatabaseView = () => {
             ))}
           </Select>
         </Col>
-        <Col span={8}>
+
+        <Col span={6}>
+          <Select
+            style={{ width: '100%' }}
+            value={filters.quarter}
+            onChange={val => handleFilterChange('quarter', val)}
+          >
+            <Option value='all'>All Quarters</Option>
+            <Option value='Q1'>Q1</Option>
+            <Option value='Q2'>Q2</Option>
+            <Option value='Q3'>Q3</Option>
+            <Option value='Q4'>Q4</Option>
+          </Select>
+        </Col>
+
+        <Col span={6}>
           <Select
             style={{ width: '100%' }}
             value={filters.type}
@@ -220,7 +251,8 @@ const InterventionDatabaseView = () => {
             <Option value='grouped'>Grouped</Option>
           </Select>
         </Col>
-        <Col span={8}>
+
+        <Col span={6}>
           <Select
             style={{ width: '100%' }}
             value={filters.area}
@@ -263,7 +295,7 @@ const InterventionDatabaseView = () => {
             <Divider />
 
             <ul>
-              {records.map((item, index) => (
+              {selectedView?.interventions.map((item, index) => (
                 <li key={index} style={{ marginBottom: 12 }}>
                   <Space direction='vertical'>
                     <Text strong>{item.interventionTitle}</Text>

@@ -212,22 +212,27 @@ const Chat = () => {
           borderTop: '1px solid #f0f0f0'
         }}
       >
-        <Space>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Input
-              placeholder='Type a message...'
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onPressEnter={() => handleSendMessage(input)}
-              style={{ flex: 1 }}
-            />
-            <Button
-              type='primary'
-              icon={<SendOutlined />}
-              onClick={() => handleSendMessage(input)}
-            />
-          </div>
-        </Space>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Input.TextArea
+            rows={2} // increase this for more height (e.g., 3 or 4)
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onPressEnter={e => {
+              if (!e.shiftKey) {
+                e.preventDefault()
+                handleSendMessage(input)
+              }
+            }}
+            placeholder='Type a message...'
+            style={{ resize: 'none', flex: 1 }}
+          />
+
+          <Button
+            type='primary'
+            icon={<SendOutlined />}
+            onClick={() => handleSendMessage(input)}
+          />
+        </div>
 
         {/* Audio Controls */}
         <div style={{ marginTop: 12 }}>

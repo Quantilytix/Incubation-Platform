@@ -19,29 +19,44 @@ export const FeedbackWorkspace: React.FC = () => {
   const [consultantId, setConsultantId] = useState<string | null>(null)
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([])
   const [loading, setLoading] = useState(true)
+  const [currentRole, setCurrentRole] = useState<string | null>(null)
+  const [roleLoading, setRoleLoading] = useState(true)
 
+  // ✅ Get consultantId from consultants collection by email
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
-      if (user) {
+      if (user?.email) {
         const consultantSnap = await getDocs(
           query(collection(db, 'consultants'), where('email', '==', user.email))
         )
 
         if (!consultantSnap.empty) {
           const consultantDoc = consultantSnap.docs[0]
-          setConsultantId(consultantDoc.id)
+          const consultantData = consultantDoc.data()
+
+          if (consultantData.id) {
+            setConsultantId(consultantData.id)
+          } else {
+            console.warn('Missing consultantData.id — fallback to doc.id')
+            setConsultantId(consultantDoc.id)
+          }
+
+          if (consultantData.role) {
+            setCurrentRole(consultantData.role.toLowerCase())
+          }
+
+          setRoleLoading(false)
         } else {
-          console.error('No consultant found for this user')
+          message.error('Consultant not found')
           setLoading(false)
         }
-      } else {
-        setLoading(false)
       }
     })
 
     return () => unsubscribe()
   }, [])
 
+  // ✅ Fetch feedback for assignedInterventions
   useEffect(() => {
     if (!consultantId) return
 

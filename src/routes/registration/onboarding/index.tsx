@@ -42,7 +42,8 @@ import {
   getDocs,
   query,
   where,
-  updateDoc
+  updateDoc,
+  addDoc
 } from 'firebase/firestore'
 import moment from 'moment'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -566,27 +567,27 @@ const ParticipantRegistrationStepForm = () => {
         }
       }
 
-      // await addDoc(collection(db, 'participants'), participant)
+      await addDoc(collection(db, 'participants'), participant)
       message.success('Participant successfully applied!')
 
       // ✅ Update user role
-      //   const userEmail = auth.currentUser?.email
-      //   if (userEmail) {
-      //     const usersRef = collection(db, 'users')
-      //     const q = query(usersRef, where('email', '==', userEmail))
-      //     const snapshot = await getDocs(q)
+      const userEmail = auth.currentUser?.email
+      if (userEmail) {
+        const usersRef = collection(db, 'users')
+        const q = query(usersRef, where('email', '==', userEmail))
+        const snapshot = await getDocs(q)
 
-      //     if (!snapshot.empty) {
-      //       const userDoc = snapshot.docs[0]
-      //       await updateDoc(doc(db, 'users', userDoc.id), {
-      //         role: 'Incubatee'
-      //       })
-      //     }
-      //   }
+        if (!snapshot.empty) {
+          const userDoc = snapshot.docs[0]
+          await updateDoc(doc(db, 'users', userDoc.id), {
+            role: 'Incubatee'
+          })
+        }
+      }
 
       // ✅ Redirect to login
-      //   navigate('/')
-      navigate('/registration/growth-plan', { state: { participant } })
+      navigate('/login')
+      //   navigate('/registration/growth-plan', { state: { participant } })
 
       // Optional: Reset form state
       setCurrent(0)

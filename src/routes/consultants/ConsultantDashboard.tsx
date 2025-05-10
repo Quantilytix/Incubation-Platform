@@ -64,6 +64,7 @@ interface Feedback {
 
 export const ConsultantDashboard: React.FC = () => {
   const navigate = useNavigate()
+  const [dashboardReady, setDashboardReady] = useState(false)
 
   const [interventions, setInterventions] = useState<Intervention[]>([])
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([])
@@ -83,24 +84,34 @@ export const ConsultantDashboard: React.FC = () => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
-      if (user) {
+      if (user?.email) {
         const consultantSnap = await getDocs(
           query(collection(db, 'consultants'), where('email', '==', user.email))
         )
 
         if (!consultantSnap.empty) {
           const consultantDoc = consultantSnap.docs[0]
-          setConsultantId(consultantDoc.id) // ✅ THIS is the correct consultantId
-
           const consultantData = consultantDoc.data()
+
+          // Prefer the embedded consultant ID, or fallback to Firestore doc ID
+          if (consultantData.id) {
+            setConsultantId(consultantData.id)
+          } else {
+            console.warn('Missing consultantData.id — falling back to doc.id')
+            setConsultantId(consultantDoc.id)
+          }
+
           if (consultantData.role) {
             setCurrentRole(consultantData.role.toLowerCase())
           }
+
+          setRoleLoading(false)
         } else {
-          console.error('No consultant found for this user')
+          console.error('Consultant not found in consultants collection')
+          setRoleLoading(false)
+          setLoading(false)
         }
       }
-      setRoleLoading(false)
     })
 
     return () => unsubscribe()
@@ -120,6 +131,7 @@ export const ConsultantDashboard: React.FC = () => {
             where('consultantId', '==', consultantId)
           )
         )
+        console.log(consultantId)
 
         const allInterventions: Intervention[] = await Promise.all(
           allSnap.docs.map(async docSnap => {
@@ -181,11 +193,19 @@ export const ConsultantDashboard: React.FC = () => {
         console.error('Error fetching dashboard data:', error)
       } finally {
         setLoading(false)
+        setDashboardReady(true) // ✅ mark entire page as ready
       }
     }
 
     fetchData()
   }, [consultantId])
+
+  useEffect(() => {
+    if (currentRole) {
+      console.log('Triggering fetchNotifications with role:', currentRole)
+      fetchNotifications()
+    }
+  }, [currentRole])
 
   const fetchNotifications = async () => {
     if (!currentRole) {
@@ -197,7 +217,7 @@ export const ConsultantDashboard: React.FC = () => {
       const notificationsSnap = await getDocs(
         query(
           collection(db, 'notifications'),
-          where('recipientRole', 'array-contains', currentRole)
+          where('recipientRoles', 'array-contains', currentRole)
         )
       )
 
@@ -381,20 +401,8 @@ export const ConsultantDashboard: React.FC = () => {
   ]
 
   return (
-    <div
-      style={{
-        padding: 24,
-        height: '100vh',
-        overflow: 'auto'
-      }}
-    >
-      <Helmet>
-        <title>Consultant Workspace | Smart Incubation</title>
-      </Helmet>
-
-      <Title level={3}>Consultant Workspace</Title>
-
-      {loading ? (
+    <>
+      {!dashboardReady ? (
         <div
           style={{
             height: '80vh',
@@ -407,147 +415,185 @@ export const ConsultantDashboard: React.FC = () => {
         </div>
       ) : (
         <Row gutter={[16, 16]}>
-          {/* Top Stats */}
-          <Col xs={24} md={8}>
-            <Card>
-              <Statistic
-                title='Total Feedbacks'
-                value={feedbacks.length}
-                prefix={<MessageOutlined />}
-              />
-            </Card>
-          </Col>
+          <div
+            style={{
+              padding: 24,
+              height: '100vh',
+              overflow: 'auto'
+            }}
+          >
+            <Helmet>
+              <title>Consultant Workspace | Smart Incubation</title>
+            </Helmet>
 
-          <Col xs={24} md={8}>
-            <Card>
-              <Statistic
-                title='Pending Interventions'
-                value={interventions.length}
-                prefix={<FileSearchOutlined />}
-              />
-            </Card>
-          </Col>
+            <Title level={3}>Consultant Workspace</Title>
 
-          <Col xs={24} md={8}>
-            <Card>
-              <Statistic
-                title='Ongoing Interventions'
-                value={ongoingCount}
-                prefix={<BarChartOutlined />}
-              />
-            </Card>
-          </Col>
+            {loading ? (
+              <div
+                style={{
+                  height: '80vh',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Spin size='large' />
+              </div>
+            ) : (
+              <Row gutter={[16, 16]}>
+                {/* Top Stats */}
+                <Col xs={24} md={8}>
+                  <Card>
+                    <Statistic
+                      title='Total Feedbacks'
+                      value={feedbacks.length}
+                      prefix={<MessageOutlined />}
+                    />
+                  </Card>
+                </Col>
 
-          {/* Allocated Interventions */}
-          <Col span={24}>
-            <Card title='Allocated Interventions'>
-              <Table
-                dataSource={interventions}
-                columns={columns}
-                rowKey='id'
-                pagination={false}
-                rowClassName={record => (record.declined ? 'declined-row' : '')}
+                <Col xs={24} md={8}>
+                  <Card>
+                    <Statistic
+                      title='Pending Interventions'
+                      value={interventions.length}
+                      prefix={<FileSearchOutlined />}
+                    />
+                  </Card>
+                </Col>
+
+                <Col xs={24} md={8}>
+                  <Card>
+                    <Statistic
+                      title='Ongoing Interventions'
+                      value={ongoingCount}
+                      prefix={<BarChartOutlined />}
+                    />
+                  </Card>
+                </Col>
+
+                {/* Allocated Interventions */}
+                <Col span={24}>
+                  <Card title='Allocated Interventions'>
+                    <Table
+                      dataSource={interventions}
+                      columns={columns}
+                      rowKey='id'
+                      pagination={false}
+                      rowClassName={record =>
+                        record.declined ? 'declined-row' : ''
+                      }
+                    />
+                  </Card>
+                </Col>
+              </Row>
+            )}
+
+            {/* Decline Modal */}
+            <Modal
+              title='Reason for Declining'
+              open={modalVisible}
+              onOk={confirmDecline}
+              onCancel={() => setModalVisible(false)}
+              okText='Confirm'
+            >
+              <Input.TextArea
+                rows={4}
+                value={declineReason}
+                onChange={e => setDeclineReason(e.target.value)}
+                placeholder='Please enter a reason...'
               />
-            </Card>
-          </Col>
+            </Modal>
+            <Modal
+              title='My Notifications'
+              open={notificationsModalVisible}
+              onCancel={() => setNotificationsModalVisible(false)}
+              footer={null}
+              width={600}
+            >
+              {loadingNotifications ? (
+                <Spin
+                  size='large'
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    marginTop: 20
+                  }}
+                />
+              ) : (
+                <List
+                  itemLayout='horizontal'
+                  dataSource={notifications}
+                  renderItem={item => (
+                    <List.Item
+                      style={{
+                        backgroundColor: item.readBy?.[currentRole]
+                          ? 'white'
+                          : '#f0f5ff',
+                        cursor: 'default' // no pointer click on item
+                      }}
+                      actions={
+                        !item.readBy?.[currentRole]
+                          ? [
+                              <Button
+                                size='small'
+                                type='link'
+                                onClick={() => markAsRead(item.id)}
+                              >
+                                Mark as Read
+                              </Button>
+                            ]
+                          : []
+                      }
+                    >
+                      <List.Item.Meta
+                        title={item.interventionTitle || 'Notification'}
+                        description={
+                          item.message?.[currentRole] ||
+                          'No message available for your role.'
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              )}
+            </Modal>
+
+            <Button
+              type='primary'
+              shape='circle'
+              size='large'
+              disabled={roleLoading || !currentRole} // ✅ disable while loading
+              style={{
+                position: 'fixed',
+                right: 32,
+                bottom: 32,
+                zIndex: 1000,
+                backgroundColor: '#1890ff',
+                boxShadow: '0px 4px 10px rgba(0,0,0,0.2)'
+              }}
+              onClick={() => {
+                fetchNotifications()
+                setNotificationsModalVisible(true)
+              }}
+            >
+              <Badge count={unreadCount} size='small' offset={[-5, 5]}>
+                <MessageOutlined style={{ fontSize: 24, color: 'white' }} />
+              </Badge>
+            </Button>
+
+            <style>
+              {`
+            .declined-row {
+              background-color: #f5f5f5 !important;
+              color: #999;
+              font-style: italic;
+            }
+          `}
+            </style>
+          </div>
         </Row>
       )}
-
-      {/* Decline Modal */}
-      <Modal
-        title='Reason for Declining'
-        open={modalVisible}
-        onOk={confirmDecline}
-        onCancel={() => setModalVisible(false)}
-        okText='Confirm'
-      >
-        <Input.TextArea
-          rows={4}
-          value={declineReason}
-          onChange={e => setDeclineReason(e.target.value)}
-          placeholder='Please enter a reason...'
-        />
-      </Modal>
-      <Modal
-        title='My Notifications'
-        open={notificationsModalVisible}
-        onCancel={() => setNotificationsModalVisible(false)}
-        footer={null}
-        width={600}
-      >
-        {loadingNotifications ? (
-          <Spin
-            size='large'
-            style={{ display: 'flex', justifyContent: 'center', marginTop: 20 }}
-          />
-        ) : (
-          <List
-            itemLayout='horizontal'
-            dataSource={notifications}
-            renderItem={item => (
-              <List.Item
-                style={{
-                  backgroundColor: item.readBy?.[currentRole]
-                    ? 'white'
-                    : '#f0f5ff',
-                  cursor: 'default' // no pointer click on item
-                }}
-                actions={
-                  !item.readBy?.[currentRole]
-                    ? [
-                        <Button
-                          size='small'
-                          type='link'
-                          onClick={() => markAsRead(item.id)}
-                        >
-                          Mark as Read
-                        </Button>
-                      ]
-                    : []
-                }
-              >
-                <List.Item.Meta
-                  title={item.interventionTitle || 'Notification'}
-                  description={item.message}
-                />
-              </List.Item>
-            )}
-          />
-        )}
-      </Modal>
-
-      <Button
-        type='primary'
-        shape='circle'
-        size='large'
-        disabled={roleLoading || !currentRole} // ✅ disable while loading
-        style={{
-          position: 'fixed',
-          right: 32,
-          bottom: 32,
-          zIndex: 1000,
-          backgroundColor: '#1890ff',
-          boxShadow: '0px 4px 10px rgba(0,0,0,0.2)'
-        }}
-        onClick={() => {
-          fetchNotifications()
-          setNotificationsModalVisible(true)
-        }}
-      >
-        <Badge count={unreadCount} size='small' offset={[-5, 5]}>
-          <MessageOutlined style={{ fontSize: 24, color: 'white' }} />
-        </Badge>
-      </Button>
-
-      <style>
-        {`
-          .declined-row {
-            background-color: #f5f5f5 !important;
-            color: #999;
-            font-style: italic;
-          }
-        `}
-      </style>
-    </div>
+    </>
   )
 }
