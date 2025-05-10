@@ -151,11 +151,16 @@ const ParticipantRegistrationStepForm = () => {
     const safeText = (text: any) =>
       new Paragraph({ children: [new TextRun(text ?? 'N/A')] })
 
-    const createCell = (text: string | number, isHeader = false) =>
+    const createCell = (
+      text: string | number | null | undefined,
+      isHeader = false
+    ) =>
       new TableCell({
         children: [
           new Paragraph({
-            children: [new TextRun({ text: text.toString(), bold: isHeader })]
+            children: [
+              new TextRun({ text: (text ?? 'N/A').toString(), bold: isHeader })
+            ]
           })
         ],
         shading: isHeader ? { fill: 'D9D9D9' } : undefined,
@@ -223,7 +228,9 @@ const ParticipantRegistrationStepForm = () => {
         {
           children: [
             new Paragraph({
-              text: `${data.beneficiaryName || 'Participant'} Growth Plan`,
+              text: `${
+                data.beneficiaryName || 'Participant'
+              } Diagnostic Assessment`,
               heading: HeadingLevel.TITLE,
               spacing: { after: 300 }
             }),

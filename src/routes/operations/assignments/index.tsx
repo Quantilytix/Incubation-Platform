@@ -31,7 +31,8 @@ import {
   doc,
   Timestamp,
   updateDoc,
-  getDocs
+  getDocs,
+  addDoc
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 
@@ -321,6 +322,29 @@ export const ConsultantAssignments: React.FC = () => {
             }
           }
 
+          // 4. Notify relevant roles that the intervention is completed
+          await addDoc(collection(db, 'notifications'), {
+            interventionId: assignmentToComplete.id,
+            participantId: assignmentToComplete.participantId,
+            consultantId: assignmentToComplete.consultantId,
+            interventionTitle: assignmentToComplete.interventionTitle,
+            type: 'intervention-completed',
+            recipientRoles: [
+              'projectadmin',
+              'consultant',
+              'incubatee',
+              'operations'
+            ],
+            message: {
+              consultant: `You have completed the intervention: ${assignmentToComplete.interventionTitle}.`,
+              projectadmin: `Consultant ${assignmentToComplete.consultantName} completed the intervention for ${assignmentToComplete.beneficiaryName}.`,
+              operations: `Consultant ${assignmentToComplete.consultantName} completed the intervention for ${assignmentToComplete.beneficiaryName}.`,
+              incubatee: `Consultant ${assignmentToComplete.consultantName} has completed the intervention: ${assignmentToComplete.interventionTitle}. Please confirm if completed as expected.`
+            },
+            createdAt: new Date(),
+            readBy: {}
+          })
+
           message.success(
             'Assignment marked as completed and participant progress updated! 🎯'
           )
@@ -342,29 +366,43 @@ export const ConsultantAssignments: React.FC = () => {
     } = assignment
 
     if (status === 'cancelled') return { label: 'Cancelled', color: 'red' }
-    if (status === 'completed') return { label: 'Completed', color: 'green' }
+
+    if (
+      status === 'completed' ||
+      (consultantCompletionStatus === 'done' &&
+        userCompletionStatus === 'confirmed')
+    ) {
+      return { label: 'Completed', color: 'green' }
+    }
+
+    if (consultantStatus === 'declined' || userStatus === 'declined') {
+      return { label: 'Declined', color: 'red' }
+    }
+
+    if (userCompletionStatus === 'rejected') {
+      return { label: 'Rejected', color: 'volcano' }
+    }
+
+    if (
+      consultantCompletionStatus === 'done' &&
+      userCompletionStatus === 'pending'
+    ) {
+      return { label: 'Awaiting Confirmation', color: 'purple' }
+    }
 
     if (
       consultantStatus === 'accepted' &&
       userStatus === 'accepted' &&
-      consultantCompletionStatus === 'done' &&
-      userCompletionStatus === 'confirmed'
+      consultantCompletionStatus !== 'done'
     ) {
-      return { label: 'Ready to Complete', color: 'blue' }
+      return { label: 'In Progress', color: 'blue' }
     }
 
     if (consultantStatus === 'pending' || userStatus === 'pending') {
       return { label: 'Awaiting Acceptance', color: 'orange' }
     }
 
-    if (
-      consultantCompletionStatus === 'pending' ||
-      userCompletionStatus === 'pending'
-    ) {
-      return { label: 'In Progress', color: 'purple' }
-    }
-
-    return { label: 'Pending', color: 'gold' }
+    return { label: 'Assigned', color: 'gold' }
   }
 
   const columns = [

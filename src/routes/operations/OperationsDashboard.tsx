@@ -34,20 +34,33 @@ import {
   FormOutlined,
   ApartmentOutlined,
   TeamOutlined,
-  BarsOutlined
+  BarsOutlined,
+  BellOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
-import { collection, getDocs, setDoc, doc, Timestamp } from 'firebase/firestore'
+import {
+  collection,
+  getDocs,
+  setDoc,
+  doc,
+  Timestamp,
+  getDoc
+} from 'firebase/firestore'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
 import dayjs from 'dayjs'
 
+
 export const OperationsDashboard: React.FC = () => {
   const navigate = useNavigate()
+  const [interventionDetailModalOpen, setInterventionDetailModalOpen] =
+    useState(false)
+  const [selectedIntervention, setSelectedIntervention] = useState<any>(null)
+  const [confirming, setConfirming] = useState(false)
   const [formSubmissions, setFormSubmissions] = useState<any[]>([])
   const [resourceAllocation, setResourceAllocation] = useState<any[]>([])
   const [participants, setParticipants] = useState<any[]>([])
@@ -62,6 +75,146 @@ export const OperationsDashboard: React.FC = () => {
   const [eventForm] = Form.useForm()
   const [selectedEvent, setSelectedEvent] = useState<any>(null)
   const [eventDetailModalOpen, setEventDetailModalOpen] = useState(false)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [notificationModalOpen, setNotificationModalOpen] = useState(false)
+  const [filterType, setFilterType] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<'operations'>() // adjust if dynamic
+  const [declineModalOpen, setDeclineModalOpen] = useState(false)
+  const [declineReason, setDeclineReason] = useState('')
+  const [declining, setDeclining] = useState(false)
+
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'notifications'))
+        const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        const filtered = all.filter(
+          n => n.recipientRoles?.includes('operations') // or your actual logic
+        )
+        console.log(filtered)
+        setNotifications(filtered)
+      } catch (err) {
+        console.error('Error loading notifications:', err)
+      }
+    }
+    fetchNotifications()
+  }, [])
+  const openInterventionDetails = async (interventionId: string) => {
+    try {
+      const ref = doc(db, 'assignedInterventions', interventionId)
+      const snap = await getDoc(ref)
+      if (snap.exists()) {
+        setSelectedIntervention({ id: snap.id, ...snap.data() })
+        setInterventionDetailModalOpen(true)
+      } else {
+        message.error('Intervention not found')
+      }
+    } catch (err) {
+      console.error('Failed to fetch intervention:', err)
+      message.error('Error loading intervention')
+    }
+  }
+
+  const markAsRead = async (id: string) => {
+    await setDoc(doc(db, 'notifications', id), {
+      ...notifications.find(n => n.id === id),
+      readBy: {
+        ...(notifications.find(n => n.id === id)?.readBy || {}),
+        operations: true
+      }
+    })
+    setNotifications(prev =>
+      prev.map(n =>
+        n.id === id ? { ...n, readBy: { ...n.readBy, operations: true } } : n
+      )
+    )
+  }
+
+  const markAsUnread = async (id: string) => {
+    await setDoc(doc(db, 'notifications', id), {
+      ...notifications.find(n => n.id === id),
+      readBy: {
+        ...(notifications.find(n => n.id === id)?.readBy || {}),
+        operations: false
+      }
+    })
+    setNotifications(prev =>
+      prev.map(n =>
+        n.id === id ? { ...n, readBy: { ...n.readBy, operations: false } } : n
+      )
+    )
+  }
+  const handleConfirmCompletion = async () => {
+    if (!selectedIntervention) return
+    setConfirming(true)
+    try {
+      const ref = doc(db, 'assignedInterventions', selectedIntervention.id)
+      await updateDoc(ref, {
+        userCompletionStatus: 'confirmed',
+        status: 'completed'
+      })
+
+      await setDoc(doc(db, 'notifications', `notif-${Date.now()}`), {
+        type: 'intervention-confirmed',
+        interventionId: selectedIntervention.id,
+        interventionTitle: selectedIntervention.interventionTitle,
+        participantId: selectedIntervention.participantId,
+        consultantId: selectedIntervention.consultantId,
+        createdAt: Timestamp.now(),
+        readBy: {},
+        recipientRoles: ['projectadmin', 'consultant', 'operations'],
+        message: {
+          operations: `Intervention "${selectedIntervention.interventionTitle}" has been confirmed.`,
+          consultant: `Operations confirmed completion of "${selectedIntervention.interventionTitle}".`,
+          projectadmin: `Operations confirmed intervention "${selectedIntervention.interventionTitle}".`
+        }
+      })
+
+      message.success('Intervention confirmed!')
+      setInterventionDetailModalOpen(false)
+    } catch (err) {
+      console.error(err)
+      message.error('Failed to confirm intervention.')
+    } finally {
+      setConfirming(false)
+    }
+  }
+
+  const handleDeclineCompletion = async () => {
+    if (!selectedIntervention) return
+    setConfirming(true)
+    try {
+      const ref = doc(db, 'assignedInterventions', selectedIntervention.id)
+      await updateDoc(ref, {
+        userCompletionStatus: 'rejected',
+        status: 'assigned'
+      })
+
+      await setDoc(doc(db, 'notifications', `notif-${Date.now()}`), {
+        type: 'intervention-declined-by-operations',
+        interventionId: selectedIntervention.id,
+        interventionTitle: selectedIntervention.interventionTitle,
+        participantId: selectedIntervention.participantId,
+        consultantId: selectedIntervention.consultantId,
+        createdAt: Timestamp.now(),
+        readBy: {},
+        recipientRoles: ['projectadmin', 'consultant', 'operations'],
+        message: {
+          operations: `You declined the intervention "${selectedIntervention.interventionTitle}".`,
+          consultant: `Operations declined the intervention "${selectedIntervention.interventionTitle}".`,
+          projectadmin: `Operations declined "${selectedIntervention.interventionTitle}".`
+        }
+      })
+
+      message.success('Intervention declined.')
+      setInterventionDetailModalOpen(false)
+    } catch (err) {
+      console.error(err)
+      message.error('Failed to decline intervention.')
+    } finally {
+      setConfirming(false)
+    }
+  }
 
   // Statistics Calculation
   const upToDate = complianceDocuments.filter(
@@ -821,6 +974,216 @@ export const OperationsDashboard: React.FC = () => {
             </p>
           </div>
         )}
+      </Modal>
+      <Button
+        type='primary'
+        shape='circle'
+        icon={
+          <Badge
+            count={notifications.filter(n => !n.readBy?.operations).length}
+          >
+            <BellOutlined />
+          </Badge>
+        }
+        style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1000 }}
+        onClick={() => setNotificationModalOpen(true)}
+      />
+      <Modal
+        title='Notifications'
+        open={notificationModalOpen}
+        onCancel={() => setNotificationModalOpen(false)}
+        footer={null}
+        width={700}
+      >
+        <Select
+          allowClear
+          placeholder='Filter by Type'
+          style={{ width: 250, marginBottom: 16 }}
+          onChange={val => setFilterType(val)}
+        >
+          <Select.Option value='intervention-completed'>
+            Completed
+          </Select.Option>
+          <Select.Option value='intervention-assigned'>Assigned</Select.Option>
+          <Select.Option value='intervention-accepted'>Accepted</Select.Option>
+          <Select.Option value='intervention-declined'>Declined</Select.Option>
+          <Select.Option value='resource-update'>Resource Update</Select.Option>
+        </Select>
+
+        <List
+          itemLayout='horizontal'
+          dataSource={
+            filterType
+              ? notifications.filter(n => n.type === filterType)
+              : notifications
+          }
+          renderItem={item => (
+            <List.Item
+              actions={[
+                item.readBy?.operations ? (
+                  <Button size='small' onClick={() => markAsUnread(item.id)}>
+                    Mark Unread
+                  </Button>
+                ) : (
+                  <Button size='small' onClick={() => markAsRead(item.id)}>
+                    Mark Read
+                  </Button>
+                )
+              ]}
+            >
+              <List.Item.Meta
+                title={
+                  <span>
+                    {item.message?.operations || 'No message'}
+                    {item.interventionId && (
+                      <Button
+                        size='small'
+                        type='link'
+                        onClick={() =>
+                          openInterventionDetails(item.interventionId)
+                        }
+                        style={{ marginLeft: 8 }}
+                      >
+                        View Intervention
+                      </Button>
+                    )}
+                  </span>
+                }
+                description={`Type: ${item.type}`}
+              />
+            </List.Item>
+          )}
+        />
+      </Modal>
+      <Modal
+        open={interventionDetailModalOpen}
+        onCancel={() => setInterventionDetailModalOpen(false)}
+        title='Intervention Details'
+        confirmLoading={confirming}
+        footer={[
+          <Button
+            danger
+            onClick={() => setDeclineModalOpen(true)}
+            disabled={confirming}
+          >
+            Decline
+          </Button>,
+          <Button
+            type='primary'
+            onClick={handleConfirmCompletion}
+            disabled={confirming}
+          >
+            Confirm
+          </Button>
+        ]}
+        width={600}
+      >
+        {selectedIntervention ? (
+          <div>
+            <p>
+              <strong>Title:</strong> {selectedIntervention.interventionTitle}
+            </p>
+            <p>
+              <strong>Beneficiary:</strong>{' '}
+              {selectedIntervention.beneficiaryName || 'N/A'}
+            </p>
+            <p>
+              <strong>Time Spent:</strong> {selectedIntervention.timeSpent || 0}{' '}
+              hours
+            </p>
+            <p>
+              <strong>Progress:</strong> {selectedIntervention.progress || 0}%
+            </p>
+            <p>
+              <strong>Notes:</strong>{' '}
+              {selectedIntervention.notes || 'No notes provided'}
+            </p>
+
+            <p>
+              <strong>Proof of Execution:</strong>
+            </p>
+            {selectedIntervention.resources?.length ? (
+              <ul>
+                {selectedIntervention.resources.map((res: any, i: number) => (
+                  <li key={i}>
+                    <a
+                      href={res.link}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                    >
+                      {res.label || res.link}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>No POE uploaded yet.</p>
+            )}
+          </div>
+        ) : (
+          <p>Loading...</p>
+        )}
+      </Modal>
+      <Modal
+        title='Decline Intervention'
+        open={declineModalOpen}
+        onCancel={() => {
+          setDeclineModalOpen(false)
+          setDeclineReason('')
+        }}
+        onOk={async () => {
+          if (!selectedIntervention) return
+          if (!declineReason.trim())
+            return message.warning('Please provide a reason.')
+
+          setDeclining(true)
+          try {
+            const ref = doc(
+              db,
+              'assignedInterventions',
+              selectedIntervention.id
+            )
+            await updateDoc(ref, {
+              userCompletionStatus: 'rejected',
+              status: 'assigned'
+            })
+
+            await setDoc(doc(db, 'notifications', `notif-${Date.now()}`), {
+              type: 'intervention-declined-by-operations',
+              interventionId: selectedIntervention.id,
+              interventionTitle: selectedIntervention.interventionTitle,
+              participantId: selectedIntervention.participantId,
+              consultantId: selectedIntervention.consultantId,
+              createdAt: Timestamp.now(),
+              readBy: {},
+              recipientRoles: ['projectadmin', 'consultant', 'operations'],
+              message: {
+                operations: `You declined "${selectedIntervention.interventionTitle}".`,
+                consultant: `Operations declined "${selectedIntervention.interventionTitle}". Reason: ${declineReason}`,
+                projectadmin: `Operations declined "${selectedIntervention.interventionTitle}".`
+              }
+            })
+
+            message.success('Intervention declined.')
+            setInterventionDetailModalOpen(false)
+            setDeclineModalOpen(false)
+            setDeclineReason('')
+          } catch (err) {
+            console.error(err)
+            message.error('Failed to decline intervention.')
+          } finally {
+            setDeclining(false)
+          }
+        }}
+        okText='Submit Reason'
+        okButtonProps={{ loading: declining }}
+      >
+        <Input.TextArea
+          rows={4}
+          value={declineReason}
+          onChange={e => setDeclineReason(e.target.value)}
+          placeholder='Please provide a reason for declining this intervention...'
+        />
       </Modal>
     </div>
   )

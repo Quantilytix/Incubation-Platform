@@ -7,14 +7,16 @@ import {
   Button,
   message,
   Progress,
-  Form
+  Form,
+  Tag
 } from 'antd'
 import { UploadOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '@/firebase'
-import { doc, updateDoc, getDoc } from 'firebase/firestore'
+import { doc, updateDoc, getDoc, addDoc, collection } from 'firebase/firestore'
 import { Modal } from 'antd'
 import { Helmet } from 'react-helmet'
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 
 const { Title, Paragraph } = Typography
 const { TextArea } = Input
@@ -30,72 +32,44 @@ export const InterventionTrack: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const [interventionTitle, setInterventionTitle] = useState('')
   const [companyName, setCompanyName] = useState('')
+  const [showCompletionModal, setShowCompletionModal] = useState(false)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
 
   useEffect(() => {
     const fetchDetails = async () => {
-      if (!id) {
-        console.warn('No id found in URL params')
-        return
-      }
+      if (!id) return
 
       try {
-        console.log('Fetching assignedIntervention with ID:', id)
-
-        // 1. Fetch the assigned intervention document
         const interventionRef = doc(db, 'assignedInterventions', id)
-        const interventionSnap = await getDoc(interventionRef)
+        const snap = await getDoc(interventionRef)
 
-        if (!interventionSnap.exists()) {
-          console.error('Assigned Intervention not found for ID:', id)
+        if (!snap.exists()) {
           message.error('Assigned Intervention not found')
           return
         }
 
-        const interventionData = interventionSnap.data()
-        console.log('Fetched assignedIntervention data:', interventionData)
+        const data = snap.data()
 
-        setInterventionTitle(
-          interventionData.interventionTitle || 'Unknown Intervention'
-        )
-        console.log(
-          'Set interventionTitle to:',
-          interventionData.interventionTitle || 'Unknown Intervention'
-        )
+        setInterventionTitle(data.interventionTitle || 'Unknown Intervention')
+        setTotalTimeSpent(data.timeSpent || 0)
+        setTotalProgress(data.progress || 0)
+        setNotes(data.notes || '')
 
-        const participantId = interventionData.participantId
-        console.log('participantId from assignedIntervention:', participantId)
-
-        if (participantId) {
-          // 2. Fetch the participant document
-          const participantRef = doc(db, 'participants', participantId)
-          const participantSnap = await getDoc(participantRef)
-
-          if (!participantSnap.exists()) {
-            console.error(
-              'Participant not found for participantId:',
-              participantId
-            )
-            setCompanyName('Unknown Company')
+        // Fetch participant company name
+        if (data.participantId) {
+          const participantSnap = await getDoc(
+            doc(db, 'participants', data.participantId)
+          )
+          if (participantSnap.exists()) {
+            const pData = participantSnap.data()
+            setCompanyName(pData.beneficiaryName || 'Unknown Company')
           } else {
-            const participantData = participantSnap.data()
-            console.log('Fetched participant data:', participantData)
-
-            setCompanyName(participantData.beneficiaryName || 'Unknown Company')
-            console.log(
-              'Set companyName to:',
-              participantData.beneficiaryName || 'Unknown Company'
-            )
+            setCompanyName('Unknown Company')
           }
-        } else {
-          console.warn('No participantId found in assignedIntervention')
-          setCompanyName('Unknown Company')
         }
-      } catch (error) {
-        console.error(
-          'Error fetching intervention or participant details:',
-          error
-        )
-        message.error('Failed to load intervention/participant details')
+      } catch (err) {
+        console.error('Failed to fetch data', err)
+        message.error('Could not load intervention details.')
       }
     }
 
@@ -108,63 +82,106 @@ export const InterventionTrack: React.FC = () => {
   }
 
   const handleUpdateProgress = async () => {
-    if (currentHours && currentProgress) {
-      const newTime = totalTimeSpent + currentHours
-      const newProgress = Math.min(totalProgress + currentProgress, 100)
-
-      try {
-        if (!id) {
-          message.error('No intervention ID found')
-          return
-        }
-
-        const interventionRef = doc(db, 'assignedInterventions', id)
-        await updateDoc(interventionRef, {
-          timeSpent: newTime,
-          progress: newProgress,
-          notes: notes
-        })
-
-        setTotalTimeSpent(newTime)
-        setTotalProgress(newProgress)
-        setCurrentHours(null)
-        setCurrentProgress(null)
-
-        message.success('Progress updated and saved!')
-
-        // Navigate back
-        navigate('/consultant/allocated')
-      } catch (error) {
-        console.error('Error updating intervention:', error)
-        message.error('Failed to update progress.')
-      }
-    } else {
+    if (currentHours == null || currentProgress == null) {
       message.warning('Please enter both hours and percentage')
+      return
+    }
+
+    const newTime = totalTimeSpent + currentHours
+    const newProgress = Math.min(totalProgress + currentProgress, 100)
+
+    try {
+      const interventionRef = doc(db, 'assignedInterventions', id!)
+      await updateDoc(interventionRef, {
+        timeSpent: newTime,
+        progress: newProgress,
+        notes
+      })
+
+      setTotalTimeSpent(newTime)
+      setTotalProgress(newProgress)
+      setCurrentHours(null)
+      setCurrentProgress(null)
+
+      message.success('Progress updated.')
+
+      // ⏳ Auto-prompt for completion if 100% reached
+      if (newProgress === 100) {
+        setShowCompletionModal(true)
+      } else {
+        navigate('/consultant/allocated') // Optional: only navigate if not done
+      }
+    } catch (error) {
+      console.error('Error updating intervention:', error)
+      message.error('Failed to update progress.')
     }
   }
 
   const handleSubmit = async () => {
+    if (!id || !uploadFile) return
+
     try {
-      if (!id) {
-        message.error('No intervention ID found')
+      const interventionRef = doc(db, 'assignedInterventions', id)
+      const interventionSnap = await getDoc(interventionRef)
+
+      if (!interventionSnap.exists()) {
+        message.error('Intervention not found')
         return
       }
 
-      const interventionRef = doc(db, 'assignedInterventions', id)
+      const data = interventionSnap.data()
+
+      // 🔼 Upload to Firebase Storage
+      const storage = getStorage()
+      const storageRef = ref(storage, `interventions/${id}/${uploadFile.name}`)
+      const snapshot = await uploadBytes(storageRef, uploadFile)
+      const downloadURL = await getDownloadURL(snapshot.ref)
+
+      // ✅ Update Firestore with completion and POE link
       await updateDoc(interventionRef, {
-        status: 'completed',
-        notes: notes,
+        consultantCompletionStatus: 'done',
+        status: 'pending', // Awaiting confirmation
+        notes,
         timeSpent: totalTimeSpent,
-        progress: totalProgress
+        progress: 100,
+        resources: [
+          {
+            type: 'document',
+            label: uploadFile.name,
+            link: downloadURL
+          }
+        ]
       })
 
-      message.success('Intervention marked as completed and sent for review!')
+      // 🔔 Send notification
+      await addDoc(collection(db, 'notifications'), {
+        type: 'intervention-submitted',
+        interventionId: id,
+        participantId: data.participantId,
+        consultantId: data.consultantId,
+        interventionTitle: data.interventionTitle,
+        createdAt: new Date(),
+        readBy: {},
+        recipientRoles: [
+          'consultant',
+          'incubateer',
+          'projectadmin',
+          'operations'
+        ],
+        message: {
+          consultant: `You submitted your final work for: ${data.interventionTitle}.`,
+          incubatee: `Consultant submitted final work for: ${data.interventionTitle}. Please review.`,
+          projectadmin: `Final submission received for intervention: ${data.interventionTitle}.`,
+          operations: `Intervention "${data.interventionTitle}" has been marked complete by the consultant.`
+        }
+      })
 
-      // Navigate back
+      message.success('Intervention submitted and uploaded successfully!')
+      setShowCompletionModal(false)
       navigate('/consultant/allocated')
-    } catch (error) {
-      console.error('Error completing intervention:', error)
-      message.error('Failed to send intervention for review.')
+    } catch (err) {
+      console.error('Error during final submission:', err)
+      message.error('Failed to complete intervention.')
     }
   }
 
@@ -253,10 +270,25 @@ export const InterventionTrack: React.FC = () => {
           {/* Upload only at 100% */}
           {totalProgress === 100 && (
             <>
-              <Title level={5}>Upload Completion Document</Title>
+              <Title level={5}>
+                Upload POE (Proof of Execution){' '}
+                <Tag color='blue'>{interventionTitle}</Tag>
+              </Title>
+
+              <Paragraph>
+                Please provide relevant documents or links that support the
+                completion of this intervention.
+              </Paragraph>
+
               <Upload beforeUpload={() => false} onChange={handleUpload}>
                 <Button icon={<UploadOutlined />}>Upload File</Button>
               </Upload>
+
+              <Input
+                placeholder='Paste website link or online resource (if any)'
+                style={{ marginTop: 12 }}
+                onChange={e => console.log('Link:', e.target.value)}
+              />
 
               <Button
                 type='primary'
@@ -270,6 +302,29 @@ export const InterventionTrack: React.FC = () => {
           )}
         </Form>
       </Card>
+      <Modal
+        open={showCompletionModal}
+        onCancel={() => setShowCompletionModal(false)}
+        title='Submit Completion Evidence'
+        onOk={handleSubmit}
+        okButtonProps={{ disabled: !uploadFile }}
+      >
+        <Paragraph>
+          Please upload your POE (proof of execution) such as final
+          deliverables, screenshots, or signed documentation.
+        </Paragraph>
+
+        <Upload
+          beforeUpload={file => {
+            setUploadFile(file)
+            return false // prevent auto upload
+          }}
+          fileList={uploadFile ? [uploadFile] : []}
+          onRemove={() => setUploadFile(null)}
+        >
+          <Button icon={<UploadOutlined />}>Upload Completion Document</Button>
+        </Upload>
+      </Modal>
     </>
   )
 }

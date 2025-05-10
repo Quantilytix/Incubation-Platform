@@ -19,6 +19,7 @@ import {
   DownloadOutlined,
   GlobalOutlined
 } from '@ant-design/icons'
+import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
 const { TabPane } = Tabs
@@ -145,6 +146,9 @@ export const FunderDashboard: React.FC = () => {
 
   return (
     <div style={{ padding: 24 }}>
+      <Helmet>
+        <title>Funders Overview | Smart Incubation</title>
+      </Helmet>
       <Title level={3}>Sponsor Dashboard</Title>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>

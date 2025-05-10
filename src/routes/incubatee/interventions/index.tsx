@@ -89,7 +89,7 @@ interface AssignedIntervention {
   consultantStatus: 'pending' | 'accepted' | 'declined'
   userStatus: 'pending' | 'accepted' | 'declined'
   consultantCompletionStatus: 'none' | 'done'
-  userCompletionStatus: 'none' | 'confirmed' | 'rejected'
+  userCompletionStatus: 'pending' | 'confirmed' | 'rejected'
 
   consultant?: Consultant
   feedback?: Feedback
@@ -223,6 +223,9 @@ const InterventionsTrackingView: React.FC = () => {
   }, [participantId])
 
   const deriveDisplayStatus = (intervention: AssignedIntervention): string => {
+    if (!intervention.consultantId && !intervention.interventionId)
+      return 'Pending Assignment'
+
     const {
       consultantStatus,
       userStatus,
@@ -245,7 +248,7 @@ const InterventionsTrackingView: React.FC = () => {
     if (consultantStatus === 'accepted' && userStatus === 'accepted') {
       // Consultant done, incubatee yet to confirm
       if (consultantCompletionStatus === 'done') {
-        if (userCompletionStatus === 'none') return 'Awaiting Confirmation'
+        if (userCompletionStatus === 'pending') return 'Awaiting Confirmation'
         if (userCompletionStatus === 'confirmed') return 'Completed'
         if (userCompletionStatus === 'rejected') return 'Rejected'
       }
@@ -467,62 +470,47 @@ const InterventionsTrackingView: React.FC = () => {
       deriveDisplayStatus(item).toLowerCase() === filters.status.toLowerCase()
     )
   })
+  const getUnassignedInterventions = (): AssignedIntervention[] => {
+    return requiredInterventions
+      .filter(
+        req =>
+          !assignedInterventions.some(
+            assigned => assigned.interventionTitle === req.title
+          )
+      )
+      .map(req => ({
+        id: `unassigned-${req.id}`,
+        interventionId: '',
+        participantId: participantId || '',
+        consultantId: '',
+        beneficiaryName: '', // fill if you have
+        interventionTitle: req.title,
+        description: '',
+        areaOfSupport: req.area,
+        dueDate: null,
+        createdAt: '',
+        updatedAt: '',
+        type: 'singular',
+        targetType: 'percentage',
+        targetMetric: '',
+        targetValue: 0,
+        timeSpent: 0,
+        status: 'pendingAssignment',
+        consultantStatus: 'pending',
+        userStatus: 'pending',
+        consultantCompletionStatus: 'none',
+        userCompletionStatus: 'pending'
+      }))
+  }
 
   // Filter interventions based on status
   const getFilteredInterventions = () => {
-    // Pending Assignment: Required interventions not yet assigned
-    const pendingAssignment = requiredInterventions.filter(
-      req =>
-        !assignedInterventions.some(
-          assigned => assigned.interventionTitle === req.title
-        )
-    )
-
-    // Assigned: All assigned interventions
-    const assigned = assignedInterventions.filter(
-      item => item.status !== 'completed'
-    )
-
-    // Completed: Assigned interventions with status `completed`
-    const completed = assignedInterventions.filter(
-      item => item.status === 'completed'
-    )
-
-    // Ongoing: Assigned interventions with status `in-progress`
-    const ongoing = assignedInterventions.filter(
-      item => item.status === 'in-progress'
-    )
-
-    // Requested: Intervention requests with status `pending`
-    const requested = requests.filter(req => req.status === 'pending')
-
-    // Return filtered results based on selected status
-    switch (filters.status) {
-      case 'pendingAssignment':
-        return pendingAssignment.map(item => ({
-          ...item,
-          status: 'pendingAssignment'
-        }))
-      case 'assigned':
-        return assigned
-      case 'requested':
-        return requested
-      case 'completed':
-        return completed
-      case 'ongoing':
-        return ongoing
-      default:
-        return [
-          ...pendingAssignment.map(item => ({
-            ...item,
-            status: 'pendingAssignment'
-          })),
-          ...assigned,
-          ...requested,
-          ...completed,
-          ...ongoing
-        ]
-    }
+    const all = [...assignedInterventions, ...getUnassignedInterventions()]
+    return all.filter(intervention => {
+      const status = deriveDisplayStatus(intervention).toLowerCase()
+      if (filters.status === 'all') return true
+      return status === filters.status.toLowerCase()
+    })
   }
 
   // Intervention columns
@@ -655,27 +643,7 @@ const InterventionsTrackingView: React.FC = () => {
               )}
 
             {record.consultantCompletionStatus === 'done' &&
-              record.userCompletionStatus === 'none' && (
-                <>
-                  <Tooltip title='Reject completion and provide a reason'>
-                    <Button
-                      size='small'
-                      danger
-                      type='link'
-                      icon={<CloseCircleOutlined />}
-                      onClick={() => {
-                        setSelectedIntervention(record)
-                        setIsDeclineCompletionModalVisible(true)
-                      }}
-                    >
-                      Decline
-                    </Button>
-                  </Tooltip>
-                </>
-              )}
-
-            {record.consultantCompletionStatus === 'done' &&
-              record.userCompletionStatus === 'none' && (
+              record.userCompletionStatus === 'pending' && (
                 <>
                   <Tooltip title='Confirm intervention was completed successfully'>
                     <Button
@@ -696,13 +664,17 @@ const InterventionsTrackingView: React.FC = () => {
                       danger
                       type='link'
                       icon={<CloseCircleOutlined />}
-                      onClick={() => showDeclineModal(record.id)}
+                      onClick={() => {
+                        setSelectedIntervention(record)
+                        setIsDeclineCompletionModalVisible(true) // ✅ Fix here
+                      }}
                     >
                       Decline
                     </Button>
                   </Tooltip>
                 </>
               )}
+
             {record.consultantStatus === 'pending' && (
               <Alert
                 type='info'
@@ -745,10 +717,15 @@ const InterventionsTrackingView: React.FC = () => {
             style={{ width: '100%' }}
           >
             <Option value='all'>All</Option>
-            <Option value='accepted'>Accepted</Option>
+            <Option value='pending assignment'>Pending Assignment</Option>
+            <Option value='awaiting consultant'>Awaiting Consultant</Option>
+            <Option value='awaiting your acceptance'>
+              Awaiting Your Acceptance
+            </Option>
+            <Option value='in progress'>In Progress</Option>
+            <Option value='awaiting confirmation'>Awaiting Confirmation</Option>
+            <Option value='completed'>Completed</Option>
             <Option value='declined'>Declined</Option>
-            <Option value='pending'>Pending</Option>
-            <Option value='confirmed'>Completed</Option>
             <Option value='rejected'>Rejected</Option>
           </Select>
         </Col>
@@ -805,7 +782,10 @@ const InterventionsTrackingView: React.FC = () => {
                 {record.feedback && (
                   <>
                     <Divider />
-                    <strong>Feedback:</strong>
+                    <strong>
+                      Feedback (comments consultant's professionalism,
+                      intervention quality, etc):
+                    </strong>
                     <p>
                       <Rate disabled value={record.feedback.rating} />
                     </p>
@@ -912,12 +892,18 @@ const InterventionsTrackingView: React.FC = () => {
           </Form.Item>
           <Form.Item
             name='feedback'
-            label='Feedback'
-            rules={[{ required: true, message: 'Please provide feedback' }]}
+            label=' Feedback'
+            rules={[
+              {
+                required: true,
+                message:
+                  "Please comment on consultant's professionalism, intervention quality, etc."
+              }
+            ]}
           >
             <Input.TextArea
               rows={3}
-              placeholder='Provide feedback about the intervention'
+              placeholder="Please comment on consultant's professionalism, intervention quality, etc."
             />
           </Form.Item>
         </Form>

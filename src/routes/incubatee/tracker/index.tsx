@@ -246,6 +246,7 @@ const ApplicationTracker = () => {
                 dataSource={applications}
                 loading={loading}
                 pagination={{ pageSize: 5 }}
+                scroll={{ x: true }}
                 style={{ padding: '16px' }}
               />
             </Card>
@@ -254,9 +255,10 @@ const ApplicationTracker = () => {
               <Table
                 rowKey='id'
                 columns={programColumns}
-                dataSource={programs}
+                dataSource={availablePrograms} // ✅ FIXED: show correct programs
                 loading={loading}
                 pagination={{ pageSize: 5 }}
+                scroll={{ x: true }}
                 style={{ padding: '16px' }}
               />
             </Card>

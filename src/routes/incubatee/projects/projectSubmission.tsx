@@ -1,5 +1,14 @@
 import React, { useState } from 'react'
-import { Card, Typography, Form, InputNumber, Button, message } from 'antd'
+import {
+  Card,
+  Typography,
+  Form,
+  InputNumber,
+  Button,
+  message,
+  Row,
+  Col
+} from 'antd'
 
 const { Title } = Typography
 
@@ -13,7 +22,11 @@ export const MonthlyPerformanceForm: React.FC = () => {
   }
 
   return (
-    <Card title='Monthly Key Metrics Tracker'>
+    <Card
+      title='📈 Monthly Key Metrics Tracker'
+      style={{ maxWidth: 800, margin: '0 auto' }}
+      bodyStyle={{ padding: 24 }}
+    >
       <Title level={5}>Enter your SME’s monthly performance data</Title>
 
       <Form
@@ -30,23 +43,26 @@ export const MonthlyPerformanceForm: React.FC = () => {
           <InputNumber min={0} style={{ width: '100%' }} />
         </Form.Item>
 
-        <Form.Item label='Head Count' style={{ marginBottom: 0 }}>
-          <Form.Item
-            name='headPermanent'
-            label='Permanent Employees'
-            style={{ display: 'inline-block', width: '48%', marginRight: '4%' }}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-
-          <Form.Item
-            name='headTemporary'
-            label='Temporary Employees'
-            style={{ display: 'inline-block', width: '48%' }}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-        </Form.Item>
+        <Row gutter={[16, 16]}>
+          <Col xs={24} sm={12}>
+            <Form.Item
+              name='headPermanent'
+              label='Permanent Employees'
+              rules={[{ required: true, message: 'Please enter a value' }]}
+            >
+              <InputNumber min={0} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item
+              name='headTemporary'
+              label='Temporary Employees'
+              rules={[{ required: true, message: 'Please enter a value' }]}
+            >
+              <InputNumber min={0} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+        </Row>
 
         <Form.Item
           name='orders'
@@ -81,7 +97,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
         </Form.Item>
 
         <Form.Item>
-          <Button type='primary' htmlType='submit'>
+          <Button type='primary' htmlType='submit' block>
             Submit Monthly Update
           </Button>
         </Form.Item>

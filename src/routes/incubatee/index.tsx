@@ -12,7 +12,8 @@ import {
   message,
   Badge,
   Select,
-  Spin
+  Spin,
+  Alert
 } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
@@ -103,6 +104,9 @@ export const IncubateeDashboard: React.FC = () => {
   const [participantId, setParticipantId] = useState<string>('')
   const [filterType, setFilterType] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [expandedChart, setExpandedChart] = useState<
+    'revenue' | 'avgRevenue' | null
+  >(null)
 
   useEffect(() => {
     const fetchUserRole = async () => {
@@ -381,33 +385,76 @@ export const IncubateeDashboard: React.FC = () => {
         <Title level={3}>Incubatee Dashboard</Title>
 
         <Row gutter={[16, 16]}>
-          <Col xs={24} sm={8}>
-            <Card>
-              <Statistic
-                title='Participation Rate'
-                value={`${participation}%`}
-                prefix={<CheckCircleOutlined />}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={8}>
-            <Card>
-              <Statistic
-                title='Outstanding Documents'
-                value={outstandingDocs}
-                prefix={<FileTextOutlined />}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={8}>
-            <Card>
-              <Statistic
-                title='Total Workers'
-                value={permHeadcount.at(-1) + tempHeadcount.at(-1)}
-                prefix={<TeamOutlined />}
-              />
-            </Card>
-          </Col>
+          <Row gutter={[16, 16]}>
+            {/* Metrics Section */}
+            <Col xs={24} sm={8}>
+              <Card>
+                <Statistic
+                  title='Participation Rate'
+                  value={`${participation}%`}
+                  prefix={<CheckCircleOutlined />}
+                />
+              </Card>
+            </Col>
+            <Col xs={24} sm={8}>
+              <Card>
+                <Statistic
+                  title='Outstanding Documents'
+                  value={outstandingDocs}
+                  prefix={<FileTextOutlined />}
+                />
+              </Card>
+            </Col>
+            <Col xs={24} sm={8}>
+              <Card>
+                <Statistic
+                  title='Total Workers'
+                  value={permHeadcount.at(-1) + tempHeadcount.at(-1)}
+                  prefix={<TeamOutlined />}
+                />
+              </Card>
+            </Col>
+
+            {/* New Tool Cards */}
+            <Col xs={24} md={12}>
+              <Card
+                title='🌱 Sozo Dream Lab AI'
+                type='inner'
+                style={{ background: '#f6ffed', borderColor: '#b7eb8f' }}
+                extra={
+                  <a
+                    href='https://sozodreamlab.netlify.app/'
+                    target='_blank'
+                    rel='noopener noreferrer'
+                  >
+                    Visit
+                  </a>
+                }
+              >
+                A smart AI driven automated tool for your audio, text and
+                quantitative data analysis and insights.
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card
+                title='📊 Quantilytix AI'
+                type='inner'
+                style={{ background: '#e6f7ff', borderColor: '#91d5ff' }}
+                extra={
+                  <a
+                    href='https://quantilytix.co.za'
+                    target='_blank'
+                    rel='noopener noreferrer'
+                  >
+                    Visit
+                  </a>
+                }
+              >
+                Manage your finances better and get advanced AI driven data
+                analytics .
+              </Card>
+            </Col>
+          </Row>
 
           <Col xs={24}>
             <Card title='Pending Interventions'>
@@ -443,17 +490,44 @@ export const IncubateeDashboard: React.FC = () => {
           </Col>
 
           <Col xs={24}>
-            <Card>
-              <HighchartsReact highcharts={Highcharts} options={revenueChart} />
-            </Card>
-          </Col>
-          <Col xs={24}>
-            <Card>
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={avgRevenueChart}
-              />
-            </Card>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={12}>
+                <Card
+                  title='Revenue vs Workforce'
+                  extra={
+                    <Button
+                      type='link'
+                      onClick={() => setExpandedChart('revenue')}
+                    >
+                      Expand
+                    </Button>
+                  }
+                >
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={revenueChart}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} md={12}>
+                <Card
+                  title='Total Revenue vs Avg Revenue'
+                  extra={
+                    <Button
+                      type='link'
+                      onClick={() => setExpandedChart('avgRevenue')}
+                    >
+                      Expand
+                    </Button>
+                  }
+                >
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={avgRevenueChart}
+                  />
+                </Card>
+              </Col>
+            </Row>
           </Col>
         </Row>
 
@@ -526,6 +600,28 @@ export const IncubateeDashboard: React.FC = () => {
             onChange={e => setDeclineReason(e.target.value)}
             placeholder='Enter reason...'
           />
+        </Modal>
+
+        <Modal
+          title={
+            expandedChart === 'revenue'
+              ? 'Expanded: Revenue vs Workforce'
+              : 'Expanded: Total Revenue vs Avg Revenue'
+          }
+          open={!!expandedChart}
+          onCancel={() => setExpandedChart(null)}
+          footer={null}
+          width={900}
+        >
+          {expandedChart === 'revenue' && (
+            <HighchartsReact highcharts={Highcharts} options={revenueChart} />
+          )}
+          {expandedChart === 'avgRevenue' && (
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={avgRevenueChart}
+            />
+          )}
         </Modal>
 
         <Button

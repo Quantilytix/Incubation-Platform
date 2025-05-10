@@ -20,7 +20,7 @@ import {
 } from '@ant-design/icons'
 import { auth, db } from '@/firebase'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, addDoc, getDocs, query, where } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
 

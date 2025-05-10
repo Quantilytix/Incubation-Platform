@@ -1,9 +1,22 @@
-import React from 'react'
-import { Card, Col, Row, Typography, Statistic } from 'antd'
+import React, { useEffect, useState } from 'react'
+import {
+  Card,
+  Col,
+  Row,
+  Typography,
+  Statistic,
+  FloatButton,
+  Tooltip,
+  List,
+  Modal
+} from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import { TeamOutlined, StarOutlined, SolutionOutlined } from '@ant-design/icons'
-
+import { BellOutlined } from '@ant-design/icons'
+import { Badge, Button } from 'antd'
+import { collection, getDocs, query, where } from 'firebase/firestore'
+import { db } from '@/firebase'
 const { Title } = Typography
 
 export const ProjectAdminDashboard: React.FC = () => {
@@ -11,6 +24,29 @@ export const ProjectAdminDashboard: React.FC = () => {
   const ongoingInterventions = 42
   const avgParticipation = 87 // in percent
   const avgConsultantRating = 4.5
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notificationModalVisible, setNotificationModalVisible] =
+    useState(false)
+
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      const q = query(
+        collection(db, 'notifications'),
+        where('recipientRoles', 'array-contains', 'projectadmin')
+      )
+
+      const snapshot = await getDocs(q)
+      const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+
+      setNotifications(all)
+
+      const unread = all.filter(n => !n.readBy?.projectadmin).length
+      setUnreadCount(unread)
+    }
+
+    fetchNotifications()
+  }, [])
 
   const topConsultants = [
     ['Dr. Brown', 4.8],
@@ -46,7 +82,11 @@ export const ProjectAdminDashboard: React.FC = () => {
         name: 'Rating',
         type: 'column',
         data: topConsultants.map(c => c[1]),
-        color: '#faad14'
+        color: '#faad14',
+        dataLabels: {
+          enabled: true,
+          format: '{point.y:.1f}'
+        }
       }
     ]
   }
@@ -67,14 +107,17 @@ export const ProjectAdminDashboard: React.FC = () => {
         name: 'Requests',
         type: 'bar',
         data: topInterventions.map(i => i[1]),
-        color: '#1890ff'
+        color: '#1890ff',
+        dataLabels: {
+          enabled: true
+        }
       }
     ]
   }
 
   return (
     <div style={{ padding: 24 }}>
-      <Title level={3}>Project Admin Dashboard</Title>
+      <Title level={3}>Project Admin Dashboard </Title>
 
       {/* KPIs */}
       <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
@@ -129,6 +172,35 @@ export const ProjectAdminDashboard: React.FC = () => {
           </Card>
         </Col>
       </Row>
+      <Tooltip title='Notifications'>
+        <Badge count={unreadCount}>
+          <FloatButton
+            icon={<BellOutlined />}
+            onClick={() => setNotificationModalVisible(true)}
+          />
+        </Badge>
+      </Tooltip>
+      <Modal
+        title='Notifications'
+        open={notificationModalVisible}
+        onCancel={() => setNotificationModalVisible(false)}
+        footer={null}
+      >
+        <List
+          itemLayout='horizontal'
+          dataSource={notifications}
+          renderItem={item => (
+            <List.Item>
+              <List.Item.Meta
+                title={item.message?.projectadmin || 'No message'}
+                description={new Date(
+                  item.createdAt?.seconds * 1000
+                ).toLocaleString()}
+              />
+            </List.Item>
+          )}
+        />
+      </Modal>
     </div>
   )
 }
