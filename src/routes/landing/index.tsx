@@ -11,7 +11,7 @@ const cardData = [
   {
     key: 'sme',
     title: 'Startup | SMME | Cooperative',
-    image: '/assets/images/icons/Company.png',
+    image: '/assets/images/icons/Sme.jpg',
     description: 'Support and opportunities for Small and Medium Enterprises.'
   },
   {
@@ -23,13 +23,13 @@ const cardData = [
   {
     key: 'government',
     title: 'Public Sector | International and Supranational Entity',
-    image: '/assets/images/icons/Government Building.png',
+    image: '/assets/images/icons/Government.jpg',
     description: 'Policies and partnerships for government stakeholders.'
   },
   {
     key: 'investor',
     title: 'Investor | Funder | Capital Partner',
-    image: '/assets/images/icons/Investor.png', // ✅ Add this image to your assets
+    image: '/assets/images/icons/Investor.jpg', // ✅ Add this image to your assets
     description: 'Discover and support high-potential incubatees and programs.'
   }
 ]
