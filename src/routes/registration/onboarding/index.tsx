@@ -155,18 +155,21 @@ const ParticipantRegistrationStepForm = () => {
     fetchUserData()
   }, [])
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
-      if (user) {
-        // Now it's safe to make uploads
-        console.log('Authenticated user:', user.email)
-      } else {
-        console.warn('No authenticated user')
-      }
-    })
+useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, user => {
+    if (user) {
+      console.log('[AUTH] ✅ Authenticated user:', {
+        email: user.email,
+        uid: user.uid
+      })
+    } else {
+      console.warn('[AUTH] ❌ No authenticated user found. Uploads will fail.')
+    }
+  })
 
-    return () => unsubscribe()
-  }, [])
+  return () => unsubscribe()
+}, [])
+
 
   const generateSignature = (data: any) =>
     SHA256(
@@ -372,15 +375,26 @@ const ParticipantRegistrationStepForm = () => {
     })
     return await Packer.toBlob(doc)
   }
-  const uploadGrowthPlanDoc = async (blob: Blob, participantName: string) => {
-    const fileName = `${Date.now()}_${participantName}_growth_plan.docx`
-    const fileRef = ref(storage, `growth_plans/${fileName}`)
-
-    await uploadBytes(fileRef, blob)
-    const url = await getDownloadURL(fileRef)
-
-    return url
+ const uploadGrowthPlanDoc = async (blob: Blob, participantName: string) => {
+  const user = auth.currentUser
+  if (!user) {
+    console.warn('[GROWTH_PLAN] ❌ No user logged in. Cannot upload document.')
+    throw new Error('Not authenticated')
   }
+
+  console.log('[GROWTH_PLAN] Uploading growth plan for:', participantName)
+
+  const fileName = `${Date.now()}_${participantName}_growth_plan.docx`
+  const fileRef = ref(storage, `growth_plans/${fileName}`)
+
+  await uploadBytes(fileRef, blob)
+  console.log('[GROWTH_PLAN] ✅ Upload successful:', fileName)
+
+  const url = await getDownloadURL(fileRef)
+  console.log('[GROWTH_PLAN] Accessible URL:', url)
+
+  return url
+}
 
   const evaluateWithAI = async (participantData: any) => {
     try {
@@ -565,27 +579,40 @@ const ParticipantRegistrationStepForm = () => {
     setDocumentFields(updated)
     return false // prevent auto-upload
   }
-  const uploadFileAndGetURL = async (
-    file: File,
-    folder = 'participant_documents'
-  ) => {
-    try {
-      // Use a unique filename to avoid collisions
-      const fileName = `${Date.now()}_${file.name}`
-      const fileRef = ref(storage, `${folder}/${fileName}`)
+ const uploadFileAndGetURL = async (
+  file: File,
+  folder = 'participant_documents'
+) => {
+  const user = auth.currentUser
 
-      // Upload the file
-      await uploadBytes(fileRef, file)
-
-      // Get the public download URL
-      const url = await getDownloadURL(fileRef)
-
-      return { url, name: fileName }
-    } catch (error) {
-      console.error('Upload failed:', error)
-      throw error
-    }
+  if (!user) {
+    console.warn('[UPLOAD] ❌ Upload blocked: No authenticated user.')
+    throw new Error('Not authenticated')
   }
+
+  console.log('[UPLOAD] Attempting upload by user:', {
+    email: user.email,
+    uid: user.uid
+  })
+
+  try {
+    const fileName = `${Date.now()}_${file.name}`
+    const fileRef = ref(storage, `${folder}/${fileName}`)
+    console.log(`[UPLOAD] Uploading to path: ${folder}/${fileName}`)
+
+    await uploadBytes(fileRef, file)
+    console.log('[UPLOAD] ✅ Upload successful')
+
+    const url = await getDownloadURL(fileRef)
+    console.log('[UPLOAD] File accessible at:', url)
+
+    return { url, name: fileName }
+  } catch (error) {
+    console.error('[UPLOAD] ❌ Upload failed:', error)
+    throw error
+  }
+}
+
   const uploadAllDocuments = async () => {
     const uploadedDocs = []
 
