@@ -58,6 +58,7 @@ const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
 import dayjs from 'dayjs'
 import { useGetIdentity } from '@refinedev/core'
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 
 export const OperationsDashboard: React.FC = () => {
   const navigate = useNavigate()
@@ -93,7 +94,13 @@ export const OperationsDashboard: React.FC = () => {
   const [consultants, setConsultants] = useState<any[]>([])
   const [projectAdmins, setProjectAdmins] = useState<any[]>([])
   const [operationsUsers, setOperationsUsers] = useState<any[]>([])
-  const { data: identity } = useGetIdentity()
+  const { user, loading } = useFullIdentity()
+  const [consultantDocIds, setConsultantDocIds] = useState<
+    Record<string, string>
+  >({})
+  const [operationsDocIds, setOperationsDocIds] = useState<
+    Record<string, string>
+  >({})
 
   //  Use Effects
   useEffect(() => {
@@ -114,11 +121,11 @@ export const OperationsDashboard: React.FC = () => {
   }, [])
   useEffect(() => {
     const fetchRelevantUsers = async () => {
-      if (!identity?.companyCode) return // wait until identity is ready
+      if (!user?.companyCode) return
 
       const q = query(
         collection(db, 'users'),
-        where('companyCode', '==', identity.companyCode)
+        where('companyCode', '==', user.companyCode)
       )
       const snapshot = await getDocs(q)
       const allUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
@@ -126,10 +133,18 @@ export const OperationsDashboard: React.FC = () => {
       setConsultants(allUsers.filter(u => u.role === 'consultant'))
       setProjectAdmins(allUsers.filter(u => u.role === 'projectadmin'))
       setOperationsUsers(allUsers.filter(u => u.role === 'operations'))
+
+      const { consultantMap, opsMap } = await resolveUserDocIds(allUsers)
+      console.log('[🔗 consultantMap]', consultantMap)
+      console.log('[🔗 opsMap]', opsMap)
+
+      // You can store these in state if needed:
+      setConsultantDocIds(consultantMap)
+      setOperationsDocIds(opsMap)
     }
 
     fetchRelevantUsers()
-  }, [identity?.companyCode])
+  }, [user?.companyCode])
 
   const openInterventionDetails = async (interventionId: string) => {
     try {
@@ -195,6 +210,7 @@ export const OperationsDashboard: React.FC = () => {
       )
     )
   }
+
   const handleConfirmCompletion = async () => {
     if (!selectedIntervention) return
     setConfirming(true)
@@ -229,6 +245,39 @@ export const OperationsDashboard: React.FC = () => {
     } finally {
       setConfirming(false)
     }
+  }
+
+  const resolveUserDocIds = async (users: any[]) => {
+    const consultantEmails = users
+      .filter(u => u.role === 'consultant' || u.role === 'projectadmin')
+      .map(u => u.email)
+
+    const opsEmails = users
+      .filter(u => u.role === 'operations')
+      .map(u => u.email)
+
+    const fetchByEmail = async (
+      colName: string,
+      emails: string[]
+    ): Promise<Record<string, string>> => {
+      const q = query(collection(db, colName), where('email', 'in', emails))
+      const snapshot = await getDocs(q)
+
+      return snapshot.docs.reduce((acc, doc) => {
+        const data = doc.data()
+        if (data.email) {
+          acc[data.email] = doc.id
+        }
+        return acc
+      }, {} as Record<string, string>)
+    }
+
+    const [consultantMap, opsMap] = await Promise.all([
+      fetchByEmail('consultants', consultantEmails),
+      fetchByEmail('operationsStaff', opsEmails)
+    ])
+
+    return { consultantMap, opsMap }
   }
 
   // Statistics Calculation
@@ -357,27 +406,30 @@ export const OperationsDashboard: React.FC = () => {
     }
   }
   const handleAddTask = async (values: any) => {
-    try {
-      const newId = `task-${Date.now()}`
-      const newTask = {
-        id: newId,
-        title: values.title,
-        dueDate: values.dueDate.toDate(),
-        priority: values.priority,
-        assignedRole: values.assignedRole || null,
-        assignedTo: values.assignedTo || null,
-        status: 'To Do',
-        createdAt: Timestamp.now()
-      }
-      await setDoc(doc(db, 'tasks', newId), newTask)
-      setTasks(prev => [...prev, newTask])
-      message.success('Task added successfully')
-      setTaskModalOpen(false)
-      taskForm.resetFields()
-    } catch (error) {
-      console.error('Error adding task:', error)
-      message.error('Failed to add task')
+    const assignedEmail = values.assignedTo
+    const isOps = values.assignedRole === 'operations'
+
+    const assignedId = isOps
+      ? operationsDocIds[assignedEmail]
+      : consultantDocIds[assignedEmail]
+
+    if (!assignedId) {
+      message.error('Assigned user not found in collections')
+      return
     }
+
+    const newTask = {
+      title: values.title,
+      dueDate: values.dueDate.toDate(),
+      priority: values.priority,
+      assignedRole: values.assignedRole,
+      assignedTo: assignedId,
+      createdAt: Timestamp.now(),
+      status: 'To Do'
+    }
+
+    await setDoc(doc(db, 'tasks', `task-${Date.now()}`), newTask)
+    message.success('Task assigned successfully.')
   }
 
   const handleCompleteTask = async (taskId: string) => {
@@ -882,7 +934,10 @@ export const OperationsDashboard: React.FC = () => {
           <Form.Item name='assignedRole' label='Assign Role'>
             <Select
               placeholder='Select role'
-              onChange={value => setSelectedRole(value)}
+              onChange={value => {
+                setSelectedRole(value)
+                taskForm.setFieldsValue({ assignedTo: undefined }) // ✅ clear assignedTo
+              }}
             >
               <Select.Option value='consultant'>Consultant</Select.Option>
               <Select.Option value='projectadmin'>Project Admin</Select.Option>
@@ -904,8 +959,8 @@ export const OperationsDashboard: React.FC = () => {
                 ? operationsUsers
                 : []
               ).map(user => (
-                <Select.Option key={user.id} value={user.id}>
-                  {user.name || user.email}
+                <Select.Option key={user.nam} value={user.name}>
+                  {user.name}
                 </Select.Option>
               ))}
             </Select>

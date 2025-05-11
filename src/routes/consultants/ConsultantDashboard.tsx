@@ -131,7 +131,6 @@ export const ConsultantDashboard: React.FC = () => {
             where('consultantId', '==', consultantId)
           )
         )
-        console.log(consultantId)
 
         const allInterventions: Intervention[] = await Promise.all(
           allSnap.docs.map(async docSnap => {

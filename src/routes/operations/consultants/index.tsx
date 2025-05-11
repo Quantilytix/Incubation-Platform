@@ -33,6 +33,8 @@ import {
 } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import { CSVLink } from 'react-csv'
+import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { auth } from '@/firebase'
 
 const { Title } = Typography
 const { Option } = Select
@@ -101,21 +103,44 @@ export const ConsultantPage: React.FC = () => {
 
   const handleAddConsultant = async (values: any) => {
     try {
+      const { email, name, expertise, ratePerHour } = values
+
+      // ✅ 1. Create Firebase Auth account
+      const userCred = await createUserWithEmailAndPassword(auth, email, '0000')
+      const uid = userCred.user.uid
+
+      // ✅ 2. Save consultant details
       const newConsultant = {
-        ...values,
+        name,
+        email,
+        expertise,
+        ratePerHour,
         assignmentsCount: 0,
         rating: 0,
-        active: true
+        active: true,
+        authUid: uid
       }
-      const docRef = await addDoc(collection(db, 'consultants'), newConsultant)
-      message.success('Consultant added successfully!')
-      setAddModalVisible(false)
+
+      await addDoc(collection(db, 'consultants'), newConsultant)
+
+      // ✅ 3. Send Email (adjust this to use your email service or backend)
+      await fetch('/api/send-welcome-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          subject: 'Welcome to Smart Incubation',
+          message: `Hi ${name}, your consultant account has been created. You can login with:\n\nEmail: ${email}\nPassword: 0000\n\nPlease change your password after logging in.`
+        })
+      })
+
+      message.success('Consultant registered and notified!')
       form.resetFields()
-      setNewConsultantId(docRef.id)
+      setAddModalVisible(false)
       fetchConsultants()
-    } catch (error) {
-      console.error('Error adding consultant:', error)
-      message.error('Failed to add consultant.')
+    } catch (error: any) {
+      console.error(error)
+      message.error(error?.message || 'Failed to register consultant.')
     }
   }
 
@@ -185,6 +210,12 @@ export const ConsultantPage: React.FC = () => {
       dataIndex: 'email',
       key: 'email',
       sorter: (a: Consultant, b: Consultant) => a.email.localeCompare(b.email)
+    },
+    {
+      title: 'Rate/hr',
+      dataIndex: 'ratePerHour',
+      key: 'ratePerHour',
+      render: val => `R ${val}`
     },
     {
       title: 'Expertise',
@@ -390,6 +421,12 @@ export const ConsultantPage: React.FC = () => {
               ))}
             </Select>
           </Form.Item>
+          <Form.Item
+            name='ratePerHour'
+            label='Rate per Hour (ZAR)'
+            rules={[{ required: true, message: 'Please enter a rate' }]}
+          />
+          <Input type='number' min={0} />
         </Form>
       </Modal>
 

@@ -206,7 +206,7 @@ const OperationsParticipantsManagement: React.FC = () => {
         const required = record.interventions?.required?.length ?? 0
         const completed = record.interventions?.completed?.length ?? 0
         const progress = calculateProgress(required, completed)
-        const status = record.status.toLowerCase()
+        const status = record.status?.toLowerCase()
 
         let color = 'default'
         if (status === 'active') color = 'green'

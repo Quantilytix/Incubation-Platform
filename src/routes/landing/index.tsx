@@ -9,19 +9,28 @@ const { Title, Paragraph } = Typography
 
 const cardData = [
   {
-    title: 'SME',
+    key: 'sme',
+    title: 'Startup | SMME | Cooperative',
     image: '/assets/images/icons/Company.png',
     description: 'Support and opportunities for Small and Medium Enterprises.'
   },
   {
-    title: 'Incubate Implementor',
+    key: 'incubate',
+    title: 'Incubation | ESD Program Implementor',
     image: '/assets/images/icons/Business presentation.png',
     description: 'Tools and resources for incubation program implementors.'
   },
   {
-    title: 'Government',
+    key: 'government',
+    title: 'Public Sector | International and Supranational Entity',
     image: '/assets/images/icons/Government Building.png',
     description: 'Policies and partnerships for government stakeholders.'
+  },
+  {
+    key: 'investor',
+    title: 'Investor | Funder | Capital Partner',
+    image: '/assets/images/icons/Investor.png', // ✅ Add this image to your assets
+    description: 'Discover and support high-potential incubatees and programs.'
   }
 ]
 

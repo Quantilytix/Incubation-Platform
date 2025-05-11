@@ -340,6 +340,8 @@ export const DirectorDashboard: React.FC = () => {
   const [tasks, setTasks] = useState<any[]>([])
   const [pendingApplications, setPendingApplications] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const [upcomingTasks, setUpcomingTasks] = useState<any[]>([])
+  const [overdueTasks, setOverdueTasks] = useState<any[]>([])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -396,18 +398,31 @@ export const DirectorDashboard: React.FC = () => {
         const taskSnap = await getDocs(collection(db, 'tasks'))
         const applicationSnap = await getDocs(collection(db, 'participants'))
 
-        const tasksDueSoon = taskSnap.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(task => {
-            const dueDate = task.dueDate?.toDate?.()
-            return dueDate && dayjs(dueDate).isBefore(dayjs().add(7, 'days'))
-          })
+        const now = dayjs()
+        const upcoming: any[] = []
+        const overdue: any[] = []
+
+        taskSnap.docs.forEach(doc => {
+          const task = { id: doc.id, ...doc.data() }
+          const dueDate = task.dueDate?.toDate?.()
+
+          if (!dueDate) return
+
+          const due = dayjs(dueDate)
+          if (due.isBefore(now, 'day')) {
+            overdue.push(task)
+          } else if (due.isBefore(now.add(7, 'days'), 'day')) {
+            upcoming.push(task)
+          }
+        })
 
         const pendingApps = applicationSnap.docs
           .map(doc => ({ id: doc.id, ...doc.data() }))
           .filter(p => p.applicationStatus?.toLowerCase() === 'pending')
 
-        setTasks(tasksDueSoon)
+        setTasks([...overdue, ...upcoming])
+        setOverdueTasks(overdue)
+        setUpcomingTasks(upcoming)
         setPendingApplications(pendingApps)
       } catch (err) {
         console.error('Failed to fetch overview data:', err)
@@ -450,14 +465,25 @@ export const DirectorDashboard: React.FC = () => {
   }
 
   const remindUser = (task: any) => {
+    if (!task.assignedRole || !task.assignedTo) {
+      console.warn('[⚠️ Missing assignment info] Task:', task)
+      return message.warning('Task must have an assigned user and role.')
+    }
+
+    const isOverdue = dayjs(task.dueDate.toDate()).isBefore(dayjs(), 'day')
+    const formattedDate = dayjs(task.dueDate.toDate()).format('YYYY-MM-DD')
+
+    const role = task.assignedRole
+    const messageText = isOverdue
+      ? `🚨 Your task "${task.title}" is OVERDUE (was due ${formattedDate}). Please take action.`
+      : `⏳ Reminder: Your task "${task.title}" is due on ${formattedDate}.`
+
     sendNotification({
       message: {
-        [task.assignedRole || 'operations']: `Reminder: Your task "${
-          task.title
-        }" is due on ${dayjs(task.dueDate.toDate()).format('YYYY-MM-DD')}.`
+        [role]: messageText
       },
-      recipientRoles: [task.assignedRole || 'operations'],
-      recipientIds: task.assignedTo ? [task.assignedTo] : []
+      recipientRoles: [role],
+      recipientIds: [task.assignedTo]
     })
   }
 
@@ -1101,12 +1127,9 @@ export const DirectorDashboard: React.FC = () => {
         <Spin spinning={loading}>
           <Row gutter={[16, 16]}>
             <Col xs={24} md={12}>
-              <Card
-                title='⏰ Upcoming Tasks (Next 7 Days)'
-                extra={<Text type='secondary'>{tasks.length} task(s)</Text>}
-              >
+              <Card title='🔴 Overdue Tasks'>
                 <List
-                  dataSource={tasks}
+                  dataSource={overdueTasks}
                   renderItem={item => (
                     <List.Item
                       actions={[
@@ -1118,9 +1141,10 @@ export const DirectorDashboard: React.FC = () => {
                       <List.Item.Meta
                         title={item.title}
                         description={`Due: ${dayjs(
-                          item.dueDate?.toDate?.()
+                          item.dueDate.toDate()
                         ).format('YYYY-MM-DD')}`}
                       />
+                      <Tag color='red'>Overdue</Tag>
                       <Tag>{item.assignedRole}</Tag>
                     </List.Item>
                   )}
@@ -1129,33 +1153,28 @@ export const DirectorDashboard: React.FC = () => {
             </Col>
 
             <Col xs={24} md={12}>
-              <Card
-                title='📥 Applications Pending Review'
-                extra={
-                  <Button
-                    type='primary'
-                    size='small'
-                    onClick={remindReviewApplications}
-                  >
-                    Remind Ops
-                  </Button>
-                }
-              >
+              <Card title='⏰ Upcoming Tasks (Next 7 Days)'>
                 <List
-                  dataSource={pendingApplications.slice(0, 5)}
-                  renderItem={app => (
-                    <List.Item>
-                      <Text>
-                        {app.participantName || 'Unknown'} —{' '}
-                        {app.beneficiaryName}
-                      </Text>
+                  dataSource={upcomingTasks}
+                  renderItem={item => (
+                    <List.Item
+                      actions={[
+                        <Button size='small' onClick={() => remindUser(item)}>
+                          Remind
+                        </Button>
+                      ]}
+                    >
+                      <List.Item.Meta
+                        title={item.title}
+                        description={`Due: ${dayjs(
+                          item.dueDate.toDate()
+                        ).format('YYYY-MM-DD')}`}
+                      />
+                      <Tag color='blue'>Upcoming</Tag>
+                      <Tag>{item.assignedRole}</Tag>
                     </List.Item>
                   )}
                 />
-                <Divider />
-                <Text type='secondary'>
-                  Total pending applications: {pendingApplications.length}
-                </Text>
               </Card>
             </Col>
           </Row>

@@ -23,7 +23,10 @@ import {
   CheckCircleOutlined,
   DollarOutlined,
   TeamOutlined,
-  PlusOutlined
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  PoweroffOutlined
 } from '@ant-design/icons'
 import {
   collection,
@@ -31,8 +34,10 @@ import {
   addDoc,
   doc,
   updateDoc,
+  deleteDoc,
   getDoc
 } from 'firebase/firestore'
+
 import { auth, db } from '@/firebase'
 import { getAuth } from 'firebase/auth'
 import dayjs from 'dayjs'
@@ -54,6 +59,10 @@ const ProgramManager: React.FC = () => {
   const [searchText, setSearchText] = useState('')
   const [filteredStatus, setFilteredStatus] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
+  const [consultantOptions, setConsultantOptions] = useState<any[]>([])
+  const [editModalVisible, setEditModalVisible] = useState(false)
+  const [selectedProgram, setSelectedProgram] = useState<any>(null)
+  const [editForm] = Form.useForm()
 
   const user = auth.currentUser
 
@@ -66,8 +75,17 @@ const ProgramManager: React.FC = () => {
           const userData = userSnap.data()
           setCompanyCode(userData.companyCode || '')
           setUserRole(userData.role || '')
+          fetchConsultants(userData.companyCode)
         }
       }
+    }
+    const fetchConsultants = async (code: string) => {
+      const snap = await getDocs(collection(db, 'users'))
+      const allUsers = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      const consultants = allUsers.filter(
+        user => user.role === 'consultant' && user.companyCode === code
+      )
+      setConsultantOptions(consultants)
     }
 
     fetchUserCompanyCodeAndRole()
@@ -106,10 +124,32 @@ const ProgramManager: React.FC = () => {
         status: values.status || 'Active',
         startDate: values.startDate?.toDate?.() || null,
         endDate: values.endDate?.toDate?.() || null,
-        registrationLink: `/registration?code=${companyCode}`
+        registrationLink: `/registration?code=${companyCode}`,
+        assignedAdmin: values.assignedAdmin || null
       }
 
       await addDoc(collection(db, 'programs'), payload)
+
+      if (values.assignedAdmin) {
+        const selectedAdmin = consultantOptions.find(
+          user => user.id === values.assignedAdmin
+        )
+
+        await addDoc(collection(db, 'notifications'), {
+          type: 'program-assignment',
+          createdAt: new Date(),
+          readBy: {},
+          recipientIds: [values.assignedAdmin],
+          recipientRoles: ['consultant'],
+          message: {
+            consultant: `You have been assigned as the project admin for "${
+              values.name
+            }". Start: ${dayjs(payload.startDate).format(
+              'YYYY-MM-DD'
+            )}, End: ${dayjs(payload.endDate).format('YYYY-MM-DD')}`
+          }
+        })
+      }
 
       message.success('Program added successfully')
       fetchPrograms()
@@ -118,6 +158,64 @@ const ProgramManager: React.FC = () => {
     } catch (err) {
       console.error(err)
       message.error('Failed to add program')
+    }
+  }
+  const handleUpdateProgram = async (values: any) => {
+    if (!selectedProgram) return
+
+    const payload = {
+      ...selectedProgram,
+      ...values,
+      startDate: values.startDate?.toDate?.() || null,
+      endDate: values.endDate?.toDate?.() || null
+    }
+
+    try {
+      const ref = doc(db, 'programs', selectedProgram.id)
+      await updateDoc(ref, payload)
+
+      // Send notification if assigned admin was added/changed
+      if (
+        values.assignedAdmin &&
+        values.assignedAdmin !== selectedProgram.assignedAdmin
+      ) {
+        const assignedUser = consultantOptions.find(
+          u => u.id === values.assignedAdmin
+        )
+        if (assignedUser) {
+          await addDoc(collection(db, 'notifications'), {
+            type: 'program-assignment',
+            createdAt: new Date(),
+            readBy: {},
+            recipientIds: [assignedUser.id],
+            recipientRoles: ['consultant'],
+            message: {
+              consultant: `You have been assigned as the project admin for "${
+                values.name
+              }". Start: ${dayjs(values.startDate).format(
+                'YYYY-MM-DD'
+              )}, End: ${dayjs(values.endDate).format('YYYY-MM-DD')}`
+            }
+          })
+        }
+      }
+
+      message.success('Program updated successfully')
+      setEditModalVisible(false)
+      fetchPrograms()
+    } catch (err) {
+      console.error(err)
+      message.error('Failed to update program')
+    }
+  }
+  const handleDeleteProgram = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'programs', id))
+      message.success('Program deleted successfully')
+      fetchPrograms()
+    } catch (err) {
+      console.error(err)
+      message.error('Failed to delete program')
     }
   }
 
@@ -276,6 +374,21 @@ const ProgramManager: React.FC = () => {
             }}
           >
             <Table.Column title='Program Name' dataIndex='name' key='name' />
+            <Table.Column
+              title='Assigned Admin'
+              key='assignedAdmin'
+              render={record =>
+                record.assignedAdmin ? (
+                  <Text>
+                    {consultantOptions.find(c => c.id === record.assignedAdmin)
+                      ?.name || 'Unknown'}
+                  </Text>
+                ) : (
+                  <Tag color='orange'>Not Assigned</Tag>
+                )
+              }
+            />
+
             <Table.Column title='Type' dataIndex='type' />
             <Table.Column
               title='Status'
@@ -306,7 +419,7 @@ const ProgramManager: React.FC = () => {
               render={(link: string) => (
                 <Text strong>
                   <a href={link} target='_blank' rel='noopener noreferrer'>
-                    Registration Link
+                    Link
                   </a>
                 </Text>
               )}
@@ -316,12 +429,40 @@ const ProgramManager: React.FC = () => {
               title='Actions'
               key='actions'
               render={(_, record) => (
-                <Button
-                  onClick={() => toggleStatus(record)}
-                  loading={togglingProgramId === record.id}
-                >
-                  {record.status === 'Active' ? 'Deactivate' : 'Activate'}
-                </Button>
+                <Space size='middle'>
+                  <Button
+                    icon={<EditOutlined />}
+                    size='small'
+                    style={{ border: 'none' }}
+                    onClick={() => {
+                      setSelectedProgram(record)
+                      editForm.setFieldsValue({
+                        ...record,
+                        startDate: record.startDate?.toDate
+                          ? dayjs(record.startDate.toDate())
+                          : null,
+                        endDate: record.endDate?.toDate
+                          ? dayjs(record.endDate.toDate())
+                          : null
+                      })
+                      setEditModalVisible(true)
+                    }}
+                  />
+                  <Button
+                    icon={<DeleteOutlined />}
+                    size='small'
+                    danger
+                    onClick={() => handleDeleteProgram(record.id)}
+                  />
+                  <Button
+                    size='small'
+                    icon={<PoweroffOutlined />}
+                    onClick={() => toggleStatus(record)}
+                    loading={togglingProgramId === record.id}
+                  >
+                    {record.status === 'Active' ? 'Deactivate' : 'Activate'}
+                  </Button>
+                </Space>
               )}
             />
           </Table>
@@ -365,7 +506,15 @@ const ProgramManager: React.FC = () => {
               <Form.Item name='maxCapacity' label='Max Capacity'>
                 <InputNumber style={{ width: '100%' }} min={1} />
               </Form.Item>
-
+              <Form.Item name='assignedAdmin' label='Assign Project Admin'>
+                <Select placeholder='Select a consultant'>
+                  {consultantOptions.map(user => (
+                    <Select.Option key={user.id} value={user.id}>
+                      {user.name || user.email}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
               <Form.Item>
                 <Button type='primary' htmlType='submit' block>
                   Add Program
@@ -375,6 +524,68 @@ const ProgramManager: React.FC = () => {
           </Modal>
         </div>
       </Spin>
+      <Modal
+        open={editModalVisible}
+        title='Edit Program'
+        onCancel={() => setEditModalVisible(false)}
+        footer={null}
+      >
+        <Form
+          layout='vertical'
+          form={editForm}
+          onFinish={handleUpdateProgram}
+          initialValues={selectedProgram}
+        >
+          <Form.Item
+            name='name'
+            label='Program Name'
+            rules={[{ required: true }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item name='description' label='Program Description'>
+            <Input />
+          </Form.Item>
+          <Form.Item name='type' label='Type'>
+            <Input />
+          </Form.Item>
+          <Form.Item name='status' label='Status'>
+            <Select>
+              <Select.Option value='Active'>Active</Select.Option>
+              <Select.Option value='Inactive'>Inactive</Select.Option>
+              <Select.Option value='Completed'>Completed</Select.Option>
+              <Select.Option value='Upcoming'>Upcoming</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name='startDate' label='Start Date'>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name='endDate' label='End Date'>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name='budget' label='Budget (ZAR)'>
+            <InputNumber style={{ width: '100%' }} min={0} />
+          </Form.Item>
+          <Form.Item name='maxCapacity' label='Max Capacity'>
+            <InputNumber style={{ width: '100%' }} min={1} />
+          </Form.Item>
+          <Form.Item name='assignedAdmin' label='Assign Project Admin'>
+            <Select placeholder='Select a consultant'>
+              {consultantOptions.map(user => (
+                <Select.Option key={user.id} value={user.id}>
+                  {user.name || user.email}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item>
+            <Button type='primary' htmlType='submit' block>
+              Save Changes
+            </Button>
+          </Form.Item>
+        </Form>
+      </Modal>
     </>
   )
 }

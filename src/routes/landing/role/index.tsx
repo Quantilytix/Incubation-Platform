@@ -46,6 +46,20 @@ const roleFeatures = {
       { icon: <TeamOutlined />, text: 'Policy planning support tools' },
       { icon: <UserAddOutlined />, text: 'Stakeholder collaboration mapping' }
     ]
+  },
+  investor: {
+    title: 'Investors & Funders',
+    highlight: 'Connect with high-potential ventures and incubators.',
+    color: '#722ed1',
+    icon: <LineChartOutlined />,
+    features: [
+      {
+        icon: <LineChartOutlined />,
+        text: 'Access curated incubatee pipelines'
+      },
+      { icon: <RocketOutlined />, text: 'Portfolio performance tracking' },
+      { icon: <UserAddOutlined />, text: 'Co-investment & impact analytics' }
+    ]
   }
 }
 
