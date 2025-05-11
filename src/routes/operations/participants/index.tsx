@@ -43,6 +43,30 @@ const OperationsParticipantsManagement: React.FC = () => {
     totalNeedingAssignment: 0
   })
   const [loading, setLoading] = useState(true)
+  const [programs, setPrograms] = useState<{ id: string; name: string }[]>([])
+  const [filteredParticipants, setFilteredParticipants] = useState<any[]>([])
+  const [searchText, setSearchText] = useState('')
+  const [selectedProgram, setSelectedProgram] = useState('all')
+
+  const applyFilters = () => {
+    let filtered = participants
+
+    if (selectedProgram !== 'all') {
+      filtered = filtered.filter(p => p.programId === selectedProgram)
+    }
+
+    if (searchText.trim()) {
+      filtered = filtered.filter(
+        p =>
+          (p.beneficiaryName || '')
+            .toLowerCase()
+            .includes(searchText.toLowerCase()) ||
+          (p.sector || '').toLowerCase().includes(searchText.toLowerCase())
+      )
+    }
+
+    setFilteredParticipants(filtered)
+  }
 
   useEffect(() => {
     const fetchParticipants = async () => {
@@ -85,8 +109,23 @@ const OperationsParticipantsManagement: React.FC = () => {
       }
     }
 
+    const fetchPrograms = async () => {
+      const snapshot = await getDocs(collection(db, 'programs'))
+      const list = snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().programName || doc.data().name || doc.id
+      }))
+      setPrograms(list)
+    }
+
     fetchParticipants()
+    fetchPrograms()
+    applyFilters()
   }, [])
+
+  useEffect(() => {
+    applyFilters()
+  }, [participants, selectedProgram, searchText])
 
   const handleAddParticipant = async (values: any) => {
     try {
@@ -292,11 +331,42 @@ const OperationsParticipantsManagement: React.FC = () => {
           + Add New Participant
         </Button>
       </Row>
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={8}>
+          <Select
+            style={{ width: '100%' }}
+            value={selectedProgram}
+            onChange={val => {
+              setSelectedProgram(val)
+              applyFilters()
+            }}
+          >
+            <Option value='all'>All Programs</Option>
+            {programs.map(p => (
+              <Option key={p.id} value={p.id}>
+                {p.name}
+              </Option>
+            ))}
+          </Select>
+        </Col>
+
+        <Col span={8}>
+          <Input
+            placeholder='Search by name or sector'
+            value={searchText}
+            onChange={e => {
+              setSearchText(e.target.value)
+              applyFilters()
+            }}
+            allowClear
+          />
+        </Col>
+      </Row>
 
       {/* Participants Table */}
       <Card>
         <Table
-          dataSource={participants}
+          dataSource={filteredParticipants}
           columns={columns}
           rowKey='id'
           loading={loading}
