@@ -1,6 +1,5 @@
 import React from 'react'
 import { Layout, Button, Row, Col, Card, Typography } from 'antd'
-import { UserOutlined, LoginOutlined } from '@ant-design/icons'
 import './LandingPage.css' // Import your styles
 import { useNavigate } from 'react-router-dom'
 
@@ -36,26 +35,6 @@ const cardData = [
 
 const LandingPage = () => {
   const navigate = useNavigate()
-  const cardData = [
-    {
-      key: 'sme',
-      title: 'Startup  | SMME | Cooperative ',
-      image: '/assets/images/icons/Company.png',
-      description: 'Support and opportunities for Small and Medium Enterprises.'
-    },
-    {
-      key: 'incubate',
-      title: 'Incubation | ESD Program Implementor',
-      image: '/assets/images/icons/Business presentation.png',
-      description: 'Tools and resources for incubation program implementors.'
-    },
-    {
-      key: 'government',
-      title: 'Public Sector | International and Supranational Entity',
-      image: '/assets/images/icons/Government Building.png',
-      description: 'Policies and partnerships for government stakeholders.'
-    }
-  ]
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
