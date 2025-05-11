@@ -49,6 +49,7 @@ import moment from 'moment'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useEffect } from 'react'
 import { Helmet } from 'react-helmet'
+import { onAuthStateChanged } from 'firebase/auth'
 
 const { Title } = Typography
 const { Step } = Steps
@@ -154,6 +155,19 @@ const ParticipantRegistrationStepForm = () => {
     fetchUserData()
   }, [])
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      if (user) {
+        // Now it's safe to make uploads
+        console.log('Authenticated user:', user.email)
+      } else {
+        console.warn('No authenticated user')
+      }
+    })
+
+    return () => unsubscribe()
+  }, [])
+
   const generateSignature = (data: any) =>
     SHA256(
       `${data.email}|${data.participantName}|${
@@ -163,7 +177,7 @@ const ParticipantRegistrationStepForm = () => {
       .toString()
       .substring(0, 16)
 
-  const generateGrowthPlanDoc = (data: any) => {
+  const generateGrowthPlanDocBlob = async (data: any) => {
     const safeText = (text: any) =>
       new Paragraph({ children: [new TextRun(text ?? 'N/A')] })
 
@@ -356,13 +370,16 @@ const ParticipantRegistrationStepForm = () => {
         }
       ]
     })
+    return await Packer.toBlob(doc)
+  }
+  const uploadGrowthPlanDoc = async (blob: Blob, participantName: string) => {
+    const fileName = `${Date.now()}_${participantName}_growth_plan.docx`
+    const fileRef = ref(storage, `growth_plans/${fileName}`)
 
-    Packer.toBlob(doc).then(blob => {
-      saveAs(
-        blob,
-        `${data.beneficiaryName || 'Participant'}_Prelim_Diagnostic_Plan.docx`
-      )
-    })
+    await uploadBytes(fileRef, blob)
+    const url = await getDownloadURL(fileRef)
+
+    return url
   }
 
   const evaluateWithAI = async (participantData: any) => {
@@ -705,6 +722,13 @@ const ParticipantRegistrationStepForm = () => {
           area: 'Compliance'
         })
       }
+
+      const docBlob = await generateGrowthPlanDocBlob(participant)
+      const growthPlanUrl = await uploadGrowthPlanDoc(
+        docBlob,
+        participant.beneficiaryName
+      )
+      participant.growthPlanDocUrl = growthPlanUrl
 
       await addDoc(collection(db, 'participants'), participant)
       message.success('Participant successfully applied!')
