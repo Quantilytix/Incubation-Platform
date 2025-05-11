@@ -65,6 +65,7 @@ const documentTypes = [
 const ParticipantRegistrationStepForm = () => {
   const [form] = Form.useForm()
   const [current, setCurrent] = useState(0)
+  const [currentUserName, setCurrentUserName] = useState('')
   const [documents, setDocuments] = useState([])
   const [documentDetails, setDocumentDetails] = useState([])
   const [uploading, setUploading] = useState(false)
@@ -96,7 +97,16 @@ const ParticipantRegistrationStepForm = () => {
         if (userSnap.exists()) {
           const userData = userSnap.data()
           const companyCode = userData.companyCode || ''
-          form.setFieldsValue({ companyCode })
+          if (userSnap.exists()) {
+            const userData = userSnap.data()
+            const companyCode = userData.companyCode || ''
+            form.setFieldsValue({
+              companyCode,
+              participantName: userData.name,
+              email: userData.email
+            })
+          }
+          setCurrentUserName(userData.name)
 
           // 🔽 Fetch intervention groups for that company
           const interventionsSnapshot = await getDocs(
@@ -144,7 +154,11 @@ const ParticipantRegistrationStepForm = () => {
   }, [])
 
   const generateSignature = (data: any) =>
-    SHA256(`${data.email}|${data.participantName}|${Date.now()}`)
+    SHA256(
+      `${data.email}|${data.participantName}|${
+        data.dateOfRegistration
+      }|${currentUserName}|${Date.now()}`
+    )
       .toString()
       .substring(0, 16)
 
@@ -203,7 +217,7 @@ const ParticipantRegistrationStepForm = () => {
             createCell(h, true)
           )
         }),
-        ...['Jan', 'Feb', 'Mar'].map(
+        ...getLast3Months().map(
           month =>
             new TableRow({
               children: [
@@ -324,7 +338,7 @@ const ParticipantRegistrationStepForm = () => {
             safeText(`LinkedIn: ${data.linkedIn}`),
 
             new Paragraph({
-              text: '7. Prepared By',
+              text: '7. Prepared Date',
               heading: HeadingLevel.HEADING_1
             }),
             safeText(`Submitted on: ${new Date().toLocaleDateString()}`),
@@ -343,7 +357,10 @@ const ParticipantRegistrationStepForm = () => {
     })
 
     Packer.toBlob(doc).then(blob => {
-      saveAs(blob, `${data.beneficiaryName || 'Participant'}_Growth_Plan.docx`)
+      saveAs(
+        blob,
+        `${data.beneficiaryName || 'Participant'}_Prelim_Diagnostic_Plan.docx`
+      )
     })
   }
 
@@ -386,6 +403,25 @@ const ParticipantRegistrationStepForm = () => {
     if (age <= 35) return 'Youth'
     if (age <= 59) return 'Adult'
     return 'Senior'
+  }
+  const getAgeFromID = (id: string): number => {
+    const birthYear = parseInt(id.substring(0, 2), 10)
+    const birthMonth = parseInt(id.substring(2, 4), 10) - 1
+    const birthDay = parseInt(id.substring(4, 6), 10)
+
+    const currentYear = new Date().getFullYear()
+    const century = birthYear <= currentYear % 100 ? 2000 : 1900
+    const birthDate = new Date(century + birthYear, birthMonth, birthDay)
+
+    const today = new Date()
+    let age = today.getFullYear() - birthDate.getFullYear()
+    const m = today.getMonth() - birthDate.getMonth()
+
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--
+    }
+
+    return age
   }
 
   const getYearFields = () => {
@@ -574,6 +610,18 @@ const ParticipantRegistrationStepForm = () => {
     return Math.round((validDocs.length / documentTypes.length) * 100)
   }
 
+  const deriveStageFromRevenue = (values: any): string => {
+    const years = getYearFields()
+    const revenues = years.map(y => Number(values[`revenue${y}`] || 0))
+    const avgRevenue = revenues.reduce((a, b) => a + b, 0) / revenues.length
+
+    if (avgRevenue < 100000) return 'Ideation'
+    if (avgRevenue < 500000) return 'Startup'
+    if (avgRevenue < 1000000) return 'Early Stage'
+    if (avgRevenue < 5000000) return 'Growth'
+    return 'Maturity'
+  }
+
   const handleSubmit = async () => {
     await form.validateFields()
     const values = form.getFieldsValue(true) // true = get all values, even unmounted
@@ -587,6 +635,8 @@ const ParticipantRegistrationStepForm = () => {
       return
     }
 
+    const derivedAge = getAgeFromID(values.idNumber)
+
     try {
       setUploading(true)
       const uploadedDocs = await uploadAllDocuments()
@@ -596,7 +646,7 @@ const ParticipantRegistrationStepForm = () => {
         dateOfRegistration: values.dateOfRegistration?.toDate(), // Make sure it's a JS Date
         rating: 0,
         developmentType: '',
-        ageGroup: getAgeGroup(values.age),
+        ageGroup: getAgeGroup(derivedAge),
         applicationStatus: 'Pending',
         complianceRate,
         complianceDocuments: uploadedDocs,
@@ -618,7 +668,8 @@ const ParticipantRegistrationStepForm = () => {
           assigned: [],
           completed: [],
           participationRate: 0
-        }
+        },
+        stage: deriveStageFromRevenue(values)
       }
 
       const aiEvaluation = await evaluateWithAI(participant)
@@ -710,24 +761,6 @@ const ParticipantRegistrationStepForm = () => {
                 <Input />
               </Form.Item>
               <Form.Item
-                name='participantName'
-                label='Owner Name'
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name='email'
-                label='Email'
-                rules={[
-                  { required: true, message: 'Email is required' },
-                  { type: 'email', message: 'Invalid email format' }
-                ]}
-              >
-                <Input />
-              </Form.Item>
-
-              <Form.Item
                 name='idNumber'
                 label='ID Number'
                 rules={[{ required: true }]}
@@ -802,21 +835,6 @@ const ParticipantRegistrationStepForm = () => {
             </Col>
             <Col span={12}>
               <Form.Item
-                name='stage'
-                label='Stage'
-                rules={[{ required: true }]}
-              >
-                <Select>
-                  <Option value='Ideation'>Ideation</Option>
-                  <Option value='Startup'>Startup</Option>
-                  <Option value='Early Stage'>Early Stage</Option>
-                  <Option value='Growth'>Growth</Option>
-                  <Option value='Expansion'>Expansion</Option>
-                  <Option value='Maturity'>Maturity</Option>
-                  <Option value='Decline'>Decline</Option>
-                </Select>
-              </Form.Item>
-              <Form.Item
                 name='gender'
                 label='Gender'
                 rules={[{ required: true }]}
@@ -825,9 +843,6 @@ const ParticipantRegistrationStepForm = () => {
                   <Option value='Male'>Male</Option>
                   <Option value='Female'>Female</Option>
                 </Select>
-              </Form.Item>
-              <Form.Item name='age' label='Age' rules={[{ required: true }]}>
-                <Input type='number' />
               </Form.Item>
               <Form.Item
                 name='dateOfRegistration'
@@ -1157,44 +1172,6 @@ const ParticipantRegistrationStepForm = () => {
                     loading={uploading}
                   >
                     Submit
-                  </Button>
-                  <Button
-                    type='primary'
-                    onClick={() => {
-                      const formData = form.getFieldsValue(true)
-                      const interventionRequired = Object.values(
-                        interventionSelections
-                      )
-                        .flat()
-                        .map(id => {
-                          const match = interventionGroups
-                            .flatMap(group => group.interventions)
-                            .find(i => i.id === id)
-
-                          return {
-                            id: match?.id,
-                            title: match?.title,
-                            area: interventionGroups.find(g =>
-                              g.interventions.some(i => i.id === id)
-                            )?.area
-                          }
-                        })
-
-                      const finalData = {
-                        ...formData,
-                        interventions: {
-                          required: interventionRequired,
-                          assigned: [],
-                          completed: [],
-                          participationRate: 0
-                        },
-                        complianceRate: calculateCompliance()
-                      }
-
-                      generateGrowthPlanDoc(finalData)
-                    }}
-                  >
-                    Download Prelim Diagnostic Assessment (.docx)
                   </Button>
                 </>
               )}
