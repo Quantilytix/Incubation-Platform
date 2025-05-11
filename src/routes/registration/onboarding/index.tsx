@@ -48,6 +48,7 @@ import {
 import moment from 'moment'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useEffect } from 'react'
+import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
 const { Step } = Steps
@@ -647,7 +648,7 @@ const ParticipantRegistrationStepForm = () => {
         rating: 0,
         developmentType: '',
         ageGroup: getAgeGroup(derivedAge),
-        applicationStatus: 'Pending',
+        applicationStatus: 'pending',
         complianceRate,
         complianceDocuments: uploadedDocs,
         interventions: {
@@ -1145,41 +1146,51 @@ const ParticipantRegistrationStepForm = () => {
   ]
 
   return (
-    <Spin spinning={uploading} tip='Submitting...'>
-      <Card style={{ padding: 24 }}>
-        <Title level={3}>Participant Stepwise Registration</Title>
-        <Steps current={current} style={{ marginBottom: 24 }}>
-          {steps.map(s => (
-            <Step key={s.title} title={s.title} />
-          ))}
-        </Steps>
-        <Form layout='vertical' form={form}>
-          {steps[current].content}
-          <Form.Item>
-            <Space style={{ marginTop: 24 }}>
-              {current > 0 && <Button onClick={prev}>Back</Button>}
-              {current < steps.length - 1 && (
-                <Button type='primary' onClick={next}>
-                  Next
-                </Button>
-              )}
-              {current === steps.length - 1 && (
-                <>
-                  {' '}
-                  <Button
-                    type='primary'
-                    onClick={handleSubmit}
-                    loading={uploading}
-                  >
-                    Submit
+    <>
+      <Helmet>
+        <title>Participant Registration | Smart Incubation Platform</title>
+        <meta
+          name='description'
+          content='Register as a participant to access tailored business development support through the Smart Incubation Platform.'
+        />
+      </Helmet>
+
+      <Spin spinning={uploading} tip='Submitting...'>
+        <Card style={{ padding: 24 }}>
+          <Title level={3}>Participant Stepwise Registration</Title>
+          <Steps current={current} style={{ marginBottom: 24 }}>
+            {steps.map(s => (
+              <Step key={s.title} title={s.title} />
+            ))}
+          </Steps>
+          <Form layout='vertical' form={form}>
+            {steps[current].content}
+            <Form.Item>
+              <Space style={{ marginTop: 24 }}>
+                {current > 0 && <Button onClick={prev}>Back</Button>}
+                {current < steps.length - 1 && (
+                  <Button type='primary' onClick={next}>
+                    Next
                   </Button>
-                </>
-              )}
-            </Space>
-          </Form.Item>
-        </Form>
-      </Card>
-    </Spin>
+                )}
+                {current === steps.length - 1 && (
+                  <>
+                    {' '}
+                    <Button
+                      type='primary'
+                      onClick={handleSubmit}
+                      loading={uploading}
+                    >
+                      Submit
+                    </Button>
+                  </>
+                )}
+              </Space>
+            </Form.Item>
+          </Form>
+        </Card>
+      </Spin>
+    </>
   )
 }
 

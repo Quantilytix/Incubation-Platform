@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { Card, Typography, Row, Col, Form, InputNumber } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
+import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
 
@@ -69,40 +70,49 @@ export const ImpactAnalysisForm: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <Title level={3}>Intervention Impact Ranking</Title>
+    <>
+      <Helmet>
+        <title>Intervention Impact Ranking | Smart Incubation Platform</title>
+        <meta
+          name='description'
+          content='Analyze and rank the impact of interventions based on participation weight and lag-adjusted influence.'
+        />
+      </Helmet>{' '}
+      <div style={{ padding: 24 }}>
+        <Title level={3}>Intervention Impact Ranking</Title>
 
-      <Card style={{ marginBottom: 24 }}>
-        <Row gutter={16}>
-          <Col span={6}>
-            <Form.Item label='Top N Interventions'>
-              <InputNumber
-                min={1}
-                max={rawInterventions.length}
-                value={topN}
-                onChange={val => setTopN(val || 5)}
-                style={{ width: '100%' }}
-              />
-            </Form.Item>
-          </Col>
+        <Card style={{ marginBottom: 24 }}>
+          <Row gutter={16}>
+            <Col span={6}>
+              <Form.Item label='Top N Interventions'>
+                <InputNumber
+                  min={1}
+                  max={rawInterventions.length}
+                  value={topN}
+                  onChange={val => setTopN(val || 5)}
+                  style={{ width: '100%' }}
+                />
+              </Form.Item>
+            </Col>
 
-          <Col span={6}>
-            <Form.Item label='Lagging (months)'>
-              <InputNumber
-                min={0}
-                max={12}
-                value={lagMonths}
-                onChange={val => setLagMonths(val || 0)}
-                style={{ width: '100%' }}
-              />
-            </Form.Item>
-          </Col>
-        </Row>
-      </Card>
+            <Col span={6}>
+              <Form.Item label='Lagging (months)'>
+                <InputNumber
+                  min={0}
+                  max={12}
+                  value={lagMonths}
+                  onChange={val => setLagMonths(val || 0)}
+                  style={{ width: '100%' }}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Card>
 
-      <Card>
-        <HighchartsReact highcharts={Highcharts} options={chartOptions} />
-      </Card>
-    </div>
+        <Card>
+          <HighchartsReact highcharts={Highcharts} options={chartOptions} />
+        </Card>
+      </div>
+    </>
   )
 }

@@ -10,6 +10,7 @@ import {
   List,
   Modal
 } from 'antd'
+import { Helmet } from 'react-helmet'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import { TeamOutlined, StarOutlined, SolutionOutlined } from '@ant-design/icons'
@@ -116,96 +117,106 @@ export const ProjectAdminDashboard: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <Title level={3}>Project Admin Dashboard </Title>
-
-      {/* KPIs */}
-      <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title='Ongoing Interventions'
-              value={ongoingInterventions}
-              prefix={<SolutionOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title='Avg Participation Rate'
-              value={`${avgParticipation}%`}
-              prefix={<TeamOutlined />}
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title='Avg Consultant Rating'
-              value={avgConsultantRating}
-              precision={1}
-              prefix={<StarOutlined />}
-              valueStyle={{ color: '#faad14' }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Charts */}
-      <Row gutter={[24, 24]}>
-        <Col xs={24} lg={12}>
-          <Card>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={consultantRatingsChart}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={interventionNeedsChart}
-            />
-          </Card>
-        </Col>
-      </Row>
-      <div style={{ position: 'fixed', bottom: 48, right: 48, zIndex: 1000 }}>
-        <Tooltip title='Notifications'>
-          <Badge count={unreadCount} offset={[-4, 4]}>
-            <Button
-              shape='circle'
-              icon={<BellOutlined />}
-              size='large'
-              onClick={() => setNotificationModalVisible(true)}
-            />
-          </Badge>
-        </Tooltip>
-      </div>
-
-      <Modal
-        title='Notifications'
-        open={notificationModalVisible}
-        onCancel={() => setNotificationModalVisible(false)}
-        footer={null}
-      >
-        <List
-          itemLayout='horizontal'
-          dataSource={notifications}
-          renderItem={item => (
-            <List.Item>
-              <List.Item.Meta
-                title={item.message?.projectadmin || 'No message'}
-                description={new Date(
-                  item.createdAt?.seconds * 1000
-                ).toLocaleString()}
-              />
-            </List.Item>
-          )}
+    <>
+      <Helmet>
+        <title>Project Admin Dashboard | Smart Incubation Platform</title>
+        <meta
+          name='description'
+          content='Monitor participation, consultant performance, and top intervention needs across the platform.'
         />
-      </Modal>
-    </div>
+      </Helmet>
+
+      <div style={{ padding: 24 }}>
+        <Title level={3}>Project Admin Dashboard </Title>
+
+        {/* KPIs */}
+        <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
+          <Col xs={24} sm={8}>
+            <Card>
+              <Statistic
+                title='Ongoing Interventions'
+                value={ongoingInterventions}
+                prefix={<SolutionOutlined />}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={8}>
+            <Card>
+              <Statistic
+                title='Avg Participation Rate'
+                value={`${avgParticipation}%`}
+                prefix={<TeamOutlined />}
+                valueStyle={{ color: '#52c41a' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={8}>
+            <Card>
+              <Statistic
+                title='Avg Consultant Rating'
+                value={avgConsultantRating}
+                precision={1}
+                prefix={<StarOutlined />}
+                valueStyle={{ color: '#faad14' }}
+              />
+            </Card>
+          </Col>
+        </Row>
+
+        {/* Charts */}
+        <Row gutter={[24, 24]}>
+          <Col xs={24} lg={12}>
+            <Card>
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={consultantRatingsChart}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} lg={12}>
+            <Card>
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={interventionNeedsChart}
+              />
+            </Card>
+          </Col>
+        </Row>
+        <div style={{ position: 'fixed', bottom: 48, right: 48, zIndex: 1000 }}>
+          <Tooltip title='Notifications'>
+            <Badge count={unreadCount} offset={[-4, 4]}>
+              <Button
+                shape='circle'
+                icon={<BellOutlined />}
+                size='large'
+                onClick={() => setNotificationModalVisible(true)}
+              />
+            </Badge>
+          </Tooltip>
+        </div>
+
+        <Modal
+          title='Notifications'
+          open={notificationModalVisible}
+          onCancel={() => setNotificationModalVisible(false)}
+          footer={null}
+        >
+          <List
+            itemLayout='horizontal'
+            dataSource={notifications}
+            renderItem={item => (
+              <List.Item>
+                <List.Item.Meta
+                  title={item.message?.projectadmin || 'No message'}
+                  description={new Date(
+                    item.createdAt?.seconds * 1000
+                  ).toLocaleString()}
+                />
+              </List.Item>
+            )}
+          />
+        </Modal>
+      </div>
+    </>
   )
 }

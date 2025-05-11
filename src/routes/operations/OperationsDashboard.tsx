@@ -48,13 +48,16 @@ import {
   doc,
   Timestamp,
   getDoc,
-  updateDoc
+  updateDoc,
+  where,
+  query
 } from 'firebase/firestore'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
 import dayjs from 'dayjs'
+import { useGetIdentity } from '@refinedev/core'
 
 export const OperationsDashboard: React.FC = () => {
   const navigate = useNavigate()
@@ -86,7 +89,13 @@ export const OperationsDashboard: React.FC = () => {
   const [directCosts, setDirectCosts] = useState([
     { description: '', amount: '' }
   ])
+  const [selectedRole, setSelectedRole] = useState<string | null>(null)
+  const [consultants, setConsultants] = useState<any[]>([])
+  const [projectAdmins, setProjectAdmins] = useState<any[]>([])
+  const [operationsUsers, setOperationsUsers] = useState<any[]>([])
+  const { data: identity } = useGetIdentity()
 
+  //  Use Effects
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
@@ -103,6 +112,25 @@ export const OperationsDashboard: React.FC = () => {
     }
     fetchNotifications()
   }, [])
+  useEffect(() => {
+    const fetchRelevantUsers = async () => {
+      if (!identity?.companyCode) return // wait until identity is ready
+
+      const q = query(
+        collection(db, 'users'),
+        where('companyCode', '==', identity.companyCode)
+      )
+      const snapshot = await getDocs(q)
+      const allUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+
+      setConsultants(allUsers.filter(u => u.role === 'consultant'))
+      setProjectAdmins(allUsers.filter(u => u.role === 'projectadmin'))
+      setOperationsUsers(allUsers.filter(u => u.role === 'operations'))
+    }
+
+    fetchRelevantUsers()
+  }, [identity?.companyCode])
+
   const openInterventionDetails = async (interventionId: string) => {
     try {
       const ref = doc(db, 'assignedInterventions', interventionId)
@@ -334,8 +362,10 @@ export const OperationsDashboard: React.FC = () => {
       const newTask = {
         id: newId,
         title: values.title,
-        dueDate: values.dueDate.toDate(), // 👈 convert properly
+        dueDate: values.dueDate.toDate(),
         priority: values.priority,
+        assignedRole: values.assignedRole || null,
+        assignedTo: values.assignedTo || null,
         status: 'To Do',
         createdAt: Timestamp.now()
       }
@@ -349,6 +379,7 @@ export const OperationsDashboard: React.FC = () => {
       message.error('Failed to add task')
     }
   }
+
   const handleCompleteTask = async (taskId: string) => {
     try {
       const updatedTasks = tasks.map(task =>
@@ -848,6 +879,38 @@ export const OperationsDashboard: React.FC = () => {
           >
             <Input placeholder='Enter task title' />
           </Form.Item>
+          <Form.Item name='assignedRole' label='Assign Role'>
+            <Select
+              placeholder='Select role'
+              onChange={value => setSelectedRole(value)}
+            >
+              <Select.Option value='consultant'>Consultant</Select.Option>
+              <Select.Option value='projectadmin'>Project Admin</Select.Option>
+              <Select.Option value='operations'>Operations</Select.Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name='assignedTo'
+            label='Assign To'
+            rules={[{ required: true }]}
+          >
+            <Select disabled={!selectedRole} placeholder='Select user'>
+              {(selectedRole === 'consultant'
+                ? consultants
+                : selectedRole === 'projectadmin'
+                ? projectAdmins
+                : selectedRole === 'operations'
+                ? operationsUsers
+                : []
+              ).map(user => (
+                <Select.Option key={user.id} value={user.id}>
+                  {user.name || user.email}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
           <Form.Item
             name='dueDate'
             label='Due Date'

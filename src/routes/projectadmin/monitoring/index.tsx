@@ -2,6 +2,12 @@ import React, { useState } from 'react'
 import { Card, Select, Typography, Row, Col, Button, Modal } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
+import { Helmet } from 'react-helmet'
+// import heatmap from 'highcharts/modules/heatmap'
+
+import('highcharts/modules/heatmap').then(HeatmapModule => {
+  HeatmapModule.default(Highcharts)
+})
 
 const { Title } = Typography
 const { Option } = Select
@@ -209,120 +215,211 @@ const MonitoringEvaluationEvaluation = () => {
     }
   }
 
+  const challengeCategories = [
+    'Access to Finance',
+    'Market Access',
+    'Regulatory Hurdles',
+    'Lack of Equipment',
+    'Skills Gap',
+    'Infrastructure',
+    'Mentorship',
+    'Digital Presence',
+    'Product Development'
+  ]
+
+  const challengeFrequency: [number, number, number][] = []
+
+  months.forEach((month, y) => {
+    challengeCategories.forEach((challenge, x) => {
+      const frequency = Math.floor(Math.random() * 20) // random dummy values
+      challengeFrequency.push([x, y, frequency])
+    })
+  })
+
+  const challengeHeatmapOptions: Highcharts.Options = {
+    chart: { type: 'heatmap' },
+    title: { text: 'Challenge Frequency by Month' },
+    xAxis: {
+      categories: challengeCategories,
+      title: { text: 'Challenges' }
+    },
+    yAxis: {
+      categories: months,
+      title: { text: 'Month' },
+      reversed: true
+    },
+    colorAxis: {
+      min: 0,
+      minColor: '#FFFFFF',
+      maxColor: '#f5222d'
+    },
+    legend: {
+      align: 'right',
+      layout: 'vertical',
+      margin: 0,
+      verticalAlign: 'top',
+      y: 25,
+      symbolHeight: 280
+    },
+    tooltip: {
+      formatter: function () {
+        return `<b>${months[this.point.y]}</b><br/>${
+          challengeCategories[this.point.x]
+        }: <b>${this.point.value}</b>`
+      }
+    },
+    series: [
+      {
+        name: 'Challenge Frequency',
+        borderWidth: 1,
+        type: 'heatmap',
+        data: challengeFrequency,
+        dataLabels: {
+          enabled: true,
+          color: '#000000'
+        }
+      }
+    ]
+  }
+
   const openExpand = (chart: Highcharts.Options) => {
     setExpandedChart(chart)
     setExpandedVisible(true)
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <Title level={3}>📈 Monitoring & Evaluation Dashboard</Title>
+    <>
+      <Helmet>
+        <title>
+          Monitoring & Evaluation Dashboard | Smart Incubation Platform
+        </title>
+        <meta
+          name='description'
+          content='Analyze intervention trends, company-level impacts, compliance, and demographic engagement across the incubation platform.'
+        />
+      </Helmet>
+      <div style={{ padding: 24 }}>
+        <Title level={3}>📈 Monitoring & Evaluation Dashboard</Title>
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col>
-          <Select value={gender} onChange={setGender} style={{ width: 120 }}>
-            <Option value='All'>All</Option>
-            <Option value='Male'>Male</Option>
-            <Option value='Female'>Female</Option>
-          </Select>
-        </Col>
-        <Col>
-          <Select value={ageGroup} onChange={setAgeGroup}>
-            <Option value='All'>All Ages</Option>
-            <Option value='Youth'>Youth</Option>
-            <Option value='Adult'>Adult</Option>
-            <Option value='Senior'>Senior</Option>
-          </Select>
-        </Col>
-      </Row>
-
-      <Row gutter={[24, 24]}>
-        <Col xs={24} lg={12}>
-          <Card
-            title='📊 Interventions Overview'
-            extra={
-              <>
-                <Select
-                  value={interventionChart}
-                  onChange={setInterventionChart}
-                  style={{ width: 250, marginRight: 12 }}
-                >
-                  {Object.keys(interventionCharts).map(key => (
-                    <Option key={key} value={key}>
-                      {key}
-                    </Option>
-                  ))}
-                </Select>
-                <Button
-                  onClick={() =>
-                    openExpand(interventionCharts[interventionChart])
-                  }
-                >
-                  Expand
-                </Button>
-              </>
-            }
-          >
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={interventionCharts[interventionChart]}
-            />
-          </Card>
-        </Col>
-
-        <Col xs={24} lg={12}>
-          <Card
-            title='🏢 Company-Level Breakdowns'
-            extra={
-              <>
-                <Select
-                  value={companyChart}
-                  onChange={setCompanyChart}
-                  style={{ width: 250, marginRight: 12 }}
-                >
-                  {Object.keys(companyCharts).map(key => (
-                    <Option key={key} value={key}>
-                      {key}
-                    </Option>
-                  ))}
-                </Select>
-                <Button onClick={() => openExpand(companyCharts[companyChart])}>
-                  Expand
-                </Button>
-              </>
-            }
-          >
-            <Select
-              value={topN}
-              onChange={setTopN}
-              style={{ marginBottom: 16, width: 120 }}
-            >
-              {[5, 3, 10].map(n => (
-                <Option key={n} value={n}>
-                  Top {n}
-                </Option>
-              ))}
+        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+          <Col>
+            <Select value={gender} onChange={setGender} style={{ width: 120 }}>
+              <Option value='All'>All</Option>
+              <Option value='Male'>Male</Option>
+              <Option value='Female'>Female</Option>
             </Select>
+          </Col>
+          <Col>
+            <Select value={ageGroup} onChange={setAgeGroup}>
+              <Option value='All'>All Ages</Option>
+              <Option value='Youth'>Youth</Option>
+              <Option value='Adult'>Adult</Option>
+              <Option value='Senior'>Senior</Option>
+            </Select>
+          </Col>
+        </Row>
 
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={companyCharts[companyChart]}
-            />
-          </Card>
-        </Col>
-      </Row>
+        <Row gutter={[24, 24]}>
+          <Col xs={24} lg={12}>
+            <Card
+              title='📊 Interventions Overview'
+              extra={
+                <>
+                  <Select
+                    value={interventionChart}
+                    onChange={setInterventionChart}
+                    style={{ width: 250, marginRight: 12 }}
+                  >
+                    {Object.keys(interventionCharts).map(key => (
+                      <Option key={key} value={key}>
+                        {key}
+                      </Option>
+                    ))}
+                  </Select>
+                  <Button
+                    onClick={() =>
+                      openExpand(interventionCharts[interventionChart])
+                    }
+                  >
+                    Expand
+                  </Button>
+                </>
+              }
+            >
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={interventionCharts[interventionChart]}
+              />
+            </Card>
+          </Col>
 
-      <Modal
-        open={expandedVisible}
-        onCancel={() => setExpandedVisible(false)}
-        width='80%'
-        footer={null}
-      >
-        {expandedChart && (
-          <HighchartsReact highcharts={Highcharts} options={expandedChart} />
-        )}
-      </Modal>
-    </div>
+          <Col xs={24} lg={12}>
+            <Card
+              title='🏢 Company-Level Breakdowns'
+              extra={
+                <>
+                  <Select
+                    value={companyChart}
+                    onChange={setCompanyChart}
+                    style={{ width: 250, marginRight: 12 }}
+                  >
+                    {Object.keys(companyCharts).map(key => (
+                      <Option key={key} value={key}>
+                        {key}
+                      </Option>
+                    ))}
+                  </Select>
+                  <Button
+                    onClick={() => openExpand(companyCharts[companyChart])}
+                  >
+                    Expand
+                  </Button>
+                </>
+              }
+            >
+              <Select
+                value={topN}
+                onChange={setTopN}
+                style={{ marginBottom: 16, width: 120 }}
+              >
+                {[5, 3, 10].map(n => (
+                  <Option key={n} value={n}>
+                    Top {n}
+                  </Option>
+                ))}
+              </Select>
+
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={companyCharts[companyChart]}
+              />
+            </Card>
+          </Col>
+        </Row>
+
+        <Row gutter={[24, 24]} style={{ marginTop: 32 }}>
+          <Col span={24}>
+            <Card title='Challenge Frequency Heatmap'>
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={challengeHeatmapOptions}
+              />
+            </Card>
+          </Col>
+        </Row>
+
+        <Modal
+          open={expandedVisible}
+          onCancel={() => setExpandedVisible(false)}
+          width='80%'
+          footer={null}
+        >
+          {expandedChart && (
+            <HighchartsReact highcharts={Highcharts} options={expandedChart} />
+          )}
+        </Modal>
+      </div>
+    </>
   )
 }
 

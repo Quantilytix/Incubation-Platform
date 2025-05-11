@@ -33,6 +33,7 @@ import {
 import dayjs from 'dayjs'
 import Highcharts, { chart } from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
+import { Helmet } from 'react-helmet'
 
 const { Title, Text, Paragraph } = Typography
 const { RangePicker } = DatePicker
@@ -320,464 +321,475 @@ const ProjectAdminReports: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: '20px' }}>
-      <Title level={2}>Reports & Analytics</Title>
-      <Text>Generate and analyze reports for operations management.</Text>
+    <>
+      <Helmet>
+        <title>Project Reports & Analytics</title>
+        <meta
+          name='description'
+          content='Generate and analyze incubation program reports, participant growth, and compliance status.'
+        />
+      </Helmet>{' '}
+      <div style={{ padding: '20px' }}>
+        <Title level={2}>Reports & Analytics</Title>
+        <Text>Generate and analyze reports for operations management.</Text>
 
-      {/* Report Filters */}
-      <Card style={{ marginTop: '20px', marginBottom: '20px' }}>
-        <Form
-          form={form}
-          layout='vertical'
-          onFinish={handleGenerateReport}
-          initialValues={{
-            reportType: 'participant',
-            timePeriod: 'month'
-          }}
-        >
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item
-                name='reportType'
-                label='Report Type'
-                rules={[
-                  { required: true, message: 'Please select a report type' }
-                ]}
-              >
-                <Select
-                  placeholder='Select report type'
-                  onChange={handleReportTypeChange}
-                >
-                  {reportTypes.map(type => (
-                    <Option key={type.value} value={type.value}>
-                      {type.label}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name='timePeriod'
-                label='Time Period'
-                rules={[
-                  { required: true, message: 'Please select a time period' }
-                ]}
-              >
-                <Select
-                  placeholder='Select time period'
-                  onChange={handleTimePeriodChange}
-                >
-                  {timePeriods.map(period => (
-                    <Option key={period.value} value={period.value}>
-                      {period.label}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              {timePeriod === 'custom' && (
+        {/* Report Filters */}
+        <Card style={{ marginTop: '20px', marginBottom: '20px' }}>
+          <Form
+            form={form}
+            layout='vertical'
+            onFinish={handleGenerateReport}
+            initialValues={{
+              reportType: 'participant',
+              timePeriod: 'month'
+            }}
+          >
+            <Row gutter={16}>
+              <Col span={8}>
                 <Form.Item
-                  name='dateRange'
-                  label='Date Range'
+                  name='reportType'
+                  label='Report Type'
                   rules={[
-                    { required: true, message: 'Please select date range' }
+                    { required: true, message: 'Please select a report type' }
                   ]}
                 >
-                  <RangePicker
-                    style={{ width: '100%' }}
-                    onChange={handleDateRangeChange}
-                  />
+                  <Select
+                    placeholder='Select report type'
+                    onChange={handleReportTypeChange}
+                  >
+                    {reportTypes.map(type => (
+                      <Option key={type.value} value={type.value}>
+                        {type.label}
+                      </Option>
+                    ))}
+                  </Select>
                 </Form.Item>
-              )}
-            </Col>
-          </Row>
-          <Row>
-            <Col span={24} style={{ textAlign: 'right' }}>
-              <Space>
-                <Button
-                  icon={<FilterOutlined />}
-                  type='primary'
-                  htmlType='submit'
-                >
-                  Generate Report
-                </Button>
-                <Button
-                  icon={<FileExcelOutlined />}
-                  onClick={() => handleExport('excel')}
-                >
-                  Export Excel
-                </Button>
-                <Button
-                  icon={<FilePdfOutlined />}
-                  onClick={() => handleExport('pdf')}
-                >
-                  Export PDF
-                </Button>
-              </Space>
-            </Col>
-          </Row>
-        </Form>
-      </Card>
-
-      {/* Dashboard Stats */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '20px' }}>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title='Total Participants'
-              value={85}
-              prefix={<TeamOutlined />}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title='Resources Allocated'
-              value={68}
-              prefix={<ApartmentOutlined />}
-              suffix='%'
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title='Funding Utilized'
-              value={2450000}
-              prefix={<DollarOutlined />}
-              valueStyle={{ color: '#faad14' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title='Compliance Rate'
-              value={92}
-              prefix={<AuditOutlined />}
-              suffix='%'
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Report Content */}
-      <Card>
-        <Tabs defaultActiveKey='1'>
-          <TabPane
-            tab={
-              <span>
-                <BarChartOutlined />
-                Participant Statistics
-              </span>
-            }
-            key='1'
-          >
-            <Row gutter={[16, 16]}>
-              <Col xs={24} md={12}>
-                <Card
-                  title='Participant Growth Over Time'
-                  extra={
-                    <Button
-                      size='small'
-                      onClick={() => setExpandedChart('participantGrowth')}
-                    >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={chartOptions}
-                  />
-                </Card>
               </Col>
-              <Col xs={24} md={12}>
-                <Card
-                  title='Top Performing Participants'
-                  extra={
-                    <Button
-                      size='small'
-                      onClick={() =>
-                        setExpandedChart('topPerformingParticipants')
-                      }
-                    >
-                      Expand
-                    </Button>
-                  }
+              <Col span={8}>
+                <Form.Item
+                  name='timePeriod'
+                  label='Time Period'
+                  rules={[
+                    { required: true, message: 'Please select a time period' }
+                  ]}
                 >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={topParticipantsOptions}
-                  />
-                </Card>
+                  <Select
+                    placeholder='Select time period'
+                    onChange={handleTimePeriodChange}
+                  >
+                    {timePeriods.map(period => (
+                      <Option key={period.value} value={period.value}>
+                        {period.label}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
               </Col>
-
-              <Col xs={24} md={12}>
-                <Card
-                  title='Gender Distribution'
-                  extra={
-                    <Button
-                      size='small'
-                      onClick={() => setExpandedChart('genderDist')}
-                    >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={genderDistOptions}
-                  />
-                </Card>
-              </Col>
-
-              <Col xs={24} md={12}>
-                <Card
-                  title='Age Distribution'
-                  extra={
-                    <Button
-                      size='small'
-                      onClick={() => setExpandedChart('ageDist')}
-                    >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={ageDistOptions}
-                  />
-                </Card>
-              </Col>
-
-              <Col xs={24} md={12}>
-                <Card
-                  title='Completion by Gender'
-                  extra={
-                    <Button
-                      size='small'
-                      onClick={() => setExpandedChart('genderCompletion')}
-                    >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={genderCompletionOptions}
-                  />
-                </Card>
-              </Col>
-
-              <Col xs={24} md={12}>
-                <Card
-                  title='Participant Ratings'
-                  extra={
-                    <Button
-                      size='small'
-                      onClick={() => setExpandedChart('participantRating')}
-                    >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={participantRatingOptions}
-                  />
-                </Card>
-              </Col>
-              <Col xs={24} md={12}>
-                <Card
-                  title='Intervention Fulfillment'
-                  extra={
-                    <Button
-                      size='small'
-                      onClick={() =>
-                        setExpandedChart('interventionFulfillment')
-                      }
-                    >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={sectorComparativeOptions}
-                  />
-                </Card>
-              </Col>
-              <Col xs={24} md={12}>
-                <Card
-                  title='Program Reach'
-                  extra={
-                    <Button
-                      size='small'
-                      onClick={() => setExpandedChart('programReach')}
-                    >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={provinceReachOptions}
-                  />
-                </Card>
+              <Col span={8}>
+                {timePeriod === 'custom' && (
+                  <Form.Item
+                    name='dateRange'
+                    label='Date Range'
+                    rules={[
+                      { required: true, message: 'Please select date range' }
+                    ]}
+                  >
+                    <RangePicker
+                      style={{ width: '100%' }}
+                      onChange={handleDateRangeChange}
+                    />
+                  </Form.Item>
+                )}
               </Col>
             </Row>
+            <Row>
+              <Col span={24} style={{ textAlign: 'right' }}>
+                <Space>
+                  <Button
+                    icon={<FilterOutlined />}
+                    type='primary'
+                    htmlType='submit'
+                  >
+                    Generate Report
+                  </Button>
+                  <Button
+                    icon={<FileExcelOutlined />}
+                    onClick={() => handleExport('excel')}
+                  >
+                    Export Excel
+                  </Button>
+                  <Button
+                    icon={<FilePdfOutlined />}
+                    onClick={() => handleExport('pdf')}
+                  >
+                    Export PDF
+                  </Button>
+                </Space>
+              </Col>
+            </Row>
+          </Form>
+        </Card>
 
-            <Button type='primary' onClick={() => setInsightsVisible(true)}>
-              View AI Insights
-            </Button>
+        {/* Dashboard Stats */}
+        <Row gutter={[16, 16]} style={{ marginBottom: '20px' }}>
+          <Col span={6}>
+            <Card>
+              <Statistic
+                title='Total Participants'
+                value={85}
+                prefix={<TeamOutlined />}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card>
+              <Statistic
+                title='Resources Allocated'
+                value={68}
+                prefix={<ApartmentOutlined />}
+                suffix='%'
+                valueStyle={{ color: '#52c41a' }}
+              />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card>
+              <Statistic
+                title='Funding Utilized'
+                value={2450000}
+                prefix={<DollarOutlined />}
+                valueStyle={{ color: '#faad14' }}
+              />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card>
+              <Statistic
+                title='Compliance Rate'
+                value={92}
+                prefix={<AuditOutlined />}
+                suffix='%'
+                valueStyle={{ color: '#52c41a' }}
+              />
+            </Card>
+          </Col>
+        </Row>
 
-            <Drawer
-              title='AI Insights on Participant Metrics'
-              placement='bottom'
-              height={220}
-              onClose={() => setInsightsVisible(false)}
-              open={insightsVisible}
+        {/* Report Content */}
+        <Card>
+          <Tabs defaultActiveKey='1'>
+            <TabPane
+              tab={
+                <span>
+                  <BarChartOutlined />
+                  Participant Statistics
+                </span>
+              }
+              key='1'
             >
-              <Button
-                loading={insightLoading}
-                onClick={handleGenerateInsight}
-                type='dashed'
-              >
-                Generate Insight
+              <Row gutter={[16, 16]}>
+                <Col xs={24} md={12}>
+                  <Card
+                    title='Participant Growth Over Time'
+                    extra={
+                      <Button
+                        size='small'
+                        onClick={() => setExpandedChart('participantGrowth')}
+                      >
+                        Expand
+                      </Button>
+                    }
+                  >
+                    <HighchartsReact
+                      highcharts={Highcharts}
+                      options={chartOptions}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Card
+                    title='Top Performing Participants'
+                    extra={
+                      <Button
+                        size='small'
+                        onClick={() =>
+                          setExpandedChart('topPerformingParticipants')
+                        }
+                      >
+                        Expand
+                      </Button>
+                    }
+                  >
+                    <HighchartsReact
+                      highcharts={Highcharts}
+                      options={topParticipantsOptions}
+                    />
+                  </Card>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Card
+                    title='Gender Distribution'
+                    extra={
+                      <Button
+                        size='small'
+                        onClick={() => setExpandedChart('genderDist')}
+                      >
+                        Expand
+                      </Button>
+                    }
+                  >
+                    <HighchartsReact
+                      highcharts={Highcharts}
+                      options={genderDistOptions}
+                    />
+                  </Card>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Card
+                    title='Age Distribution'
+                    extra={
+                      <Button
+                        size='small'
+                        onClick={() => setExpandedChart('ageDist')}
+                      >
+                        Expand
+                      </Button>
+                    }
+                  >
+                    <HighchartsReact
+                      highcharts={Highcharts}
+                      options={ageDistOptions}
+                    />
+                  </Card>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Card
+                    title='Completion by Gender'
+                    extra={
+                      <Button
+                        size='small'
+                        onClick={() => setExpandedChart('genderCompletion')}
+                      >
+                        Expand
+                      </Button>
+                    }
+                  >
+                    <HighchartsReact
+                      highcharts={Highcharts}
+                      options={genderCompletionOptions}
+                    />
+                  </Card>
+                </Col>
+
+                <Col xs={24} md={12}>
+                  <Card
+                    title='Participant Ratings'
+                    extra={
+                      <Button
+                        size='small'
+                        onClick={() => setExpandedChart('participantRating')}
+                      >
+                        Expand
+                      </Button>
+                    }
+                  >
+                    <HighchartsReact
+                      highcharts={Highcharts}
+                      options={participantRatingOptions}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Card
+                    title='Intervention Fulfillment'
+                    extra={
+                      <Button
+                        size='small'
+                        onClick={() =>
+                          setExpandedChart('interventionFulfillment')
+                        }
+                      >
+                        Expand
+                      </Button>
+                    }
+                  >
+                    <HighchartsReact
+                      highcharts={Highcharts}
+                      options={sectorComparativeOptions}
+                    />
+                  </Card>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Card
+                    title='Program Reach'
+                    extra={
+                      <Button
+                        size='small'
+                        onClick={() => setExpandedChart('programReach')}
+                      >
+                        Expand
+                      </Button>
+                    }
+                  >
+                    <HighchartsReact
+                      highcharts={Highcharts}
+                      options={provinceReachOptions}
+                    />
+                  </Card>
+                </Col>
+              </Row>
+
+              <Button type='primary' onClick={() => setInsightsVisible(true)}>
+                View AI Insights
               </Button>
-              <Divider />
-              <Text>
-                {aiInsight || 'Click generate to analyze this chart.'}
-              </Text>
-            </Drawer>
-          </TabPane>
 
-          <TabPane
-            tab={
-              <span>
-                <BarChartOutlined />
-                Interventions Overview
-              </span>
-            }
-            key='4'
-          >
-            <Title level={4}>Interventions by Area Of Support</Title>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={{
-                chart: { type: 'column' },
-                title: { text: null },
-                xAxis: { categories: ['Marketing', 'Financial', 'Compliance'] },
-                yAxis: { min: 0, title: { text: 'Count' } },
-                tooltip: { shared: true },
-                plotOptions: { column: { stacking: 'normal' } },
-                series: [
-                  {
-                    name: 'Assigned',
-                    data: [18, 10, 12],
-                    type: 'column'
+              <Drawer
+                title='AI Insights on Participant Metrics'
+                placement='bottom'
+                height={220}
+                onClose={() => setInsightsVisible(false)}
+                open={insightsVisible}
+              >
+                <Button
+                  loading={insightLoading}
+                  onClick={handleGenerateInsight}
+                  type='dashed'
+                >
+                  Generate Insight
+                </Button>
+                <Divider />
+                <Text>
+                  {aiInsight || 'Click generate to analyze this chart.'}
+                </Text>
+              </Drawer>
+            </TabPane>
+
+            <TabPane
+              tab={
+                <span>
+                  <BarChartOutlined />
+                  Interventions Overview
+                </span>
+              }
+              key='4'
+            >
+              <Title level={4}>Interventions by Area Of Support</Title>
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={{
+                  chart: { type: 'column' },
+                  title: { text: null },
+                  xAxis: {
+                    categories: ['Marketing', 'Financial', 'Compliance']
                   },
-                  {
-                    name: 'Completed',
-                    data: [15, 7, 10],
-                    type: 'column'
-                  }
-                ]
-              }}
-            />
+                  yAxis: { min: 0, title: { text: 'Count' } },
+                  tooltip: { shared: true },
+                  plotOptions: { column: { stacking: 'normal' } },
+                  series: [
+                    {
+                      name: 'Assigned',
+                      data: [18, 10, 12],
+                      type: 'column'
+                    },
+                    {
+                      name: 'Completed',
+                      data: [15, 7, 10],
+                      type: 'column'
+                    }
+                  ]
+                }}
+              />
 
-            <Divider />
+              <Divider />
 
-            <Title level={4}>Top 5 Interventions by Frequency</Title>
+              <Title level={4}>Top 5 Interventions by Frequency</Title>
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={{
+                  chart: { type: 'bar' },
+                  title: { text: null },
+                  xAxis: {
+                    categories: [
+                      'Website Dev',
+                      'Social Media',
+                      'Food Safety',
+                      'CRM Setup',
+                      'Marketing Plan'
+                    ]
+                  },
+                  yAxis: {
+                    min: 0,
+                    title: { text: 'Intervention Count' }
+                  },
+                  series: [
+                    {
+                      name: 'Delivered',
+                      data: [12, 9, 8, 7, 6],
+                      type: 'bar'
+                    }
+                  ]
+                }}
+              />
+            </TabPane>
+          </Tabs>
+        </Card>
+        <Modal
+          open={!!expandedChart}
+          footer={null}
+          onCancel={() => setExpandedChart(null)}
+          width={900}
+          title={`Expanded View: ${expandedChart?.replace(/([A-Z])/g, ' $1')}`}
+        >
+          {expandedChart === 'participantGrowth' && (
+            <HighchartsReact highcharts={Highcharts} options={chartOptions} />
+          )}
+
+          {expandedChart === 'topPerformingParticipants' && (
             <HighchartsReact
               highcharts={Highcharts}
-              options={{
-                chart: { type: 'bar' },
-                title: { text: null },
-                xAxis: {
-                  categories: [
-                    'Website Dev',
-                    'Social Media',
-                    'Food Safety',
-                    'CRM Setup',
-                    'Marketing Plan'
-                  ]
-                },
-                yAxis: {
-                  min: 0,
-                  title: { text: 'Intervention Count' }
-                },
-                series: [
-                  {
-                    name: 'Delivered',
-                    data: [12, 9, 8, 7, 6],
-                    type: 'bar'
-                  }
-                ]
-              }}
+              options={topParticipantsOptions}
             />
-          </TabPane>
-        </Tabs>
-      </Card>
-      <Modal
-        open={!!expandedChart}
-        footer={null}
-        onCancel={() => setExpandedChart(null)}
-        width={900}
-        title={`Expanded View: ${expandedChart?.replace(/([A-Z])/g, ' $1')}`}
-      >
-        {expandedChart === 'participantGrowth' && (
-          <HighchartsReact highcharts={Highcharts} options={chartOptions} />
-        )}
-
-        {expandedChart === 'topPerformingParticipants' && (
-          <HighchartsReact
-            highcharts={Highcharts}
-            options={topParticipantsOptions}
-          />
-        )}
-        {expandedChart === 'genderDist' && (
-          <HighchartsReact
-            highcharts={Highcharts}
-            options={genderDistOptions}
-          />
-        )}
-        {expandedChart === 'ageDist' && (
-          <HighchartsReact highcharts={Highcharts} options={ageDistOptions} />
-        )}
-        {expandedChart === 'genderCompletion' && (
-          <HighchartsReact
-            highcharts={Highcharts}
-            options={genderCompletionOptions}
-          />
-        )}
-        {expandedChart === 'participantRating' && (
-          <HighchartsReact
-            highcharts={Highcharts}
-            options={participantRatingOptions}
-          />
-        )}
-        {expandedChart === 'programReach' && (
-          <HighchartsReact
-            highcharts={Highcharts}
-            options={provinceReachOptions}
-          />
-        )}
-        {expandedChart === 'interventionFulfillment' && (
-          <HighchartsReact
-            highcharts={Highcharts}
-            options={sectorComparativeOptions}
-          />
-        )}
-      </Modal>
-    </div>
+          )}
+          {expandedChart === 'genderDist' && (
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={genderDistOptions}
+            />
+          )}
+          {expandedChart === 'ageDist' && (
+            <HighchartsReact highcharts={Highcharts} options={ageDistOptions} />
+          )}
+          {expandedChart === 'genderCompletion' && (
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={genderCompletionOptions}
+            />
+          )}
+          {expandedChart === 'participantRating' && (
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={participantRatingOptions}
+            />
+          )}
+          {expandedChart === 'programReach' && (
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={provinceReachOptions}
+            />
+          )}
+          {expandedChart === 'interventionFulfillment' && (
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={sectorComparativeOptions}
+            />
+          )}
+        </Modal>
+      </div>
+    </>
   )
 }
 

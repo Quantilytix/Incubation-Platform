@@ -15,7 +15,12 @@ import {
   Table,
   Avatar,
   Badge,
-  Tooltip
+  Tooltip,
+  Alert,
+  Timeline,
+  Drawer,
+  message,
+  Spin
 } from 'antd'
 import {
   BarChartOutlined,
@@ -32,11 +37,14 @@ import {
   CloseCircleOutlined,
   CalendarOutlined,
   ApartmentOutlined,
+  BellOutlined,
   AreaChartOutlined
 } from '@ant-design/icons'
 import { useEffect } from 'react'
-import { collection, getDocs } from 'firebase/firestore'
+import { addDoc, collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { Helmet } from 'react-helmet'
+import dayjs from 'dayjs'
 
 const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
@@ -324,23 +332,42 @@ export const DirectorDashboard: React.FC = () => {
   const [programs, setPrograms] = useState<any[]>([])
   const [incubatees, setIncubatees] = useState<any[]>([])
   const [complianceRecords, setComplianceRecords] = useState<any[]>([])
+  const [drawerVisible, setDrawerVisible] = useState(false)
+  const [drawerContent, setDrawerContent] = useState<React.ReactNode>(null)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [notificationDrawerVisible, setNotificationDrawerVisible] =
+    useState(false)
+  const [tasks, setTasks] = useState<any[]>([])
+  const [pendingApplications, setPendingApplications] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const programSnap = await getDocs(collection(db, 'programs'))
         const participantSnap = await getDocs(collection(db, 'participants'))
-        const snapshot = await getDocs(collection(db, 'complianceRecords'))
 
-        setComplianceRecords(
-          snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        )
         setPrograms(
           programSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
         )
-        setIncubatees(
-          participantSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        )
+
+        const updatedParticipants = participantSnap.docs.map(doc => {
+          const data = doc.data()
+          const docs = data.complianceDocuments || []
+          const validDocs = docs.filter(doc => doc.status === 'valid')
+          const totalTypes = 7 // or use your documentTypes.length if consistent
+          const complianceRate = Math.round(
+            (validDocs.length / totalTypes) * 100
+          )
+
+          return {
+            id: doc.id,
+            ...data,
+            complianceRate
+          }
+        })
+
+        setIncubatees(updatedParticipants)
       } catch (error) {
         console.error('Error fetching dashboard data:', error)
       }
@@ -348,20 +375,107 @@ export const DirectorDashboard: React.FC = () => {
 
     fetchData()
   }, [])
+  // 🔽 Load notifications on mount
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      const q = query(
+        collection(db, 'notifications'),
+        where('recipientRoles', 'array-contains', 'director')
+      )
+      const snapshot = await getDocs(q)
+      const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      setNotifications(all)
+    }
+
+    fetchNotifications()
+  }, [])
+  useEffect(() => {
+    const fetchTasksAndApplications = async () => {
+      setLoading(true)
+      try {
+        const taskSnap = await getDocs(collection(db, 'tasks'))
+        const applicationSnap = await getDocs(collection(db, 'participants'))
+
+        const tasksDueSoon = taskSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(task => {
+            const dueDate = task.dueDate?.toDate?.()
+            return dueDate && dayjs(dueDate).isBefore(dayjs().add(7, 'days'))
+          })
+
+        const pendingApps = applicationSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(p => p.applicationStatus?.toLowerCase() === 'pending')
+
+        setTasks(tasksDueSoon)
+        setPendingApplications(pendingApps)
+      } catch (err) {
+        console.error('Failed to fetch overview data:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchTasksAndApplications()
+  }, [])
 
   const getOverallComplianceRate = () => {
-    if (complianceRecords.length === 0) return 0
-    const avg =
-      complianceRecords.reduce((sum, r) => sum + r.complianceRate, 0) /
-      complianceRecords.length
-    return Math.round(avg)
+    if (incubatees.length === 0) return 0
+    const total = incubatees.reduce(
+      (sum, p) => sum + (p.complianceRate || 0),
+      0
+    )
+    return Math.round(total / incubatees.length)
   }
 
-  const getComplianceRate = (participantId: string) => {
-    const record = complianceRecords.find(
-      r => r.participantId === participantId
-    )
-    return record?.complianceRate ?? 0
+  const getComplianceRate = (participant: any): number => {
+    const docs = participant.complianceDocuments || []
+    const totalRequired = 7 // adjust to match your required doc count
+    const validDocs = docs.filter(doc => doc.status === 'valid')
+    return Math.round((validDocs.length / totalRequired) * 100)
+  }
+
+  const sendNotification = async (payload: any) => {
+    try {
+      await addDoc(collection(db, 'notifications'), {
+        ...payload,
+        createdAt: new Date(),
+        readBy: {}
+      })
+      message.success('Reminder sent.')
+    } catch (err) {
+      console.error('Failed to send notification:', err)
+      message.error('Could not send notification.')
+    }
+  }
+
+  const remindUser = (task: any) => {
+    sendNotification({
+      message: {
+        [task.assignedRole || 'operations']: `Reminder: Your task "${
+          task.title
+        }" is due on ${dayjs(task.dueDate.toDate()).format('YYYY-MM-DD')}.`
+      },
+      recipientRoles: [task.assignedRole || 'operations'],
+      recipientIds: task.assignedTo ? [task.assignedTo] : []
+    })
+  }
+
+  const remindReviewApplications = () => {
+    sendNotification({
+      message: {
+        operations: `There are ${pendingApplications.length} pending applications awaiting review.`
+      },
+      recipientRoles: ['operations']
+    })
+  }
+
+  const calculateParticipantCompliance = participant => {
+    const docs = participant.complianceDocuments || []
+    const validDocs = docs.filter(doc => doc.status === 'valid')
+    const totalTypes = 7 // or get this dynamically if needed
+
+    return Math.round((validDocs.length / totalTypes) * 100)
   }
 
   const overallCompliance = () => {
@@ -938,8 +1052,8 @@ export const DirectorDashboard: React.FC = () => {
   // Main Dashboard Overview
   const renderDashboardOverview = () => {
     return (
-      <div>
-        {/* Key Metrics */}
+      <>
+        {' '}
         <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
           <Col xs={24} sm={12} md={8} lg={6}>
             <Card>
@@ -984,87 +1098,69 @@ export const DirectorDashboard: React.FC = () => {
             </Card>
           </Col>
         </Row>
+        <Spin spinning={loading}>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={12}>
+              <Card
+                title='⏰ Upcoming Tasks (Next 7 Days)'
+                extra={<Text type='secondary'>{tasks.length} task(s)</Text>}
+              >
+                <List
+                  dataSource={tasks}
+                  renderItem={item => (
+                    <List.Item
+                      actions={[
+                        <Button size='small' onClick={() => remindUser(item)}>
+                          Remind
+                        </Button>
+                      ]}
+                    >
+                      <List.Item.Meta
+                        title={item.title}
+                        description={`Due: ${dayjs(
+                          item.dueDate?.toDate?.()
+                        ).format('YYYY-MM-DD')}`}
+                      />
+                      <Tag>{item.assignedRole}</Tag>
+                    </List.Item>
+                  )}
+                />
+              </Card>
+            </Col>
 
-        <Row gutter={[16, 16]}>
-          {/* Attention Required */}
-          <Col xs={24} md={12}>
-            <Card
-              title={
-                <Space>
-                  <WarningOutlined style={{ color: '#ff4d4f' }} />
-                  <span>Attention Required</span>
-                </Space>
-              }
-              style={{ marginBottom: '24px' }}
-            >
-              <List
-                size='small'
-                dataSource={[
-                  //   {
-                  //     text: 'Pending approvals',
-                  //     count: sampleAnalytics.pendingApprovals
-                  //   },
-                  {
-                    text: 'Upcoming deadlines',
-                    count: sampleAnalytics.upcomingDeadlines
-                  },
-                  { text: 'Compliance Issues', count: 3 },
-                  { text: 'Recommended Interventions Reviews', count: 5 }
-                ]}
-                renderItem={item => (
-                  <List.Item>
-                    <Space>
-                      <ClockCircleOutlined />
-                      <Text>{item.text}</Text>
-                    </Space>
-                    <Tag color='red'>{item.count}</Tag>
-                  </List.Item>
-                )}
-              />
-            </Card>
-          </Col>
-
-          {/* Incubatees Status */}
-          <Col xs={24} md={12}>
-            <Card
-              title={
-                <Space>
-                  <TeamOutlined />
-                  <span>Incubatees Status</span>
-                </Space>
-              }
-              style={{ marginBottom: '24px' }}
-            >
-              <List
-                size='small'
-                dataSource={incubatees}
-                renderItem={item => (
-                  <List.Item>
-                    <div>
-                      <Text strong>{item.beneficiaryName}</Text>
-                      <br />
-                      <Text type='secondary'>{item.sector}</Text>
-                    </div>
-                    <Space>
-                      <Tag
-                        color={
-                          getComplianceRate(item.id) > 80
-                            ? 'green'
-                            : getComplianceRate(item.id) > 60
-                            ? 'orange'
-                            : 'red'
-                        }
-                      >
-                        {getComplianceRate(item.id)}% Compliance
-                      </Tag>
-                    </Space>
-                  </List.Item>
-                )}
-              />
-            </Card>
-          </Col>
-        </Row>
-      </div>
+            <Col xs={24} md={12}>
+              <Card
+                title='📥 Applications Pending Review'
+                extra={
+                  <Button
+                    type='primary'
+                    size='small'
+                    onClick={remindReviewApplications}
+                  >
+                    Remind Ops
+                  </Button>
+                }
+              >
+                <List
+                  dataSource={pendingApplications.slice(0, 5)}
+                  renderItem={app => (
+                    <List.Item>
+                      <Text>
+                        {app.participantName || 'Unknown'} —{' '}
+                        {app.beneficiaryName}
+                      </Text>
+                    </List.Item>
+                  )}
+                />
+                <Divider />
+                <Text type='secondary'>
+                  Total pending applications: {pendingApplications.length}
+                </Text>
+              </Card>
+            </Col>
+          </Row>
+        </Spin>
+      </>
     )
   }
 
@@ -1381,58 +1477,95 @@ export const DirectorDashboard: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: '20px' }}>
-      <Tabs activeKey={activeTab} onChange={setActiveTab}>
-        <TabPane
-          tab={
-            <span>
-              <BarChartOutlined />
-              Overview
-            </span>
-          }
-          key='overview'
-        >
-          {renderDashboardOverview()}
-        </TabPane>
+    <>
+      <Helmet>
+        <title>Director Dashboard | Incubation Platform</title>
+      </Helmet>
+      <div style={{ padding: '20px' }}>
+        <Tabs activeKey={activeTab} onChange={setActiveTab}>
+          <TabPane
+            tab={
+              <span>
+                <BarChartOutlined />
+                Overview
+              </span>
+            }
+            key='overview'
+          >
+            {renderDashboardOverview()}
+          </TabPane>
 
-        <TabPane
-          tab={
-            <span>
-              <FundOutlined />
-              Strategic Dashboard
-            </span>
-          }
-          key='strategic'
-        >
-          {renderStrategicDashboard()}
-        </TabPane>
+          <TabPane
+            tab={
+              <span>
+                <FundOutlined />
+                Strategic Dashboard
+              </span>
+            }
+            key='strategic'
+          >
+            {renderStrategicDashboard()}
+          </TabPane>
 
-        <TabPane
-          tab={
-            <span>
-              <ProjectOutlined />
-              Portfolio Management
-            </span>
-          }
-          key='portfolio'
-        >
-          {renderPortfolioManagement()}
-        </TabPane>
+          <TabPane
+            tab={
+              <span>
+                <ProjectOutlined />
+                Portfolio Management
+              </span>
+            }
+            key='portfolio'
+          >
+            {renderPortfolioManagement()}
+          </TabPane>
 
-        <TabPane
-          tab={
-            <span>
-              <FileTextOutlined />
-              Strategic Decisions
-            </span>
-          }
-          key='decisions'
-        >
-          <Paragraph>
-            Strategic Decision-Making content will be implemented next
-          </Paragraph>
-        </TabPane>
-      </Tabs>
-    </div>
+          <TabPane
+            tab={
+              <span>
+                <FileTextOutlined />
+                Strategic Decisions
+              </span>
+            }
+            key='decisions'
+          >
+            <Paragraph>
+              Strategic Decision-Making content will be implemented next
+            </Paragraph>
+          </TabPane>
+        </Tabs>
+      </div>
+      <Drawer
+        title='Director Notifications'
+        placement='right'
+        width={400}
+        onClose={() => setNotificationDrawerVisible(false)}
+        open={notificationDrawerVisible}
+      >
+        <List
+          itemLayout='horizontal'
+          dataSource={notifications}
+          renderItem={item => (
+            <List.Item>
+              <List.Item.Meta
+                title={item.message?.director || 'Untitled'}
+                description={new Date(
+                  item.createdAt?.seconds * 1000
+                ).toLocaleString()}
+              />
+            </List.Item>
+          )}
+        />
+      </Drawer>
+
+      <Drawer
+        title='Details'
+        placement='bottom'
+        height={320}
+        onClose={() => setDrawerVisible(false)}
+        open={drawerVisible}
+      >
+        {drawerContent}
+      </Drawer>
+    </>
   )
 }
