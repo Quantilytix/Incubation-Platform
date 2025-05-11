@@ -298,6 +298,24 @@ const ParticipantRegistrationStepForm = () => {
               : [safeText('No interventions selected.')]),
 
             new Paragraph({
+              text: 'AI-Recommended Interventions',
+              heading: HeadingLevel.HEADING_2
+            }),
+            safeText(
+              data.aiEvaluation?.['Recommended Interventions'] ||
+                'No recommendation available'
+            ),
+            safeText(`AI Score: ${data.aiEvaluation?.['AI Score'] || 'N/A'}`),
+            safeText(
+              `Recommendation: ${
+                data.aiEvaluation?.['AI Recommendation'] || 'N/A'
+              }`
+            ),
+            safeText(
+              `Justification: ${data.aiEvaluation?.['Justification'] || 'N/A'}`
+            ),
+
+            new Paragraph({
               text: '6. Online Presence',
               heading: HeadingLevel.HEADING_1
             }),
@@ -327,6 +345,39 @@ const ParticipantRegistrationStepForm = () => {
     Packer.toBlob(doc).then(blob => {
       saveAs(blob, `${data.beneficiaryName || 'Participant'}_Growth_Plan.docx`)
     })
+  }
+
+  const evaluateWithAI = async (participantData: any) => {
+    try {
+      const response = await fetch(
+        'https://rairo-incu-api.hf.space/api/evaluate',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            participantId: `applicant-${Date.now()}`,
+            participantInfo: {
+              name: participantData.participantName,
+              business_name: participantData.beneficiaryName,
+              sector: participantData.sector,
+              location: `${participantData.city}, ${participantData.province}`,
+              years_operating: participantData.yearsOfTrading,
+              description: participantData.motivation
+            }
+          })
+        }
+      )
+
+      if (!response.ok) throw new Error('API call failed.')
+
+      const data = await response.json()
+      return data.evaluation
+    } catch (err) {
+      console.error('AI evaluation failed:', err)
+      return null
+    }
   }
 
   const navigate = useNavigate()
@@ -446,6 +497,9 @@ const ParticipantRegistrationStepForm = () => {
       return doc.expiryDate.toDate() <= oneWeekFromNow
     })
   }
+
+  const getMissingDocuments = () =>
+    documentFields.filter(doc => !doc.file || !doc.issueDate)
 
   const next = () => form.validateFields().then(() => setCurrent(current + 1))
 
@@ -567,6 +621,39 @@ const ParticipantRegistrationStepForm = () => {
         }
       }
 
+      const aiEvaluation = await evaluateWithAI(participant)
+
+      if (aiEvaluation) {
+        message.success(
+          `AI says: ${aiEvaluation['AI Recommendation']} (${aiEvaluation['AI Score']}/100)`
+        )
+
+        // Merge AI interventions into required interventions
+        participant.interventions.required.push({
+          id: 'ai-recommended',
+          title: aiEvaluation['Recommended Interventions'],
+          area: 'AI Recommended'
+        })
+
+        // Optional: store AI metadata
+        participant.aiEvaluation = aiEvaluation
+      }
+
+      const complianceIssues = [
+        ...getMissingDocuments().map(doc => `${doc.type} (missing)`),
+        ...getExpiredDocuments().map(
+          doc => `${doc.type} (expired or near expiry)`
+        )
+      ]
+
+      if (complianceIssues.length > 0) {
+        participant.interventions.required.push({
+          id: 'compliance-issues',
+          title: `Compliance Support Required: ${complianceIssues.join(', ')}`,
+          area: 'Compliance'
+        })
+      }
+
       await addDoc(collection(db, 'participants'), participant)
       message.success('Participant successfully applied!')
 
@@ -587,7 +674,6 @@ const ParticipantRegistrationStepForm = () => {
 
       // ✅ Redirect to login
       navigate('/login')
-      //   navigate('/registration/growth-plan', { state: { participant } })
 
       // Optional: Reset form state
       setCurrent(0)
@@ -1011,18 +1097,29 @@ const ParticipantRegistrationStepForm = () => {
           {getExpiredDocuments().length > 0 && (
             <div style={{ marginTop: 16 }}>
               <Typography.Text type='danger'>
-                The following documents are expired or expiring within a week:
+                ⚠️ Expired or expiring documents:
               </Typography.Text>
               <ul>
                 {getExpiredDocuments().map((doc, index) => (
                   <li key={index}>
                     {doc.type} —{' '}
                     <strong>
-                      {doc.expiryDate?.format
-                        ? doc.expiryDate.format('YYYY-MM-DD')
-                        : 'Invalid Date'}
+                      {doc.expiryDate?.format?.('YYYY-MM-DD') || 'Invalid Date'}
                     </strong>
                   </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {getMissingDocuments().length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <Typography.Text type='warning'>
+                ⚠️ Missing Documents:
+              </Typography.Text>
+              <ul>
+                {getMissingDocuments().map((doc, index) => (
+                  <li key={index}>{doc.type}</li>
                 ))}
               </ul>
             </div>
