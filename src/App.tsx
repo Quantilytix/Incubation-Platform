@@ -115,7 +115,6 @@ import ParticipantFormalRegistration from './routes/registration/onboarding'
 // ───────────────────────────────────────────────────────────
 import Chat from '@/routes/chat/chat'
 import ApplicationsPage from './routes/applications'
-import { ConsultantOnboardingForm } from './routes/operations/consultants/new'
 import { DirectorOnboardingPage } from './routes/directors/onboarding'
 import OperationsOnboardingDashboard from './routes/directors/operations'
 import ParticipantRegistrationStepForm from './routes/registration/onboarding'
@@ -271,10 +270,6 @@ const App = () => {
                       />
                       <Route path='consultants'>
                         <Route index element={<ConsultantPage />} />
-                        <Route
-                          path='new'
-                          element={<ConsultantOnboardingForm />}
-                        />
                       </Route>
                       <Route
                         path='resources'
