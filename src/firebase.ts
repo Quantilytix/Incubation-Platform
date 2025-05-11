@@ -10,7 +10,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyCqM2fTwccgFUKmrwFYP7XFVAgo-9sVArM",
   authDomain: "incubation-platform-61610.firebaseapp.com",
   projectId: "incubation-platform-61610",
-  storageBucket: "incubation-platform-61610.appspot.com",
+  storageBucket: "incubation-platform-61610.firebasestorage.app",
   messagingSenderId: "608623931092",
   appId: "1:608623931092:web:449de44205d7d2d7d49541",
   measurementId: "G-V6MZVHG72Z",
