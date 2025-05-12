@@ -24,12 +24,14 @@ import {
 } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import dayjs from 'dayjs'
+import { useNavigate } from 'react-router-dom'
 
 const { Title } = Typography
 
 const ProfileForm: React.FC = () => {
   const [form] = Form.useForm()
   const [participantDocId, setParticipantDocId] = useState<string | null>(null)
+  const navigate = useNavigate()
 
   const last3Months = useMemo(
     () =>
@@ -43,13 +45,11 @@ const ProfileForm: React.FC = () => {
   const last2Years = useMemo(() => [currentYear - 1, currentYear - 2], [])
 
   useEffect(() => {
-    onAuthStateChanged(auth, async user => {
+    const unsubscribe = onAuthStateChanged(auth, async user => {
       if (!user) return
 
-      // Fetch user profile from 'users' collection
       const userRef = doc(db, 'users', user.uid)
       const userSnap = await getDoc(userRef)
-
       const fallbackEmail = user.email
       const fallbackName = userSnap.exists() ? userSnap.data()?.name || '' : ''
 
@@ -58,7 +58,6 @@ const ProfileForm: React.FC = () => {
         ownerName: fallbackName
       }
 
-      // Fetch from participants collection (profile data)
       const q = query(
         collection(db, 'participants'),
         where('email', '==', fallbackEmail)
@@ -66,16 +65,25 @@ const ProfileForm: React.FC = () => {
       const snapshot = await getDocs(q)
 
       if (!snapshot.empty) {
-        const doc = snapshot.docs[0]
-        setParticipantDocId(doc.id)
+        const docRef = snapshot.docs[0]
+        const data = docRef.data()
+        setParticipantDocId(docRef.id)
+
         form.setFieldsValue({
           ...defaultValues,
-          ...doc.data()
+          ...data,
+          dateOfRegistration: data.dateOfRegistration
+            ? dayjs(
+                data.dateOfRegistration.toDate?.() || data.dateOfRegistration
+              )
+            : null
         })
       } else {
         form.setFieldsValue(defaultValues)
       }
     })
+
+    return () => unsubscribe()
   }, [form])
 
   const onSave = async () => {
@@ -86,6 +94,9 @@ const ProfileForm: React.FC = () => {
 
       const data = {
         ...values,
+        dateOfRegistration: values.dateOfRegistration
+          ? values.dateOfRegistration.toDate()
+          : null,
         email: user.email,
         updatedAt: new Date()
       }
@@ -102,7 +113,8 @@ const ProfileForm: React.FC = () => {
           setup: true // ✅ Mark as setup on first creation
         })
         setParticipantDocId(newDocRef.id)
-        message.success('Profile created successfully')
+        message.success('Profile saved successfully')
+        navigate('/incubatee/sme') // ✅ redirect
       }
     } catch (error) {
       console.error(error)
@@ -246,15 +258,13 @@ const ProfileForm: React.FC = () => {
           </Col>
           <Col span={8}>
             <Form.Item name='beeLevel' label='BEEE Level'>
-             <Select>
-  {[1, 2, 3, 4].map(level => (
-    <Select.Option key={level} value={level}>
-      Level {level}
-    </Select.Option>
-  ))}
-  <Select.Option value="5+">Level 5 and above</Select.Option>
-</Select>
-
+              <Select>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(level => (
+                  <Select.Option key={level} value={level}>
+                    Level {level}
+                  </Select.Option>
+                ))}
+              </Select>
             </Form.Item>
           </Col>
           <Col span={8}>

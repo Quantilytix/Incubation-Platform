@@ -38,7 +38,26 @@ const ApplicationsPage: React.FC = () => {
       const snapshot = await getDocs(collection(db, 'applications'))
       const apps = snapshot.docs.map(doc => {
         const data = doc.data()
-        const ai = data.aiEvaluation?.raw_response || {}
+
+        let aiRaw = data.aiEvaluation?.raw_response
+        let ai = {}
+
+        try {
+          if (typeof aiRaw === 'string') {
+            // Remove markdown code fences and 'json' label
+            const cleaned = aiRaw
+              .replace(/```json/i, '')
+              .replace(/```/g, '')
+              .trim()
+
+            ai = JSON.parse(cleaned)
+          } else if (typeof aiRaw === 'object' && aiRaw !== null) {
+            ai = aiRaw
+          }
+        } catch (err) {
+          console.warn('Failed to parse aiEvaluation.raw_response:', aiRaw, err)
+          ai = {}
+        }
 
         return {
           id: doc.id,
@@ -129,6 +148,11 @@ const ApplicationsPage: React.FC = () => {
     ]
   }
 
+  const readableStatus = selectedApplication?.applicationStatus
+    ? selectedApplication.applicationStatus.charAt(0).toUpperCase() +
+      selectedApplication.applicationStatus.slice(1).toLowerCase()
+    : 'Unassigned'
+
   const ageChartOptions = {
     chart: { type: 'pie', height: 200 },
     title: { text: 'Age Group Distribution', style: { fontSize: '14px' } },
@@ -171,7 +195,9 @@ const ApplicationsPage: React.FC = () => {
       title: 'Decision',
       key: 'applicationStatus',
       render: (record: any) => {
-        const status = record.applicationStatus || 'Pending'
+        const statusRaw = record.applicationStatus || 'Pending'
+        const status =
+          statusRaw.charAt(0).toUpperCase() + statusRaw.slice(1).toLowerCase()
         const color =
           status === 'Accepted'
             ? 'green'
@@ -200,6 +226,9 @@ const ApplicationsPage: React.FC = () => {
       )
     }
   ]
+  useEffect(() => {
+    fetchApplications()
+  }, [])
 
   return (
     <div style={{ padding: 24 }}>
@@ -303,15 +332,14 @@ const ApplicationsPage: React.FC = () => {
                       <Text strong>Current Status: </Text>
                       <Tag
                         color={
-                          selectedApplication.applicationStatus === 'Accepted'
+                          readableStatus === 'Accepted'
                             ? 'green'
-                            : selectedApplication.applicationStatus ===
-                              'Rejected'
+                            : readableStatus === 'Rejected'
                             ? 'red'
                             : 'gold'
                         }
                       >
-                        {selectedApplication.applicationStatus || 'Pending'}
+                        {readableStatus}
                       </Tag>
                     </div>
 

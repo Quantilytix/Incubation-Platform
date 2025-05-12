@@ -50,6 +50,7 @@ import { useEffect } from 'react'
 import { Helmet } from 'react-helmet'
 import { onAuthStateChanged } from 'firebase/auth'
 import { useSearchParams } from 'react-router-dom'
+import dayjs from 'dayjs'
 
 const { Title } = Typography
 const { Step } = Steps
@@ -83,7 +84,6 @@ const ParticipantRegistrationStepForm = () => {
     documentConfig.map(doc => ({
       ...doc,
       file: null,
-      issueDate: null,
       expiryDate: null
     }))
   )
@@ -110,7 +110,6 @@ const ParticipantRegistrationStepForm = () => {
 
         if (userSnap.exists()) {
           const userData = userSnap.data()
-          const companyCode = userData.companyCode || ''
           form.setFieldsValue({
             companyCode,
             participantName: userData.name,
@@ -176,7 +175,10 @@ const ParticipantRegistrationStepForm = () => {
   useEffect(() => {
     const fetchParticipant = async () => {
       const user = auth.currentUser
-      if (!user) return
+      if (!user) {
+        message.error('Not authenticated. Please log in again.')
+        return
+      }
 
       const q = query(
         collection(db, 'participants'),
@@ -431,6 +433,13 @@ const ParticipantRegistrationStepForm = () => {
       if (!response.ok) throw new Error('API call failed.')
 
       const data = await response.json()
+      console.log('✅ AI response:', data)
+
+      const evaluation = data.raw_response ?? data.evaluation
+      if (!evaluation) {
+        throw new Error('AI response missing expected fields')
+      }
+      return evaluation
 
       // ✅ Extract just raw_response (defensive fallback in case structure changes)
       return data.raw_response ?? data.evaluation ?? null
@@ -510,10 +519,10 @@ const ParticipantRegistrationStepForm = () => {
         <p>
           <strong>Age:</strong> {values.age}
         </p>
-        <p>
-          <strong>Date of Registration:</strong>{' '}
-          {values.dateOfRegistration?.format('YYYY-MM-DD')}
-        </p>
+        <strong>Date of Registration:</strong>{' '}
+        {values.dateOfRegistration
+          ? dayjs(values.dateOfRegistration).format('YYYY-MM-DD')
+          : 'N/A'}
         <p>
           <strong>Registration Number:</strong> {values.registrationNumber}
         </p>
@@ -559,7 +568,7 @@ const ParticipantRegistrationStepForm = () => {
 
   const handleDateChange = (
     date: moment.Moment | null,
-    field: 'issueDate' | 'expiryDate',
+    field: 'expiryDate',
     index: number
   ): void => {
     const updated = [...documentFields]
@@ -572,8 +581,8 @@ const ParticipantRegistrationStepForm = () => {
     const oneWeekFromNow = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
 
     return documentFields.filter(doc => {
-      if (!doc.requiresExpiry) return false
-      if (!doc.expiryDate) return true // consider missing expiry as non-compliant
+      if (!doc.requiresExpiry || !doc.file) return false // ✅ skip if missing file
+      if (!doc.expiryDate) return true
       return doc.expiryDate.toDate() <= oneWeekFromNow
     })
   }
@@ -655,7 +664,7 @@ const ParticipantRegistrationStepForm = () => {
     const oneWeekFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
     const validDocs = documentFields.filter(doc => {
-      if (!doc.file || !doc.issueDate) return false
+      if (!doc.file) return false
       if (doc.requiresExpiry) {
         return doc.expiryDate && doc.expiryDate.toDate() > oneWeekFromNow
       }
@@ -744,10 +753,6 @@ const ParticipantRegistrationStepForm = () => {
       participant.aiEvaluation = aiEvaluation
 
       if (aiEvaluation) {
-        message.success(
-          `AI says: ${aiEvaluation['AI Recommendation']} (${aiEvaluation['AI Score']}/100)`
-        )
-
         // Merge AI interventions into required interventions
         participant.interventions.required.push({
           id: 'ai-recommended',
@@ -781,22 +786,46 @@ const ParticipantRegistrationStepForm = () => {
       )
       participant.growthPlanDocUrl = growthPlanUrl
 
-      await addDoc(collection(db, 'applications'), {
-        participantId,
-        programName,
-        companyCode,
-        applicationStatus: 'pending',
-        submittedAt: new Date().toISOString(),
-        motivation: form.getFieldValue('motivation'),
-        challenges: form.getFieldValue('challenges'),
-        selectedInterventions,
-        complianceRate,
-        complianceDocuments: uploadedDocs,
-        interventions: participant.interventions,
-        aiEvaluation,
-        growthPlanDocUrl: participant.growthPlanDocUrl,
-        stage: participant.stage
-      })
+      const removeUndefinedDeep = (obj: any): any => {
+        if (Array.isArray(obj)) {
+          return obj.map(removeUndefinedDeep)
+        } else if (typeof obj === 'object' && obj !== null) {
+          return Object.fromEntries(
+            Object.entries(obj)
+              .filter(([, value]) => value !== undefined)
+              .map(([key, value]) => [key, removeUndefinedDeep(value)])
+          )
+        }
+        return obj
+      }
+
+      await addDoc(
+        collection(db, 'applications'),
+        removeUndefinedDeep({
+          participantId,
+          programName,
+          companyCode,
+          applicationStatus: 'pending',
+          submittedAt: new Date().toISOString(),
+          beneficiaryName: values.beneficiaryName,
+          gender: values.gender,
+          ageGroup: getAgeGroup(derivedAge),
+          stage: participant.stage,
+          province: values.province,
+          hub: values.hub,
+          email: values.email,
+          motivation: values.motivation,
+          challenges: values.challenges,
+          facebook: values.facebook,
+          instagram: values.instagram,
+          linkedIn: values.linkedIn,
+          complianceRate,
+          complianceDocuments: uploadedDocs,
+          interventions: participant.interventions,
+          aiEvaluation,
+          growthPlanDocUrl: participant.growthPlanDocUrl
+        })
+      )
 
       message.success('Participant successfully applied!')
 
@@ -825,7 +854,6 @@ const ParticipantRegistrationStepForm = () => {
         documentTypes.map(type => ({
           type,
           file: null,
-          issueDate: null,
           expiryDate: null
         }))
       )
@@ -899,14 +927,6 @@ const ParticipantRegistrationStepForm = () => {
                 >
                   <Button icon={<UploadOutlined />}>Upload</Button>
                 </Upload>
-              </Col>
-              <Col span={7}>
-                <DatePicker
-                  placeholder='Issue Date'
-                  style={{ width: '100%' }}
-                  value={doc.issueDate}
-                  onChange={date => handleDateChange(date, 'issueDate', index)}
-                />
               </Col>
               {doc.requiresExpiry && (
                 <Col span={7}>

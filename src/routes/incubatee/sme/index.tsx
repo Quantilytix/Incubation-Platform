@@ -109,42 +109,47 @@ const SMEDashboard = () => {
   const openProgramModal = async (program: any) => {
     try {
       const user = auth.currentUser
+
+      // 🔐 Ensure user is authenticated
       if (!user?.email) {
         message.error('You must be logged in to apply.')
         return
       }
 
-      // 🔍 Check Firestore profile for setup flag
+      // 📥 Query participant record by email
       const q = query(
         collection(db, 'participants'),
         where('email', '==', user.email)
       )
       const snapshot = await getDocs(q)
 
+      // 🚫 No participant record found
       if (snapshot.empty) {
         message.warning('Please complete your profile before applying.')
-        setProfileDrawerVisible(true)
+        navigate('/incubatee/profile')
         return
       }
 
-      const data = snapshot.docs[0].data()
-      if (!data.setup) {
+      const participant = snapshot.docs[0].data()
+
+      // 🚧 Profile found but not setup
+      if (!participant.setup) {
         message.warning('Please finish your profile setup before registering.')
-        setProfileDrawerVisible(true)
+        navigate('/incubatee/profile')
         return
       }
 
-      // ✅ Proceed if setup is true
+      // ✅ Setup is complete — proceed to application modal
       applicationForm.setFieldsValue({
-        ownerName: data.ownerName || '',
-        companyName: data.companyName || '',
-        email: data.email || ''
+        ownerName: participant.ownerName || '',
+        companyName: participant.companyName || '',
+        email: participant.email || ''
       })
 
       setActiveProgram(program)
       setProgramModalVisible(true)
-    } catch (err) {
-      console.error('Failed to verify profile setup:', err)
+    } catch (error) {
+      console.error('❌ Failed to verify profile setup:', error)
       message.error('Could not verify your profile status.')
     }
   }
@@ -155,20 +160,13 @@ const SMEDashboard = () => {
 
       const query = new URLSearchParams({
         code: activeProgram.companyCode,
-        program: activeProgram.programName
+        program: activeProgram.name
       }).toString()
 
       navigate(`/registration/onboarding?${query}`)
     } catch (err) {
       message.error('Please complete all required fields')
     }
-  }
-
-  const saveProfile = async () => {
-    const values = await smeProfileForm.validateFields()
-    localStorage.setItem('smeProfile', JSON.stringify(values))
-    message.success('Profile saved successfully')
-    setProfileDrawerVisible(false)
   }
 
   const renderProgramCard = (program: any) => (
@@ -247,135 +245,6 @@ const SMEDashboard = () => {
           </TabPane>
         </Tabs>
       </Content>
-
-      <Drawer
-        title='SME Profile Setup'
-        width={500}
-        onClose={() => setProfileDrawerVisible(false)}
-        open={profileDrawerVisible}
-        footer={
-          <Button type='primary' onClick={saveProfile} block>
-            Save Profile
-          </Button>
-        }
-      >
-        <Form layout='vertical' form={smeProfileForm}>
-          <Divider orientation='left'>Personal Details</Divider>
-          <Form.Item
-            name='ownerName'
-            label='Owner Name'
-            rules={[{ required: true }]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item name='gender' label='Gender' rules={[{ required: true }]}>
-            <Select>
-              <Select.Option value='Male'>Male</Select.Option>
-              <Select.Option value='Female'>Female</Select.Option>
-              <Select.Option value='Other'>Other</Select.Option>
-            </Select>
-          </Form.Item>
-          <Form.Item
-            name='idNumber'
-            label='ID Number'
-            rules={[{ required: true }]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item name='email' label='Email' rules={[{ type: 'email' }]}>
-            <Input />
-          </Form.Item>
-
-          <Divider orientation='left'>Company Info</Divider>
-          <Form.Item
-            name='companyName'
-            label='Company Name'
-            rules={[{ required: true }]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item name='blackOwnedPercent' label='Black-Owned Percentage'>
-            <InputNumber
-              min={0}
-              max={100}
-              style={{ width: '100%' }}
-              addonAfter='%'
-            />
-          </Form.Item>
-          <Form.Item name='beeLevel' label='BEEE Level'>
-            <Select>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map(level => (
-                <Select.Option key={level} value={level}>
-                  Level {level}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Divider orientation='left'>Monthly Revenue & Headcount</Divider>
-          {last3Months.map(monthLabel => (
-            <Row gutter={16} key={monthLabel}>
-              <Col span={8}>
-                <Form.Item
-                  name={`revenue_${monthLabel}`}
-                  label={`Revenue (${monthLabel})`}
-                >
-                  <InputNumber
-                    style={{ width: '100%' }}
-                    formatter={v =>
-                      `R ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-                    }
-                    parser={v => Number(v?.replace(/R\s?|(,*)/g, '') || 0)}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item
-                  name={`permHeadcount_${monthLabel}`}
-                  label={`Perm. Staff`}
-                >
-                  <InputNumber min={0} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item
-                  name={`tempHeadcount_${monthLabel}`}
-                  label={`Temp. Staff`}
-                >
-                  <InputNumber min={0} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-            </Row>
-          ))}
-
-          <Divider orientation='left'>Annual Revenue & Headcount</Divider>
-          {last2Years.map(year => (
-            <Row gutter={16} key={year}>
-              <Col span={8}>
-                <Form.Item name={`revenue_${year}`} label={`Revenue (${year})`}>
-                  <InputNumber
-                    style={{ width: '100%' }}
-                    formatter={v =>
-                      `R ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-                    }
-                    parser={v => Number(v?.replace(/R\s?|(,*)/g, '') || 0)}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item name={`permHeadcount_${year}`} label={`Perm. Staff`}>
-                  <InputNumber min={0} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item name={`tempHeadcount_${year}`} label={`Temp. Staff`}>
-                  <InputNumber min={0} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-            </Row>
-          ))}
-        </Form>
-      </Drawer>
 
       <Modal
         open={programModalVisible}

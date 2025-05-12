@@ -109,27 +109,47 @@ export const LoginPage: React.FC = () => {
 
       const { role, firstLoginComplete } = result
 
-      // 🔍 Check incubatee applicationStatus
       if (role === 'incubatee') {
         const appsSnap = await getDocs(
           query(
-            collection(db, 'participants'),
+            collection(db, 'applications'),
             where('email', '==', user.email)
           )
         )
-        const apps = appsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        const hasPending = apps.some(
-          app => app.applicationStatus?.toLowerCase() === 'pending'
+
+        const apps = appsSnap.docs.map(doc => doc.data())
+
+        if (apps.length === 0) {
+          navigate('/incubatee/sme') // No applications yet
+          return
+        }
+
+        const pending = apps.find(
+          app =>
+            app.applicationStatus?.toLowerCase?.() === 'pending' ||
+            !app.applicationStatus
         )
 
-        console.log(hasPending)
-        if (hasPending) {
+        const accepted = apps.find(
+          app => app.applicationStatus?.toLowerCase?.() === 'accepted'
+        )
+
+        if (pending) {
           navigate('/incubatee/tracker')
           return
         }
+
+        if (accepted) {
+          navigate(`/${role}`)
+          return
+        }
+
+        // Optional fallback
+        navigate('/incubatee/sme')
+        return
       }
 
-      // 🧭 Default role-based navigation
+      // Role-based default redirect
       if (role === 'director' && !firstLoginComplete) {
         navigate('/director/onboarding')
       } else {
@@ -315,22 +335,22 @@ export const LoginPage: React.FC = () => {
 
       <style>
         {`
-                  @keyframes fadeIn {
-                    from { opacity: 0; }
-                    to { opacity: 1; }
-                  }
+                    @keyframes fadeIn {
+                      from { opacity: 0; }
+                      to { opacity: 1; }
+                    }
 
-                  @keyframes fadeInUp {
-                    from {
-                      opacity: 0;
-                      transform: translateY(20px);
+                    @keyframes fadeInUp {
+                      from {
+                        opacity: 0;
+                        transform: translateY(20px);
+                      }
+                      to {
+                        opacity: 1;
+                        transform: translateY(0);
+                      }
                     }
-                    to {
-                      opacity: 1;
-                      transform: translateY(0);
-                    }
-                  }
-                `}
+                  `}
       </style>
     </Spin>
   )
