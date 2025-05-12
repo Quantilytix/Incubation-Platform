@@ -96,6 +96,14 @@ const ApplicationsPage: React.FC = () => {
   const genderChartOptions = {
     chart: { type: 'pie', height: 200 },
     title: { text: 'Gender Distribution', style: { fontSize: '14px' } },
+    plotOptions: {
+      series: {
+        dataLabels: {
+          enabled: true,
+          format: '{point.y}' 
+        }
+      }
+    },
     series: [
       {
         name: 'Participants',
@@ -110,6 +118,14 @@ const ApplicationsPage: React.FC = () => {
   const ageChartOptions = {
     chart: { type: 'pie', height: 200 },
     title: { text: 'Age Group Distribution', style: { fontSize: '14px' } },
+    plotOptions: {
+      series: {
+        dataLabels: {
+          enabled: true,
+          format: '{point.y}'
+        }
+      }
+    },
     series: [
       {
         name: 'Participants',

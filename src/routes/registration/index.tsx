@@ -27,6 +27,7 @@ export const RegisterPage: React.FC = () => {
   const [redirecting, setRedirecting] = React.useState(false)
   const [searchParams] = useSearchParams()
   const code = searchParams.get('code') || ''
+  const role = searchParams.get('role') || ''
 
   React.useEffect(() => {
     document.title = 'Register • Incubation Platform'
@@ -51,7 +52,8 @@ export const RegisterPage: React.FC = () => {
         email: user.email,
         name: values.name || '',
         createdAt: new Date().toISOString(),
-        companyCode: code
+        companyCode: code,
+        role: role // ✅ capture the user type
       })
 
       // 3. Notify + Redirect
@@ -157,12 +159,10 @@ export const RegisterPage: React.FC = () => {
             onFinish={handleRegister}
             requiredMark={false}
           >
-            <Title
-              level={4}
-              style={{ textAlign: 'center', marginTop: 16, color: '#1677ff' }}
-            >
-              Create your account
+            <Title level={4} style={{ textAlign: 'center', color: '#1677ff' }}>
+              {role === 'sme' ? 'Register as an SME' : 'Create your account'}
             </Title>
+
             <Form.Item
               name='name'
               label='Name'
@@ -244,22 +244,22 @@ export const RegisterPage: React.FC = () => {
       {/* Animations */}
       <style>
         {`
-          @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-          }
+              @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+              }
 
-          @keyframes fadeInUp {
-            from {
-              opacity: 0;
-              transform: translateY(20px);
-            }
-            to {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }
-        `}
+              @keyframes fadeInUp {
+                from {
+                  opacity: 0;
+                  transform: translateY(20px);
+                }
+                to {
+                  opacity: 1;
+                  transform: translateY(0);
+                }
+              }
+            `}
       </style>
     </Spin>
   )

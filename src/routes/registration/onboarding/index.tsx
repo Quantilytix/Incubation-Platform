@@ -155,21 +155,18 @@ const ParticipantRegistrationStepForm = () => {
     fetchUserData()
   }, [])
 
-useEffect(() => {
-  const unsubscribe = onAuthStateChanged(auth, user => {
-    if (user) {
-      console.log('[AUTH] ✅ Authenticated user:', {
-        email: user.email,
-        uid: user.uid
-      })
-    } else {
-      console.warn('[AUTH] ❌ No authenticated user found. Uploads will fail.')
-    }
-  })
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      if (user) {
+        // Now it's safe to make uploads
+        console.log('Authenticated user:', user.email)
+      } else {
+        console.warn('No authenticated user')
+      }
+    })
 
-  return () => unsubscribe()
-}, [])
-
+    return () => unsubscribe()
+  }, [])
 
   const generateSignature = (data: any) =>
     SHA256(
@@ -375,26 +372,15 @@ useEffect(() => {
     })
     return await Packer.toBlob(doc)
   }
- const uploadGrowthPlanDoc = async (blob: Blob, participantName: string) => {
-  const user = auth.currentUser
-  if (!user) {
-    console.warn('[GROWTH_PLAN] ❌ No user logged in. Cannot upload document.')
-    throw new Error('Not authenticated')
+  const uploadGrowthPlanDoc = async (blob: Blob, participantName: string) => {
+    const fileName = `${Date.now()}_${participantName}_growth_plan.docx`
+    const fileRef = ref(storage, `growth_plans/${fileName}`)
+
+    await uploadBytes(fileRef, blob)
+    const url = await getDownloadURL(fileRef)
+
+    return url
   }
-
-  console.log('[GROWTH_PLAN] Uploading growth plan for:', participantName)
-
-  const fileName = `${Date.now()}_${participantName}_growth_plan.docx`
-  const fileRef = ref(storage, `growth_plans/${fileName}`)
-
-  await uploadBytes(fileRef, blob)
-  console.log('[GROWTH_PLAN] ✅ Upload successful:', fileName)
-
-  const url = await getDownloadURL(fileRef)
-  console.log('[GROWTH_PLAN] Accessible URL:', url)
-
-  return url
-}
 
   const evaluateWithAI = async (participantData: any) => {
     try {
@@ -579,40 +565,27 @@ useEffect(() => {
     setDocumentFields(updated)
     return false // prevent auto-upload
   }
- const uploadFileAndGetURL = async (
-  file: File,
-  folder = 'participant_documents'
-) => {
-  const user = auth.currentUser
+  const uploadFileAndGetURL = async (
+    file: File,
+    folder = 'participant_documents'
+  ) => {
+    try {
+      // Use a unique filename to avoid collisions
+      const fileName = `${Date.now()}_${file.name}`
+      const fileRef = ref(storage, `${folder}/${fileName}`)
 
-  if (!user) {
-    console.warn('[UPLOAD] ❌ Upload blocked: No authenticated user.')
-    throw new Error('Not authenticated')
+      // Upload the file
+      await uploadBytes(fileRef, file)
+
+      // Get the public download URL
+      const url = await getDownloadURL(fileRef)
+
+      return { url, name: fileName }
+    } catch (error) {
+      console.error('Upload failed:', error)
+      throw error
+    }
   }
-
-  console.log('[UPLOAD] Attempting upload by user:', {
-    email: user.email,
-    uid: user.uid
-  })
-
-  try {
-    const fileName = `${Date.now()}_${file.name}`
-    const fileRef = ref(storage, `${folder}/${fileName}`)
-    console.log(`[UPLOAD] Uploading to path: ${folder}/${fileName}`)
-
-    await uploadBytes(fileRef, file)
-    console.log('[UPLOAD] ✅ Upload successful')
-
-    const url = await getDownloadURL(fileRef)
-    console.log('[UPLOAD] File accessible at:', url)
-
-    return { url, name: fileName }
-  } catch (error) {
-    console.error('[UPLOAD] ❌ Upload failed:', error)
-    throw error
-  }
-}
-
   const uploadAllDocuments = async () => {
     const uploadedDocs = []
 
@@ -665,6 +638,19 @@ useEffect(() => {
     if (avgRevenue < 1000000) return 'Early Stage'
     if (avgRevenue < 5000000) return 'Growth'
     return 'Maturity'
+  }
+
+  const removeUndefinedDeep = (obj: any): any => {
+    if (Array.isArray(obj)) {
+      return obj.map(removeUndefinedDeep)
+    } else if (typeof obj === 'object' && obj !== null) {
+      return Object.fromEntries(
+        Object.entries(obj)
+          .filter(([, value]) => value !== undefined)
+          .map(([key, value]) => [key, removeUndefinedDeep(value)])
+      )
+    }
+    return obj
   }
 
   const handleSubmit = async () => {
@@ -756,6 +742,9 @@ useEffect(() => {
         participant.beneficiaryName
       )
       participant.growthPlanDocUrl = growthPlanUrl
+
+      const cleanParticipant = removeUndefinedDeep(participant)
+      await addDoc(collection(db, 'participants'), cleanParticipant)
 
       await addDoc(collection(db, 'participants'), participant)
       message.success('Participant successfully applied!')

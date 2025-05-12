@@ -148,8 +148,12 @@ const InterventionDatabaseView = () => {
       setRecords(groupedRecords)
       setFiltered(groupedRecords)
 
-      const uniquePrograms = [...new Set(groupedRecords.map(d => d.programId))]
-      setProgramOptions(uniquePrograms)
+      const uniqueProgramIds = [
+        ...new Set(groupedRecords.map(d => d.programId))
+      ]
+      setProgramOptions(
+        uniqueProgramIds.map(id => ({ id, name: programMap[id] || id }))
+      )
     })
   }, [])
 
@@ -219,8 +223,8 @@ const InterventionDatabaseView = () => {
           >
             <Option value='all'>All Programs</Option>
             {programOptions.map(p => (
-              <Option key={p} value={p}>
-                {programMap[p] || p}
+              <Option key={p.id} value={p.id}>
+                {p.name}
               </Option>
             ))}
           </Select>

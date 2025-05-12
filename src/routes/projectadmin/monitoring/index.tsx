@@ -180,6 +180,14 @@ const MonitoringEvaluationEvaluation = () => {
       title: { text: 'Monthly Interventions by Company' },
       xAxis: { categories: months },
       yAxis: { title: { text: 'Interventions' } },
+      plotOptions: {
+        series: {
+          dataLabels: {
+            enabled: true,
+            format: '{point.y}'
+          }
+        }
+      },
       series: Object.entries(companyMonthly)
         .slice(0, topN)
         .map(([name, data]) => ({ name, data }))
@@ -189,6 +197,14 @@ const MonitoringEvaluationEvaluation = () => {
       title: { text: 'Income vs Expense per Company' },
       xAxis: { categories: companies.slice(0, topN) },
       yAxis: { title: { text: 'Rands (R)' } },
+      plotOptions: {
+        series: {
+          dataLabels: {
+            enabled: true,
+            format: '{point.y}'
+          }
+        }
+      },
       series: [
         { name: 'Income', data: incomeByCompany.slice(0, topN) },
         { name: 'Expense', data: expenseByCompany.slice(0, topN) }
@@ -199,6 +215,14 @@ const MonitoringEvaluationEvaluation = () => {
       title: { text: 'Intervention Categories per Company' },
       xAxis: { categories: companies.slice(0, topN) },
       yAxis: { title: { text: 'Category Count' } },
+      plotOptions: {
+        series: {
+          dataLabels: {
+            enabled: true,
+            format: '{point.y}'
+          }
+        }
+      },
       series: categoriesByCompany.map(cat => ({
         name: cat.name,
         data: cat.data.slice(0, topN)
@@ -208,6 +232,14 @@ const MonitoringEvaluationEvaluation = () => {
       chart: { type: 'column' },
       title: { text: 'Sector Engagement by Company' },
       xAxis: { categories: companies.slice(0, topN) },
+      plotOptions: {
+        series: {
+          dataLabels: {
+            enabled: true,
+            format: '{point.y}'
+          }
+        }
+      },
       yAxis: { title: { text: 'Sectors' } },
       series: [
         { name: 'Sector Count', data: sectorCountsByCompany.slice(0, topN) }
@@ -250,8 +282,14 @@ const MonitoringEvaluationEvaluation = () => {
     },
     colorAxis: {
       min: 0,
-      minColor: '#FFFFFF',
-      maxColor: '#f5222d'
+      max: 20,
+      stops: [
+        [0.0, '#e0f7fa'],
+        [0.25, '#80deea'],
+        [0.5, '#26c6da'],
+        [0.75, '#00acc1'],
+        [1.0, '#00838f']
+      ]
     },
     legend: {
       align: 'right',

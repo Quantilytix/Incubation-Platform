@@ -9,6 +9,7 @@ import {
   LoginOutlined,
   ArrowLeftOutlined
 } from '@ant-design/icons'
+import './RoleDetailPage.css'
 
 const { Title, Paragraph, Text } = Typography
 const { Content } = Layout
@@ -20,9 +21,21 @@ const roleFeatures = {
     color: '#1890ff',
     icon: <RocketOutlined />,
     features: [
-      { icon: <RocketOutlined />, text: 'AI-matched funding opportunities' },
-      { icon: <TeamOutlined />, text: 'Smart mentorship scheduling' },
-      { icon: <LineChartOutlined />, text: 'Real-time performance insights' }
+      {
+        icon: <RocketOutlined />,
+        text: 'AI-matched funding opportunities',
+        desc: 'Smart algorithms match your needs with suitable funders.'
+      },
+      {
+        icon: <TeamOutlined />,
+        text: 'Smart mentorship scheduling',
+        desc: 'Book and manage mentor sessions efficiently.'
+      },
+      {
+        icon: <LineChartOutlined />,
+        text: 'Real-time performance insights',
+        desc: 'Visualize progress and key performance indicators.'
+      }
     ]
   },
   incubate: {
@@ -31,9 +44,21 @@ const roleFeatures = {
     color: '#52c41a',
     icon: <TeamOutlined />,
     features: [
-      { icon: <LineChartOutlined />, text: 'Automated progress tracking' },
-      { icon: <UserAddOutlined />, text: 'AI-based mentee matching' },
-      { icon: <RocketOutlined />, text: 'Program analytics dashboard' }
+      {
+        icon: <LineChartOutlined />,
+        text: 'Automated progress tracking',
+        desc: 'Monitor incubatee performance with zero overhead.'
+      },
+      {
+        icon: <UserAddOutlined />,
+        text: 'AI-based mentee matching',
+        desc: 'Get intelligent mentee/mentor recommendations.'
+      },
+      {
+        icon: <RocketOutlined />,
+        text: 'Program analytics dashboard',
+        desc: 'View and export aggregated analytics.'
+      }
     ]
   },
   government: {
@@ -42,9 +67,21 @@ const roleFeatures = {
     color: '#faad14',
     icon: <LineChartOutlined />,
     features: [
-      { icon: <RocketOutlined />, text: 'AI-informed impact reports' },
-      { icon: <TeamOutlined />, text: 'Policy planning support tools' },
-      { icon: <UserAddOutlined />, text: 'Stakeholder collaboration mapping' }
+      {
+        icon: <RocketOutlined />,
+        text: 'AI-informed impact reports',
+        desc: 'Data-driven summaries for transparency and impact.'
+      },
+      {
+        icon: <TeamOutlined />,
+        text: 'Policy planning support tools',
+        desc: 'Insights for shaping regional innovation policy.'
+      },
+      {
+        icon: <UserAddOutlined />,
+        text: 'Stakeholder collaboration mapping',
+        desc: 'Understand your ecosystem and partners.'
+      }
     ]
   },
   investor: {
@@ -55,10 +92,19 @@ const roleFeatures = {
     features: [
       {
         icon: <LineChartOutlined />,
-        text: 'Access curated incubatee pipelines'
+        text: 'Access curated incubatee pipelines',
+        desc: 'Only verified and matched profiles are shown.'
       },
-      { icon: <RocketOutlined />, text: 'Portfolio performance tracking' },
-      { icon: <UserAddOutlined />, text: 'Co-investment & impact analytics' }
+      {
+        icon: <RocketOutlined />,
+        text: 'Portfolio performance tracking',
+        desc: 'Follow your impact and metrics in one view.'
+      },
+      {
+        icon: <UserAddOutlined />,
+        text: 'Co-investment & impact analytics',
+        desc: 'Leverage insights for smarter funding decisions.'
+      }
     ]
   }
 }
@@ -66,27 +112,28 @@ const roleFeatures = {
 const RoleDetailPage = () => {
   const { roleId } = useParams()
   const navigate = useNavigate()
-  const role = roleFeatures[roleId]
+  const role = roleFeatures[roleId as keyof typeof roleFeatures]
 
-  if (!role) {
-    return <Paragraph>Role not found</Paragraph>
-  }
+  if (!role) return <Paragraph>Role not found</Paragraph>
 
   return (
     <Content
       style={{
         padding: '40px 20px',
         minHeight: '100vh',
-        background: `url("/assets/images/wave-bg.gif")`
+        background: '#f5f7fa',
+        color: '#000',
+        position: 'relative'
       }}
     >
       <Card
         style={{
-          maxWidth: 900,
+          maxWidth: 1100,
           margin: 'auto',
-          borderRadius: 12,
+          borderRadius: 16,
           border: 'none',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+          background: '#fff',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.4)'
         }}
         bodyStyle={{ padding: 32 }}
       >
@@ -95,40 +142,56 @@ const RoleDetailPage = () => {
           type='link'
           icon={<ArrowLeftOutlined />}
           onClick={() => navigate(-1)}
-          style={{ marginBottom: 20 }}
+          style={{ marginBottom: 20, color: '#999' }}
         >
           Back
         </Button>
-        <div style={{ textAlign: 'center', marginBottom: 30 }}>
-          <div style={{ fontSize: 50, color: role.color }}>{role.icon}</div>
-          <Title level={2}>{role.title}</Title>
-          <Paragraph type='secondary'>{role.highlight}</Paragraph>
+
+        <div style={{ textAlign: 'center', marginBottom: 40 }}>
+          <div style={{ fontSize: 48, color: role.color }}>{role.icon}</div>
+          <Title level={2} style={{ color: '#000', marginBottom: 4 }}>
+            {role.title}
+          </Title>
+          <Paragraph style={{ color: '#000' }}>{role.highlight}</Paragraph>
         </div>
 
-        <Row gutter={[16, 16]}>
+        {/* Feature Cards */}
+        <Row gutter={[16, 16]} justify='center'>
           {role.features.map((feature, index) => (
-            <Col xs={24} sm={12} key={index}>
-              <Card
-                hoverable
-                style={{
-                  background: '#fff',
-                  borderRadius: 8,
-                  textAlign: 'center',
-                  minHeight: 100
-                }}
-              >
-                <div
-                  style={{ fontSize: 30, color: role.color, marginBottom: 10 }}
+            <Col xs={24} sm={12} md={8} key={index}>
+              <div className='role-hover-card'>
+                <Card
+                  hoverable
+                  className='role-card'
+                  bodyStyle={{
+                    textAlign: 'center',
+                    padding: '24px',
+                    minHeight: 180
+                  }}
                 >
-                  {feature.icon}
+                  <div
+                    style={{
+                      fontSize: 32,
+                      color: role.color,
+                      marginBottom: 12
+                    }}
+                  >
+                    {feature.icon}
+                  </div>
+                  <Text strong style={{ color: '#000', fontSize: 15 }}>
+                    {feature.text}
+                  </Text>
+                </Card>
+                <div className='role-card-overlay'>
+                  <p>{feature.desc}</p>
                 </div>
-                <Text strong>{feature.text}</Text>
-              </Card>
+              </div>
             </Col>
           ))}
         </Row>
 
-        <div style={{ marginTop: 40, textAlign: 'center' }}>
+        {/* CTA Buttons */}
+        <div style={{ marginTop: 50, textAlign: 'center' }}>
           <Button
             type='primary'
             icon={<UserAddOutlined />}
@@ -147,6 +210,20 @@ const RoleDetailPage = () => {
           </Button>
         </div>
       </Card>
+
+      {/* Logo Bottom Right */}
+      <img
+        src='/assets/images/QuantilytixO.png'
+        alt='Quantilytix'
+        style={{
+          position: 'fixed',
+          bottom: 20,
+          right: 20,
+          height: 40,
+          zIndex: 999,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)'
+        }}
+      />
     </Content>
   )
 }

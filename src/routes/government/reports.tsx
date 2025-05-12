@@ -99,6 +99,14 @@ const impactByTypeOptions: Highcharts.Options = {
     min: 0,
     title: { text: 'Number of Metrics' }
   },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
+  },
   series: [
     {
       name: 'Metrics Count',
@@ -110,6 +118,14 @@ const impactByTypeOptions: Highcharts.Options = {
 const impactByType: Highcharts.Options = {
   chart: { type: 'pie' },
   title: { text: 'Impact by Type' },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
+  },
   series: [
     {
       name: 'Metrics',
@@ -131,6 +147,14 @@ const beneficiariesByProgram: Highcharts.Options = {
     title: { text: 'Program' }
   },
   yAxis: { min: 0, title: { text: 'Beneficiaries' } },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
+  },
   series: [{ name: 'Beneficiaries', data: [150, 120, 90, 70], type: 'column' }]
 }
 const jobsCreatedTop5: Highcharts.Options = {
@@ -141,6 +165,14 @@ const jobsCreatedTop5: Highcharts.Options = {
     title: { text: 'Participant' }
   },
   yAxis: { min: 0, title: { text: 'Jobs Created' } },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
+  },
   series: [{ name: 'Jobs', data: [120, 90, 80, 60, 50], type: 'bar' }]
 }
 
@@ -152,12 +184,28 @@ const metricsOverTime: Highcharts.Options = {
     title: { text: 'Quarter' }
   },
   yAxis: { title: { text: 'Metric Count' } },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
+  },
   series: [{ name: 'Impact Metrics', data: [45, 60, 52, 78], type: 'line' }]
 }
 
 const environmentalImpact: Highcharts.Options = {
   chart: { type: 'pie' },
   title: { text: 'Environmental Impact' },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
+  },
   series: [
     {
       name: 'Impact',
@@ -176,6 +224,14 @@ const environmentalImpact: Highcharts.Options = {
 const impactByProgram: Highcharts.Options = {
   chart: { type: 'pie' },
   title: { text: 'Impact by Program' },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
+  },
   series: [
     {
       name: 'Impact',

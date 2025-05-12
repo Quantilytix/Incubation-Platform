@@ -103,6 +103,14 @@ const provinceReachOptions: Highcharts.Options = {
   yAxis: {
     title: { text: 'Participants Supported' }
   },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
+  },
   series: [
     {
       name: 'Participants',
@@ -114,6 +122,14 @@ const provinceReachOptions: Highcharts.Options = {
 const genderDistOptions: Highcharts.Options = {
   chart: { type: 'pie' },
   title: { text: 'Gender Distribution of Participants' },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
+  },
   series: [
     {
       name: 'Participants',
@@ -137,6 +153,14 @@ const ageDistOptions: Highcharts.Options = {
     min: 0,
     title: { text: 'Number of Participants' }
   },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
+  },
   series: [
     {
       name: 'Participants',
@@ -155,6 +179,14 @@ const genderCompletionOptions: Highcharts.Options = {
   yAxis: {
     min: 0,
     title: { text: 'Completed Interventions' }
+  },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
   },
   series: [
     {
@@ -180,6 +212,14 @@ const participantRatingOptions: Highcharts.Options = {
     min: 0,
     title: { text: 'Number of Ratings' }
   },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
+  },
   series: [
     {
       name: 'Participants',
@@ -198,6 +238,14 @@ const sectorComparativeOptions: Highcharts.Options = {
   yAxis: {
     min: 0,
     title: { text: 'Number of Interventions' }
+  },
+  plotOptions: {
+    series: {
+      dataLabels: {
+        enabled: true,
+        format: '{point.y}'
+      }
+    }
   },
   series: [
     {

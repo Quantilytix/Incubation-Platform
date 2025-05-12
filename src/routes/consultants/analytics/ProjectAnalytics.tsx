@@ -120,6 +120,14 @@ export const ProjectAnalytics: React.FC = () => {
       title: { text: 'Interventions per Beneficiary' },
       xAxis: { categories: beneficiaries.map(s => s.name) },
       yAxis: { title: { text: 'Interventions' } },
+      plotOptions: {
+        series: {
+          dataLabels: {
+            enabled: true,
+            format: '{point.y}'
+          }
+        }
+      },
       series: [
         {
           name: 'Interventions',
@@ -140,6 +148,14 @@ export const ProjectAnalytics: React.FC = () => {
           }
         }
       },
+      plotOptions: {
+        series: {
+          dataLabels: {
+            enabled: true,
+            format: '{point.y}'
+          }
+        }
+      },
       series: [
         {
           name: 'Revenue',
@@ -153,6 +169,14 @@ export const ProjectAnalytics: React.FC = () => {
       title: { text: `Head Count (${timeScope} - ${selectedPeriod})` },
       xAxis: { categories: beneficiaries.map(s => s.name) },
       yAxis: { title: { text: 'Employees' } },
+      plotOptions: {
+        series: {
+          dataLabels: {
+            enabled: true,
+            format: '{point.y}'
+          }
+        }
+      },
       series: [
         {
           name: 'Permanent',
@@ -169,6 +193,14 @@ export const ProjectAnalytics: React.FC = () => {
     stages: {
       chart: { type: 'pie' },
       title: { text: 'Life Cycle Stage Distribution' },
+      plotOptions: {
+        series: {
+          dataLabels: {
+            enabled: true,
+            format: '{point.y}'
+          }
+        }
+      },
       series: [
         {
           name: 'Beneficiaries',

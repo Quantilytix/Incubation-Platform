@@ -40,6 +40,14 @@ export const FunderAnalytics: React.FC = () => {
       min: 0,
       title: { text: 'Interventions' }
     },
+    plotOptions: {
+      series: {
+        dataLabels: {
+          enabled: true,
+          format: '{point.y}'
+        }
+      }
+    },
     series: [
       {
         name: 'Interventions Completed',
@@ -73,6 +81,14 @@ export const FunderAnalytics: React.FC = () => {
     yAxis: {
       min: 0,
       title: { text: 'Completions' }
+    },
+    plotOptions: {
+      series: {
+        dataLabels: {
+          enabled: true,
+          format: '{point.y}'
+        }
+      }
     },
     tooltip: {
       pointFormat: 'Completed <b>{point.y}</b> times'

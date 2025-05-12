@@ -584,7 +584,15 @@ const OperationsReports: React.FC = () => {
                 xAxis: { categories: ['Marketing', 'Financial', 'Compliance'] },
                 yAxis: { min: 0, title: { text: 'Count' } },
                 tooltip: { shared: true },
-                plotOptions: { column: { stacking: 'normal' } },
+                plotOptions: {
+                  column: { stacking: 'normal' },
+                  series: {
+                    dataLabels: {
+                      enabled: true,
+                      format: '{point.y}'
+                    }
+                  }
+                },
                 series: [
                   {
                     name: 'Assigned',
@@ -621,6 +629,14 @@ const OperationsReports: React.FC = () => {
                   min: 0,
                   title: { text: 'Intervention Count' }
                 },
+                plotOptions: {
+                  series: {
+                    dataLabels: {
+                      enabled: true,
+                      format: '{point.y}'
+                    }
+                  }
+                },
                 series: [
                   {
                     name: 'Delivered',
@@ -651,6 +667,14 @@ const OperationsReports: React.FC = () => {
                   categories: ['John', 'Amanda', 'Kabelo', 'Naledi', 'Thabo']
                 },
                 yAxis: { title: { text: 'Interventions' } },
+                plotOptions: {
+                  series: {
+                    dataLabels: {
+                      enabled: true,
+                      format: '{point.y}'
+                    }
+                  }
+                },
                 series: [
                   {
                     name: 'Interventions',
@@ -673,6 +697,14 @@ const OperationsReports: React.FC = () => {
                   categories: ['John', 'Amanda', 'Kabelo', 'Naledi', 'Thabo']
                 },
                 yAxis: { title: { text: 'Hours' } },
+                plotOptions: {
+                  series: {
+                    dataLabels: {
+                      enabled: true,
+                      format: '{point.y}'
+                    }
+                  }
+                },
                 series: [
                   {
                     name: 'Hours',

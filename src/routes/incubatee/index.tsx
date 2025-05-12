@@ -350,6 +350,14 @@ export const IncubateeDashboard: React.FC = () => {
       { title: { text: 'Revenue (ZAR)' } },
       { title: { text: 'Workers' }, opposite: true }
     ],
+    plotOptions: {
+      series: {
+        dataLabels: {
+          enabled: true,
+          format: '{point.y}'
+        }
+      }
+    },
     series: [
       { name: 'Permanent', type: 'column', data: permHeadcount, yAxis: 1 },
       { name: 'Temporary', type: 'column', data: tempHeadcount, yAxis: 1 },
@@ -362,6 +370,14 @@ export const IncubateeDashboard: React.FC = () => {
     title: { text: 'Total Revenue vs Avg Revenue' },
     xAxis: { categories: months },
     yAxis: { title: { text: 'Revenue (ZAR)' } },
+    plotOptions: {
+      series: {
+        dataLabels: {
+          enabled: true,
+          format: '{point.y}'
+        }
+      }
+    },
     tooltip: { shared: true },
     series: [
       {

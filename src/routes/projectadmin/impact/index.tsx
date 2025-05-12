@@ -54,6 +54,14 @@ export const ImpactAnalysisForm: React.FC = () => {
       title: { text: 'Impact Weight (%)', align: 'high' },
       plotLines: [{ value: 0, width: 1, color: '#999' }]
     },
+    plotOptions: {
+      series: {
+        dataLabels: {
+          enabled: true,
+          format: '{point.y}'
+        }
+      }
+    },
     tooltip: {
       formatter: function () {
         return `<strong>${this.key}</strong><br/>Impact: <b>${this.y}%</b>`

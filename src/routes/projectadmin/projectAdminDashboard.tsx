@@ -78,6 +78,14 @@ export const ProjectAdminDashboard: React.FC = () => {
       max: 5,
       title: { text: 'Average Rating' }
     },
+    plotOptions: {
+      series: {
+        dataLabels: {
+          enabled: true,
+          format: '{point.y}'
+        }
+      }
+    },
     series: [
       {
         name: 'Rating',
