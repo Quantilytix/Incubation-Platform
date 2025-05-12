@@ -18,7 +18,6 @@ import {
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { auth, db } from '@/firebase'
 import { collection, query, where, getDocs } from 'firebase/firestore'
-import ProfileDrawer from './ProfileDrawer'
 
 const { Header, Sider, Content } = Layout
 const { Title } = Typography
@@ -37,6 +36,8 @@ const IncubateeLayout: React.FC = () => {
     ? 'tracker'
     : location.pathname.includes('/analytics')
     ? 'analytics'
+    : location.pathname.includes('/profile')
+    ? 'profile'
     : 'programs'
 
   useEffect(() => {
@@ -67,67 +68,6 @@ const IncubateeLayout: React.FC = () => {
 
     fetchLogoFromParticipants()
   }, [])
-
-  useEffect(() => {
-    const getRecentPeriods = () => {
-      const now = new Date()
-      const months = Array.from({ length: 3 }, (_, i) => {
-        const d = new Date(now)
-        d.setMonth(now.getMonth() - i)
-        return d.toLocaleString('default', { month: 'long' })
-      }).reverse()
-      const year = now.getFullYear()
-      const years = [year, year - 1]
-      setLast3Months(months)
-      setLast2Years(years.map(String))
-    }
-
-    getRecentPeriods()
-  }, [])
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const user = auth.currentUser
-        if (!user) return
-        const snap = await getDocs(
-          query(
-            collection(db, 'participants'),
-            where('email', '==', user.email)
-          )
-        )
-
-        if (!snap.empty) {
-          profileForm.setFieldsValue(snap.docs[0].data())
-        }
-      } catch (err) {
-        message.error('Failed to load profile')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchProfile()
-  }, [])
-
-  const handleSaveProfile = async () => {
-    try {
-      const values = await profileForm.validateFields()
-      const user = auth.currentUser
-      if (!user) return
-
-      const snap = await getDocs(
-        query(collection(db, 'participants'), where('email', '==', user.email))
-      )
-      if (!snap.empty) {
-        const docRef = snap.docs[0].ref
-        await docRef.update(values)
-        message.success('Profile updated successfully')
-        setProfileDrawerVisible(false)
-      }
-    } catch (err) {
-      message.error('Failed to update profile')
-    }
-  }
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -162,6 +102,7 @@ const IncubateeLayout: React.FC = () => {
           selectedKeys={[selectedKey]}
           onClick={({ key }) => {
             if (key === 'tracker') navigate('/incubatee/tracker')
+            else if (key === 'profile') navigate('/incubatee/profile')
             else if (key === 'programs') navigate('/incubatee/sme')
             else if (key === 'analytics') navigate('/incubatee/analytics')
           }}
@@ -169,8 +110,11 @@ const IncubateeLayout: React.FC = () => {
           <Menu.Item key='tracker' icon={<AppstoreOutlined />}>
             Application Tracker
           </Menu.Item>
+          <Menu.Item key='profile' icon={<UserOutlined />}>
+            My Profile
+          </Menu.Item>
           <Menu.Item key='programs' icon={<BarChartOutlined />}>
-            Programs Overview
+            Programs
           </Menu.Item>
           <Menu.Item key='analytics' icon={<LineChartOutlined />}>
             Analytics
@@ -195,15 +139,6 @@ const IncubateeLayout: React.FC = () => {
           </Title>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ cursor: 'pointer', color: '#1677ff' }}>
-              <Button
-                type='default'
-                icon={<UserOutlined />}
-                onClick={() => setProfileDrawerVisible(true)}
-              >
-                Edit Profile
-              </Button>
-            </div>
             <Button
               type='primary'
               danger
@@ -221,14 +156,6 @@ const IncubateeLayout: React.FC = () => {
           <Outlet />
         </Content>
       </Layout>
-      <ProfileDrawer
-        open={profileDrawerVisible}
-        onClose={() => setProfileDrawerVisible(false)}
-        form={profileForm}
-        onSave={handleSaveProfile}
-        last3Months={last3Months}
-        last2Years={last2Years}
-      />
     </Layout>
   )
 }

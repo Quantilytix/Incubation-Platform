@@ -132,6 +132,7 @@ import RoleDetailPage from './routes/landing/role'
 import SMEDashboard from './routes/incubatee/sme'
 import IncubateeLayout from './components/IncubateeLayout'
 import IncubateeAnalytics from './routes/incubatee/analytics'
+import ProfileForm from './routes/incubatee/profile'
 
 const queryClient = new QueryClient()
 
@@ -317,6 +318,10 @@ const App = () => {
                       element={<ApplicationTracker />}
                     />
                     <Route
+                      path='/incubatee/profile'
+                      element={<ProfileForm />}
+                    />
+                    <Route
                       path='/incubatee/analytics'
                       element={<IncubateeAnalytics />}
                     />
@@ -331,14 +336,10 @@ const App = () => {
                     path='/director/onboarding'
                     element={<DirectorOnboardingPage />}
                   />
-                  <Route
-                    path='/incubatee/tracker'
-                    element={<ApplicationTracker />}
-                  />
                   <Route path='/registration'>
                     <Route index element={<RegisterPage />} />
                     <Route
-                      path='/registration/onboarding/:userId'
+                      path='/registration/onboarding'
                       element={<ParticipantFormalRegistration />}
                     />
                     <Route
