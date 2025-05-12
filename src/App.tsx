@@ -74,7 +74,7 @@ import { FunderAnalytics } from '@/routes/funder/analytics/funderAnalytics'
 import InvestorDashboard from './routes/investor/investor/Dashboard'
 import { FunderOpportunities } from './routes/investor/opportunities'
 import { FunderPortfolio } from './routes/investor/portfolio'
-import { InvestorAnalytics } from './routes/investor/analytics'
+import Analytics, { InvestorAnalytics } from './routes/investor/analytics'
 import { FunderDocuments } from './routes/investor/documents'
 import { FunderDueDiligence } from './routes/investor/due-diligence'
 import FunderCalendarPage from './routes/investor/calendar'
@@ -129,7 +129,9 @@ import ApplicationTracker from './routes/incubatee/tracker'
 import GrowthPlanDocument from './routes/registration/onboarding/ParticipantGrowthPlanDocument'
 import LandingPage from './routes/landing'
 import RoleDetailPage from './routes/landing/role'
-import SMEDashboard from './routes/landing/sme'
+import SMEDashboard from './routes/incubatee/sme'
+import IncubateeLayout from './components/IncubateeLayout'
+import IncubateeAnalytics from './routes/incubatee/analytics'
 
 const queryClient = new QueryClient()
 
@@ -306,6 +308,18 @@ const App = () => {
 
                     <Route path='applications' element={<ApplicationsPage />} />
                     <Route path='programs' element={<ProgramManager />} />
+                  </Route>
+                  {/* 🔹 IncubateeLayout Routes: SME, Tracker, Analytics */}
+                  <Route element={<IncubateeLayout />}>
+                    <Route path='/incubatee/sme' element={<SMEDashboard />} />
+                    <Route
+                      path='/incubatee/tracker'
+                      element={<ApplicationTracker />}
+                    />
+                    <Route
+                      path='/incubatee/analytics'
+                      element={<IncubateeAnalytics />}
+                    />
                   </Route>
                   {/* <Route path='/' element={<LoginPage />} /> */}
                   <Route path='/' element={<LandingPage />} />
