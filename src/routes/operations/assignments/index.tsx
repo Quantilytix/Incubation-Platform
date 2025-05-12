@@ -154,7 +154,7 @@ export const ConsultantAssignments: React.FC = () => {
         const fetchedInterventions = interventionsSnapshot.docs.map(doc => {
           const data = doc.data()
           return {
-            id: data.interventionId,
+            id: doc.id,
             interventionTitle: data.interventionTitle,
             areaOfSupport: data.areaOfSupport,
             programId: data.programId,
@@ -202,8 +202,8 @@ export const ConsultantAssignments: React.FC = () => {
       const currentConsultantMap = new Map(consultants.map(c => [c.id, c.name]))
 
       const enrichedAssignments = fetchedAssignments.map(assignment => {
-        const foundArea = interventions.find(
-          i => i.title === assignment.interventionTitle
+        const foundIntervention = interventions.find(
+          i => i.id === assignment.interventionId
         )
 
         return {
@@ -214,7 +214,9 @@ export const ConsultantAssignments: React.FC = () => {
           consultantName:
             currentConsultantMap.get(assignment.consultantId) ||
             'Unknown Consultant',
-          area: foundArea?.area || 'Unknown Area'
+          area: foundIntervention?.areaOfSupport || 'Unknown Area',
+          interventionTitle:
+            foundIntervention?.interventionTitle || assignment.interventionTitle
         }
       })
 

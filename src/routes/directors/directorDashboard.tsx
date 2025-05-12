@@ -45,6 +45,7 @@ import { addDoc, collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { Helmet } from 'react-helmet'
 import dayjs from 'dayjs'
+import { getAuth } from 'firebase/auth'
 
 const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
@@ -342,6 +343,8 @@ export const DirectorDashboard: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [upcomingTasks, setUpcomingTasks] = useState<any[]>([])
   const [overdueTasks, setOverdueTasks] = useState<any[]>([])
+  const auth = getAuth()
+  const currentUser = auth.currentUser
 
   useEffect(() => {
     const fetchData = async () => {
@@ -396,7 +399,7 @@ export const DirectorDashboard: React.FC = () => {
       setLoading(true)
       try {
         const taskSnap = await getDocs(collection(db, 'tasks'))
-        const applicationSnap = await getDocs(collection(db, 'participants'))
+        const applicationSnap = await getDocs(collection(db, 'applications'))
 
         const now = dayjs()
         const upcoming: any[] = []
@@ -418,7 +421,9 @@ export const DirectorDashboard: React.FC = () => {
 
         const pendingApps = applicationSnap.docs
           .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(p => p.applicationStatus?.toLowerCase() === 'pending')
+          .filter(app => app.applicationStatus?.toLowerCase() === 'pending')
+
+        setPendingApplications(pendingApps)
 
         setTasks([...overdue, ...upcoming])
         setOverdueTasks(overdue)
@@ -433,6 +438,28 @@ export const DirectorDashboard: React.FC = () => {
 
     fetchTasksAndApplications()
   }, [])
+
+  const getCurrentUserCompanyCode = async () => {
+    const email = currentUser?.email
+    if (!email) return null
+
+    const userSnap = await getDocs(
+      query(collection(db, 'users'), where('email', '==', email))
+    )
+
+    return userSnap.docs[0]?.data()?.companyCode || null
+  }
+
+  const getRelevantOpsUsers = async (companyCode: string) => {
+    const opsSnap = await getDocs(
+      query(
+        collection(db, 'users'),
+        where('role', '==', 'operations'),
+        where('companyCode', '==', companyCode)
+      )
+    )
+    return opsSnap.docs.map(doc => doc.id) // these are user IDs
+  }
 
   const getOverallComplianceRate = () => {
     if (incubatees.length === 0) return 0
@@ -451,6 +478,8 @@ export const DirectorDashboard: React.FC = () => {
   }
 
   const sendNotification = async (payload: any) => {
+    console.log('[🔔 Sending Notification]', payload) // ✅ Add this
+
     try {
       await addDoc(collection(db, 'notifications'), {
         ...payload,
@@ -459,7 +488,7 @@ export const DirectorDashboard: React.FC = () => {
       })
       message.success('Reminder sent.')
     } catch (err) {
-      console.error('Failed to send notification:', err)
+      console.error('[❌ Failed to send notification]', err)
       message.error('Could not send notification.')
     }
   }
@@ -487,13 +516,40 @@ export const DirectorDashboard: React.FC = () => {
     })
   }
 
-  const remindReviewApplications = () => {
-    sendNotification({
-      message: {
-        operations: `There are ${pendingApplications.length} pending applications awaiting review.`
-      },
-      recipientRoles: ['operations']
-    })
+  const remindReviewApplications = async () => {
+    try {
+      const companyCode = await getCurrentUserCompanyCode()
+      if (!companyCode) {
+        console.warn('[⚠️ Missing Company Code]')
+        return message.warning('Company code not found.')
+      }
+
+      const opsUserIds = await getRelevantOpsUsers(companyCode)
+
+      if (!opsUserIds.length) {
+        console.info(
+          '[ℹ️ No operations users found for this company]',
+          companyCode
+        )
+        return message.info('No operations users found for your company.')
+      }
+
+      console.log('[🔔 Notifying Ops IDs]', opsUserIds)
+
+      const reminderText = `There are ${pendingApplications.length} pending applications awaiting review.`
+
+      await sendNotification({
+        message: {
+          operations: reminderText
+        },
+        recipientRoles: ['operations'],
+        recipientIds: opsUserIds,
+        type: 'application-reminder'
+      })
+    } catch (err) {
+      console.error('Failed to send reminder to ops:', err)
+      message.error('Could not send notification.')
+    }
   }
 
   const calculateParticipantCompliance = participant => {
@@ -1153,25 +1209,32 @@ export const DirectorDashboard: React.FC = () => {
             </Col>
 
             <Col xs={24} md={12}>
-              <Card title='⏰ Upcoming Tasks (Next 7 Days)'>
+              <Card
+                title='📩 Applications Needing Review'
+                extra={
+                  <Button
+                    size='small'
+                    type='primary'
+                    icon={<BellOutlined />}
+                    onClick={remindReviewApplications}
+                  >
+                    Remind Ops
+                  </Button>
+                }
+              >
                 <List
-                  dataSource={upcomingTasks}
+                  dataSource={pendingApplications}
                   renderItem={item => (
-                    <List.Item
-                      actions={[
-                        <Button size='small' onClick={() => remindUser(item)}>
-                          Remind
-                        </Button>
-                      ]}
-                    >
+                    <List.Item>
                       <List.Item.Meta
-                        title={item.title}
-                        description={`Due: ${dayjs(
-                          item.dueDate.toDate()
-                        ).format('YYYY-MM-DD')}`}
+                        title={
+                          item.beneficiaryName ||
+                          item.participantName ||
+                          'Unnamed'
+                        }
+                        description={item.email}
                       />
-                      <Tag color='blue'>Upcoming</Tag>
-                      <Tag>{item.assignedRole}</Tag>
+                      <Tag color='gold'>Pending</Tag>
                     </List.Item>
                   )}
                 />

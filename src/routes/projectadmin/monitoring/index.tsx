@@ -282,13 +282,14 @@ const MonitoringEvaluationEvaluation = () => {
     },
     colorAxis: {
       min: 0,
-      max: 20,
       stops: [
-        [0.0, '#e0f7fa'],
-        [0.25, '#80deea'],
-        [0.5, '#26c6da'],
-        [0.75, '#00acc1'],
-        [1.0, '#00838f']
+        [0.0, '#00FF00'], // Bright green
+        [0.25, '#66FF66'], // Light green
+        [0.4, '#66CCFF'], // Sky blue
+        [0.5, '#0000FF'], // Blue
+        [0.65, '#9966FF'], // Violet tint
+        [0.8, '#FF6666'], // Light red
+        [1.0, '#FF0000'] // Bright red
       ]
     },
     legend: {

@@ -66,8 +66,6 @@ export const OperationsDashboard: React.FC = () => {
     useState(false)
   const [selectedIntervention, setSelectedIntervention] = useState<any>(null)
   const [confirming, setConfirming] = useState(false)
-  const [formSubmissions, setFormSubmissions] = useState<any[]>([])
-  const [resourceAllocation, setResourceAllocation] = useState<any[]>([])
   const [participants, setParticipants] = useState<any[]>([])
   const [complianceDocuments, setComplianceDocuments] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState('1')
@@ -311,24 +309,6 @@ export const OperationsDashboard: React.FC = () => {
     }
     const fetchAllOtherData = async () => {
       try {
-        // Form Submissions
-        const formSnapshot = await getDocs(collection(db, 'formSubmissions'))
-        const formsList = formSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        setFormSubmissions(formsList)
-
-        // Resource Allocation
-        const resourceSnapshot = await getDocs(
-          collection(db, 'resourceAllocation')
-        )
-        const resourcesList = resourceSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        setResourceAllocation(resourcesList)
-
         // Participants
         const participantSnapshot = await getDocs(
           collection(db, 'participants')
@@ -681,13 +661,29 @@ export const OperationsDashboard: React.FC = () => {
         <Col xs={24} sm={12} md={6} lg={6}>
           <Card>
             <Statistic
-              title='Form Submissions'
-              value={formSubmissions.length}
-              prefix={<FormOutlined />}
+              title='Upcoming Events'
+              value={events.length}
+              prefix={<CalendarOutlined />}
+              valueStyle={{ color: '#13c2c2' }}
+            />
+          </Card>
+        </Col>
+
+        <Col xs={24} sm={12} md={6} lg={6}>
+          <Card>
+            <Statistic
+              title='Confirmed Tasks'
+              value={
+                tasks.filter(
+                  t => t.status === 'Completed' || t.status === 'confirmed'
+                ).length
+              }
+              prefix={<CheckCircleOutlined />}
               valueStyle={{ color: '#52c41a' }}
             />
           </Card>
         </Col>
+
         <Col xs={24} sm={12} md={6} lg={6}>
           <Card>
             <Statistic
@@ -695,28 +691,6 @@ export const OperationsDashboard: React.FC = () => {
               value={participants.length}
               prefix={<TeamOutlined />}
               valueStyle={{ color: '#722ed1' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6} lg={6}>
-          <Card>
-            <Statistic
-              title='Resource Utilization'
-              value={
-                resourceAllocation.length > 0
-                  ? Math.round(
-                      (resourceAllocation.reduce(
-                        (sum, r) => sum + r.allocated,
-                        0
-                      ) /
-                        (resourceAllocation.length * 100)) *
-                        100
-                    )
-                  : 0
-              }
-              suffix='%'
-              prefix={<ApartmentOutlined />}
-              valueStyle={{ color: '#faad14' }}
             />
           </Card>
         </Col>

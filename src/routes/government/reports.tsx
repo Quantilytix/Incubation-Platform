@@ -42,6 +42,7 @@ import dayjs from 'dayjs'
 import quarterOfYear from 'dayjs/plugin/quarterOfYear'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
+import GeoChallengeMap from '@/components/charts/GeoChallengeMap'
 
 dayjs.extend(quarterOfYear)
 
@@ -985,6 +986,12 @@ export const ImpactReports: React.FC = () => {
                       highcharts={Highcharts}
                       options={metricsOverTime}
                     />
+                  </Card>
+                </Col>
+
+                <Col span={24}>
+                  <Card title='Geographic Challenge Map'>
+                    <GeoChallengeMap />
                   </Card>
                 </Col>
               </Row>
