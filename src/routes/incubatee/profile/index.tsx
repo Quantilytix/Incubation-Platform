@@ -110,6 +110,41 @@ const ProfileForm: React.FC = () => {
     }
   }
 
+  const sectors = [
+    'Agriculture',
+    'Mining',
+    'Manufacturing',
+    'Electricity, Gas and Water',
+    'Construction',
+    'Wholesale and Retail Trade',
+    'Transport, Storage and Communication',
+    'Finance, Real Estate and Business Services',
+    'Community, Social and Personal Services',
+    'Tourism and Hospitality',
+    'Information Technology',
+    'Education',
+    'Health and Social Work',
+    'Arts and Culture',
+    'Automotive',
+    'Chemical',
+    'Textile',
+    'Forestry and Logging',
+    'Fishing',
+    'Other'
+  ]
+
+  const provinces = [
+    'Eastern Cape',
+    'Free State',
+    'Gauteng',
+    'KwaZulu-Natal',
+    'Limpopo',
+    'Mpumalanga',
+    'Northern Cape',
+    'North West',
+    'Western Cape'
+  ]
+
   return (
     <div style={{ padding: 24 }}>
       <Title level={3}>Your Profile</Title>
@@ -183,12 +218,11 @@ const ProfileForm: React.FC = () => {
               rules={[{ required: true }]}
             >
               <Select>
-                <Select.Option value='Agriculture'>Agriculture</Select.Option>
-                <Select.Option value='Manufacturing'>
-                  Manufacturing
-                </Select.Option>
-                <Select.Option value='IT'>Information Technology</Select.Option>
-                <Select.Option value='Other'>Other</Select.Option>
+                {sectors.map(sector => (
+                  <Select.Option key={sector} value={sector}>
+                    {sector}
+                  </Select.Option>
+                ))}
               </Select>
             </Form.Item>
           </Col>
@@ -212,13 +246,15 @@ const ProfileForm: React.FC = () => {
           </Col>
           <Col span={8}>
             <Form.Item name='beeLevel' label='BEEE Level'>
-              <Select>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map(level => (
-                  <Select.Option key={level} value={level}>
-                    Level {level}
-                  </Select.Option>
-                ))}
-              </Select>
+             <Select>
+  {[1, 2, 3, 4].map(level => (
+    <Select.Option key={level} value={level}>
+      Level {level}
+    </Select.Option>
+  ))}
+  <Select.Option value="5+">Level 5 and above</Select.Option>
+</Select>
+
             </Form.Item>
           </Col>
           <Col span={8}>
@@ -257,8 +293,11 @@ const ProfileForm: React.FC = () => {
           <Col span={8}>
             <Form.Item name='province' label='Province'>
               <Select>
-                <Select.Option value='Gauteng'>Gauteng</Select.Option>
-                <Select.Option value='Western Cape'>Western Cape</Select.Option>
+                {provinces.map(province => (
+                  <Select.Option key={province} value={province}>
+                    {province}
+                  </Select.Option>
+                ))}
               </Select>
             </Form.Item>
           </Col>
