@@ -44,22 +44,7 @@ const ApplicationTracker = () => {
       if (!currentUser) return
 
       try {
-        // 🔍 Step 1: Check if participant exists
-        const participantSnap = await getDocs(
-          query(
-            collection(db, 'participants'),
-            where('email', '==', currentUser.email)
-          )
-        )
-
-        // If participant not found, redirect to setup
-        if (participantSnap.empty) {
-          message.info('Welcome! Please complete your profile to get started.')
-          navigate('/incubatee/profile')
-          return // Exit early
-        }
-
-        // 🔁 Step 2: Proceed with the rest of the logic
+        // Step 1: Fetch user metadata
         const userRef = doc(db, 'users', currentUser.uid)
         const userSnap = await getDoc(userRef)
         if (!userSnap.exists()) return
@@ -67,12 +52,9 @@ const ApplicationTracker = () => {
         const userData = userSnap.data()
         const companyCode = userData.companyCode || ''
         setCompanyCode(companyCode)
+        setBeneficiaryName(userData.beneficiaryName || '')
 
-        if (userData.beneficiaryName) {
-          setBeneficiaryName(userData.beneficiaryName)
-        }
-
-        // Programs
+        // Step 2: Fetch programs by companyCode
         const programsSnap = await getDocs(
           query(
             collection(db, 'programs'),
@@ -85,58 +67,36 @@ const ApplicationTracker = () => {
         }))
         setPrograms(allPrograms)
 
-        // Applications
-        const appList = participantSnap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
+        // Step 3: Fetch applications by email
+        const appsSnap = await getDocs(
+          query(
+            collection(db, 'applications'),
+            where('email', '==', currentUser.email)
+          )
+        )
 
-        const appsWithNames = appList.map(app => {
-          const matchedProgram = allPrograms.find(p => p.id === app.programId)
+        const apps = appsSnap.docs.map(doc => {
+          const data = doc.data()
+          const matchedProgram = allPrograms.find(p => p.id === data.programId)
+          console.log('📎 Matching Program:', matchedProgram)
+
           return {
-            ...app,
-            programName: matchedProgram?.programName || 'Unnamed Program'
+            id: doc.id,
+            ...data,
+            programName:
+              matchedProgram?.programName ||
+              matchedProgram?.name ||
+              'Unnamed Program'
           }
         })
-        setApplications(appsWithNames)
+        setApplications(apps)
 
-        const appliedProgramIds = new Set<string>()
-        participantSnap.docs.forEach(doc => {
-          const interventions = doc.data().interventions?.required || []
-          interventions.forEach((i: any) => {
-            if (i.id) appliedProgramIds.add(i.id)
-          })
-        })
-
-        const filteredPrograms = allPrograms.filter(
-          p => !appliedProgramIds.has(p.id)
+        // Step 4: Filter available programs (not already applied)
+        const appliedIds = new Set(apps.map(app => app.programId))
+        const notAppliedPrograms = allPrograms.filter(
+          p => !appliedIds.has(p.id)
         )
-        setAvailablePrograms(filteredPrograms)
-
-        const rawInterventions = filteredPrograms.map(p => ({
-          id: p.id,
-          title: p.interventionTitle,
-          area: p.areaOfSupport
-        }))
-
-        const areaMap: Record<string, { id: string; title: string }[]> = {}
-        rawInterventions.forEach(intervention => {
-          if (!areaMap[intervention.area]) {
-            areaMap[intervention.area] = []
-          }
-          areaMap[intervention.area].push({
-            id: intervention.id,
-            title: intervention.title
-          })
-        })
-
-        const fetchedGroups = Object.entries(areaMap).map(
-          ([area, interventions]) => ({
-            area,
-            interventions
-          })
-        )
-        setInterventionGroups(fetchedGroups)
+        setAvailablePrograms(notAppliedPrograms)
       } catch (err) {
         console.error('Error loading application data:', err)
         message.error('Failed to load application data')
@@ -183,7 +143,7 @@ const ApplicationTracker = () => {
     {
       title: 'Compliance',
       dataIndex: 'complianceRate',
-      render: (rate: number) => <strong>{rate}%</strong>
+      render: (rate: number) => <strong>{rate || 0}%</strong>
     }
   ]
 
@@ -199,8 +159,8 @@ const ApplicationTracker = () => {
     {
       title: 'Action',
       render: (record: any) => {
-        const alreadyApplied = applications.some(app =>
-          app.interventions?.required?.some((i: any) => i.id === record.id)
+        const alreadyApplied = applications.some(
+          app => app.programId === record.id
         )
 
         const handleApply = () => {

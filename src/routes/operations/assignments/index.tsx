@@ -125,11 +125,13 @@ export const ConsultantAssignments: React.FC = () => {
         const [
           participantsSnapshot,
           consultantsSnapshot,
-          interventionsSnapshot
+          interventionsSnapshot,
+          applicationsSnapshot
         ] = await Promise.all([
           getDocs(collection(db, 'participants')),
           getDocs(collection(db, 'consultants')),
-          getDocs(collection(db, 'interventions'))
+          getDocs(collection(db, 'interventions')),
+          getDocs(collection(db, 'applications'))
         ])
 
         const fetchedParticipants = participantsSnapshot.docs.map(doc => {
@@ -142,7 +144,10 @@ export const ConsultantAssignments: React.FC = () => {
             province: data.province,
             city: data.city,
             location: data.location,
-            interventions: data.interventions || { required: [], completed: [] }
+            interventions: data.interventions || {
+              required: [],
+              completed: []
+            }
           }
         })
 
@@ -162,10 +167,26 @@ export const ConsultantAssignments: React.FC = () => {
           }
         })
 
-        // Map participantId to required intervention ids
+        // 🔁 Merge interventions from applications (fallback when participant doc doesn't have them)
+        const applicationMap: Record<string, string[]> = {}
+        applicationsSnapshot.docs.forEach(doc => {
+          const data = doc.data()
+          const pid = data.participantId
+          const required = data.interventions?.required || []
+
+          if (pid && required.length > 0) {
+            applicationMap[pid] = required.map((i: any) => i.id)
+          }
+        })
+
+        // 📌 Map participantId to required intervention ids
         const map: Record<string, string[]> = {}
         fetchedParticipants.forEach(p => {
-          map[p.id] = (p.interventions.required || []).map(i => i.id)
+          const fromParticipant = (p.interventions.required || []).map(
+            i => i.id
+          )
+          const fromApplication = applicationMap[p.id] || []
+          map[p.id] = [...new Set([...fromParticipant, ...fromApplication])]
         })
 
         setParticipants(fetchedParticipants)
@@ -175,7 +196,7 @@ export const ConsultantAssignments: React.FC = () => {
         setDataLoaded(true)
       } catch (error) {
         console.error(
-          '❌ Error fetching participants, consultants or interventions:',
+          '❌ Error fetching participants, consultants, interventions or applications:',
           error
         )
         message.error(
@@ -183,7 +204,6 @@ export const ConsultantAssignments: React.FC = () => {
         )
       }
     }
-
     if (user) {
       fetchParticipantsConsultantsAndInterventions()
     }

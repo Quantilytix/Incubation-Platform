@@ -360,7 +360,14 @@ const ApplicationsPage: React.FC = () => {
                     <div style={{ marginBottom: 8 }}>
                       <Text>
                         <strong>Justification:</strong>{' '}
-                        {selectedApplication.aiJustification ?? 'N/A'}
+                        <Button
+                          type='link'
+                          size='small'
+                          onClick={() => setAiModalVisible(true)}
+                          style={{ paddingLeft: 8 }}
+                        >
+                          View
+                        </Button>
                       </Text>
                     </div>
                   </div>

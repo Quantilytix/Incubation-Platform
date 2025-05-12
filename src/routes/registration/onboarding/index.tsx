@@ -845,7 +845,7 @@ const ParticipantRegistrationStepForm = () => {
       }
 
       // ✅ Redirect to login
-      navigate('/login')
+      navigate('/incubatee/tracker')
 
       // Optional: Reset form state
       setCurrent(0)
