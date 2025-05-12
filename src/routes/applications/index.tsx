@@ -35,11 +35,29 @@ const ApplicationsPage: React.FC = () => {
 
   const fetchApplications = async () => {
     try {
-      const snapshot = await getDocs(collection(db, 'participants'))
-      const apps = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
+      const snapshot = await getDocs(collection(db, 'applications'))
+      const apps = snapshot.docs.map(doc => {
+        const data = doc.data()
+        const ai = data.aiEvaluation?.raw_response || {}
+
+        return {
+          id: doc.id,
+          ...data,
+          beneficiaryName: data.beneficiaryName || 'N/A',
+          gender: data.gender || 'N/A',
+          ageGroup: data.ageGroup || 'N/A',
+          stage: data.stage || 'N/A',
+          hub: data.hub || 'N/A',
+          email: data.email || 'N/A',
+          motivation: data.motivation || '',
+          challenges: data.challenges || '',
+          aiRecommendation: ai['AI Recommendation'] || 'Pending',
+          aiScore: ai['AI Score'] || 'N/A',
+          aiJustification: ai['Justification'] || 'N/A',
+          documents: data.complianceDocuments || [],
+          applicationStatus: data.applicationStatus || 'Pending'
+        }
+      })
       setApplications(apps)
       setFilteredApplications(apps)
     } catch (error) {
@@ -48,12 +66,8 @@ const ApplicationsPage: React.FC = () => {
     }
   }
 
-  useEffect(() => {
-    fetchApplications()
-  }, [])
-
   const updateStatus = async (newStatus: string, docId: string) => {
-    const ref = doc(db, 'participants', docId)
+    const ref = doc(db, 'applications', docId)
     await updateDoc(ref, { applicationStatus: newStatus })
     fetchApplications()
   }
@@ -100,7 +114,7 @@ const ApplicationsPage: React.FC = () => {
       series: {
         dataLabels: {
           enabled: true,
-          format: '{point.y}' 
+          format: '{point.y}'
         }
       }
     },
@@ -455,10 +469,10 @@ const ApplicationsPage: React.FC = () => {
       >
         {selectedApplication?.documents?.length ? (
           <ul>
-            {selectedApplication.documents.map((url: string, idx: number) => (
+            {selectedApplication.documents.map((doc: any, idx: number) => (
               <li key={idx}>
-                <a href={url} target='_blank' rel='noopener noreferrer'>
-                  Document {idx + 1}
+                <a href={doc.url} target='_blank' rel='noopener noreferrer'>
+                  {doc.type} ({doc.fileName})
                 </a>
               </li>
             ))}

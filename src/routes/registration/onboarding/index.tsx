@@ -431,7 +431,9 @@ const ParticipantRegistrationStepForm = () => {
       if (!response.ok) throw new Error('API call failed.')
 
       const data = await response.json()
-      return data.evaluation
+
+      // ✅ Extract just raw_response (defensive fallback in case structure changes)
+      return data.raw_response ?? data.evaluation ?? null
     } catch (err) {
       console.error('AI evaluation failed:', err)
       return null
@@ -576,10 +578,23 @@ const ParticipantRegistrationStepForm = () => {
     })
   }
 
-  const getMissingDocuments = () =>
-    documentFields.filter(doc => !doc.file || !doc.issueDate)
+  const getMissingDocuments = () => documentFields.filter(doc => !doc.file)
 
-  const next = () => form.validateFields().then(() => setCurrent(current + 1))
+  const next = async () => {
+    const values = await form.validateFields()
+
+    // 👉 derive and set age
+    if (values.idNumber) {
+      const derivedAge = getAgeFromID(values.idNumber)
+      form.setFieldsValue({ age: derivedAge })
+    }
+
+    // 👉 derive and set stage
+    const stage = deriveStageFromRevenue(values)
+    form.setFieldsValue({ stage })
+
+    setCurrent(current + 1)
+  }
 
   const prev = () => setCurrent(current - 1)
 
@@ -614,7 +629,7 @@ const ParticipantRegistrationStepForm = () => {
     const uploadedDocs = []
 
     for (const doc of documentFields) {
-      if (!doc.file || !doc.issueDate) continue
+      if (!doc.file) continue
 
       try {
         const { url, name } = await uploadFileAndGetURL(doc.file)
@@ -623,7 +638,6 @@ const ParticipantRegistrationStepForm = () => {
           type: doc.type,
           url,
           fileName: name,
-          issueDate: doc.issueDate.format('YYYY-MM-DD'),
           expiryDate: doc.requiresExpiry
             ? doc.expiryDate?.format('YYYY-MM-DD') || null
             : null,
@@ -727,6 +741,7 @@ const ParticipantRegistrationStepForm = () => {
       }
 
       const aiEvaluation = await evaluateWithAI(participant)
+      participant.aiEvaluation = aiEvaluation
 
       if (aiEvaluation) {
         message.success(
@@ -766,17 +781,21 @@ const ParticipantRegistrationStepForm = () => {
       )
       participant.growthPlanDocUrl = growthPlanUrl
 
-      const cleanParticipant = removeUndefinedDeep(participant)
       await addDoc(collection(db, 'applications'), {
         participantId,
         programName,
         companyCode,
         applicationStatus: 'pending',
+        submittedAt: new Date().toISOString(),
         motivation: form.getFieldValue('motivation'),
         challenges: form.getFieldValue('challenges'),
         selectedInterventions,
-        aiEvaluation: aiEvaluation,
-        submittedAt: new Date().toISOString()
+        complianceRate,
+        complianceDocuments: uploadedDocs,
+        interventions: participant.interventions,
+        aiEvaluation,
+        growthPlanDocUrl: participant.growthPlanDocUrl,
+        stage: participant.stage
       })
 
       message.success('Participant successfully applied!')
