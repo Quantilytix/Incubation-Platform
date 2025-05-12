@@ -59,6 +59,42 @@ const SMEDashboard = () => {
   // Last 2 years
   const last2Years = Array.from({ length: 2 }, (_, i) => `${currentYear - i}`)
 
+  const fetchPrograms = async () => {
+    setLoading(true)
+    try {
+      const ref = collection(db, 'programs')
+      const q = query(
+        ref,
+        where('status', 'in', ['Active', 'Planned', 'active', 'planned'])
+      )
+      const snapshot = await getDocs(q)
+
+      const data = snapshot.docs.map(doc => {
+        const raw = doc.data()
+        return {
+          id: doc.id,
+          ...raw,
+          startDate: raw.startDate?.toDate?.() ?? new Date(raw.startDate)
+        }
+      })
+
+      // Example logic: recommend programs based on tags/keywords
+      const recommendedPrograms = data.filter(
+        p =>
+          p.name?.toLowerCase().includes('market') ||
+          p.description?.toLowerCase().includes('funding')
+      )
+
+      setRecommended(recommendedPrograms)
+      setAllPrograms(data)
+    } catch (err) {
+      message.error('Failed to load  programs.')
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     fetchPrograms()
   }, [])
@@ -69,58 +105,59 @@ const SMEDashboard = () => {
     return () => window.removeEventListener('openSmeProfileDrawer', handleOpen)
   }, [])
 
-  const fetchPrograms = async () => {
-    setLoading(true)
+  const openProgramModal = async (program: any) => {
     try {
-      const ref = collection(db, 'supportPrograms')
-      const q = query(ref, where('status', 'in', ['active', 'planned']))
+      const user = auth.currentUser
+      if (!user?.email) {
+        message.error('You must be logged in to apply.')
+        return
+      }
+
+      // 🔍 Check Firestore profile for setup flag
+      const q = query(
+        collection(db, 'participants'),
+        where('email', '==', user.email)
+      )
       const snapshot = await getDocs(q)
 
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
+      if (snapshot.empty) {
+        message.warning('Please complete your profile before applying.')
+        setProfileDrawerVisible(true)
+        return
+      }
 
-      // Example logic: recommend programs based on tags/keywords
-      const recommendedPrograms = data.filter(
-        p =>
-          p.programName.toLowerCase().includes('market') ||
-          p.description.toLowerCase().includes('sme')
-      )
+      const data = snapshot.docs[0].data()
+      if (!data.setup) {
+        message.warning('Please finish your profile setup before registering.')
+        setProfileDrawerVisible(true)
+        return
+      }
 
-      setRecommended(recommendedPrograms)
-      setAllPrograms(data)
+      // ✅ Proceed if setup is true
+      applicationForm.setFieldsValue({
+        ownerName: data.ownerName || '',
+        companyName: data.companyName || '',
+        email: data.email || ''
+      })
+
+      setActiveProgram(program)
+      setProgramModalVisible(true)
     } catch (err) {
-      message.error('Failed to load support programs.')
-    } finally {
-      setLoading(false)
+      console.error('Failed to verify profile setup:', err)
+      message.error('Could not verify your profile status.')
     }
   }
-  const openProfileDrawer = () => {
-    const profile = localStorage.getItem('smeProfile')
-    if (profile) smeProfileForm.setFieldsValue(JSON.parse(profile))
-    setProfileDrawerVisible(true)
-  }
-  const openProgramModal = (program: any) => {
-    const profile = JSON.parse(localStorage.getItem('smeProfile') || '{}')
-    applicationForm.setFieldsValue({
-      ownerName: profile.ownerName || '',
-      companyName: profile.companyName || '',
-      email: profile.email || ''
-    })
-    setActiveProgram(program)
-    setProgramModalVisible(true)
-  }
+
   const submitApplication = async () => {
     try {
       const values = await applicationForm.validateFields()
-      console.log('Application Submitted:', {
-        ...values,
-        programId: activeProgram.id,
-        submittedAt: new Date()
-      })
-      message.success('Application submitted!')
-      setProgramModalVisible(false)
+
+      const query = new URLSearchParams({
+        code: activeProgram.companyCode,
+        program: activeProgram.programName
+      }).toString()
+
+      navigate(`/registration/onboarding?${query}`)
     } catch (err) {
       message.error('Please complete all required fields')
     }
@@ -158,10 +195,13 @@ const SMEDashboard = () => {
       >
         <div>
           <Title level={5} style={{ marginBottom: 4 }}>
-            {program.programName}
+            {program.name}
           </Title>
+          <Tag color='magenta' style={{ marginBottom: 8 }}>
+            {program.companyCode}
+          </Tag>
           <Tag color='blue' style={{ marginBottom: 12 }}>
-            {program.programType}
+            {program.type}
           </Tag>
           <Paragraph type='secondary' ellipsis={{ rows: 3 }}>
             {program.description}
@@ -170,7 +210,12 @@ const SMEDashboard = () => {
 
         <Divider style={{ margin: '12px 0' }} />
         <Tag color='green'>
-          Starts {dayjs(program.startDate?.toDate()).format('MMM YYYY')}
+          Starts{' '}
+          {dayjs(
+            typeof program.startDate === 'string'
+              ? program.startDate
+              : program.startDate?.toDate?.() || new Date()
+          ).format('MMM YYYY')}
         </Tag>
       </Card>
     </Col>
@@ -333,7 +378,7 @@ const SMEDashboard = () => {
 
       <Modal
         open={programModalVisible}
-        title={activeProgram?.programName}
+        title={activeProgram?.name}
         onCancel={() => setProgramModalVisible(false)}
         onOk={submitApplication}
         okText='Submit Application'
@@ -348,31 +393,6 @@ const SMEDashboard = () => {
           <li>Startup must be operational</li>
           {/* These could be dynamic from program definition later */}
         </ul>
-
-        <Divider orientation='left'>Application Details</Divider>
-        <Form layout='vertical' form={applicationForm} preserve={false}>
-          <Form.Item
-            name='motivation'
-            label='Motivation for Applying'
-            rules={[{ required: true }]}
-          >
-            <Input.TextArea
-              rows={3}
-              placeholder='Why should we consider you for this program?'
-            />
-          </Form.Item>
-
-          <Form.Item
-            name='challenges'
-            label='Key Business Challenges'
-            rules={[{ required: true }]}
-          >
-            <Input.TextArea
-              rows={3}
-              placeholder='What challenges do you need help overcoming?'
-            />
-          </Form.Item>
-        </Form>
       </Modal>
     </Layout>
   )

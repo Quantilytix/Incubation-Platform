@@ -42,9 +42,24 @@ const ApplicationTracker = () => {
     const fetchUserData = async () => {
       const currentUser = auth.currentUser
       if (!currentUser) return
-      console.log(currentUser)
 
       try {
+        // 🔍 Step 1: Check if participant exists
+        const participantSnap = await getDocs(
+          query(
+            collection(db, 'participants'),
+            where('email', '==', currentUser.email)
+          )
+        )
+
+        // If participant not found, redirect to setup
+        if (participantSnap.empty) {
+          message.info('Welcome! Please complete your profile to get started.')
+          navigate('/incubatee/profile')
+          return // Exit early
+        }
+
+        // 🔁 Step 2: Proceed with the rest of the logic
         const userRef = doc(db, 'users', currentUser.uid)
         const userSnap = await getDoc(userRef)
         if (!userSnap.exists()) return
@@ -71,17 +86,11 @@ const ApplicationTracker = () => {
         setPrograms(allPrograms)
 
         // Applications
-        const applicationsSnap = await getDocs(
-          query(
-            collection(db, 'participants'),
-            where('email', '==', currentUser.email)
-          )
-        )
-        const appList = applicationsSnap.docs.map(doc => ({
+        const appList = participantSnap.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }))
-        // Add programName from `programs`
+
         const appsWithNames = appList.map(app => {
           const matchedProgram = allPrograms.find(p => p.id === app.programId)
           return {
@@ -90,14 +99,6 @@ const ApplicationTracker = () => {
           }
         })
         setApplications(appsWithNames)
-
-        // Participants for checking applied interventions
-        const participantSnap = await getDocs(
-          query(
-            collection(db, 'participants'),
-            where('email', '==', currentUser.email)
-          )
-        )
 
         const appliedProgramIds = new Set<string>()
         participantSnap.docs.forEach(doc => {
@@ -112,7 +113,6 @@ const ApplicationTracker = () => {
         )
         setAvailablePrograms(filteredPrograms)
 
-        // Prepare groups
         const rawInterventions = filteredPrograms.map(p => ({
           id: p.id,
           title: p.interventionTitle,
@@ -146,7 +146,7 @@ const ApplicationTracker = () => {
     }
 
     fetchUserData()
-  }, [])
+  }, [navigate])
 
   const statusCounts = {
     Accepted: applications.filter(

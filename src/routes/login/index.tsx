@@ -315,22 +315,22 @@ export const LoginPage: React.FC = () => {
 
       <style>
         {`
-                @keyframes fadeIn {
-                  from { opacity: 0; }
-                  to { opacity: 1; }
-                }
+                  @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                  }
 
-                @keyframes fadeInUp {
-                  from {
-                    opacity: 0;
-                    transform: translateY(20px);
+                  @keyframes fadeInUp {
+                    from {
+                      opacity: 0;
+                      transform: translateY(20px);
+                    }
+                    to {
+                      opacity: 1;
+                      transform: translateY(0);
+                    }
                   }
-                  to {
-                    opacity: 1;
-                    transform: translateY(0);
-                  }
-                }
-              `}
+                `}
       </style>
     </Spin>
   )

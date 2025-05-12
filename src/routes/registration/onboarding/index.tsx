@@ -30,7 +30,6 @@ import {
   WidthType,
   BorderStyle
 } from 'docx'
-import { saveAs } from 'file-saver'
 import SHA256 from 'crypto-js/sha256'
 import { UploadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
@@ -50,10 +49,12 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useEffect } from 'react'
 import { Helmet } from 'react-helmet'
 import { onAuthStateChanged } from 'firebase/auth'
+import { useSearchParams } from 'react-router-dom'
 
 const { Title } = Typography
 const { Step } = Steps
 const { Option } = Select
+
 const documentTypes = [
   'Certified ID Copy',
   'Proof of Address',
@@ -63,17 +64,24 @@ const documentTypes = [
   'Management Accounts',
   'Three Months Bank Statements'
 ]
+const documentConfig = [
+  { type: 'Certified ID Copy', requiresExpiry: false },
+  { type: 'Proof of Address', requiresExpiry: false },
+  { type: 'B-BBEE Certificate', requiresExpiry: true },
+  { type: 'Tax PIN', requiresExpiry: true },
+  { type: 'CIPC', requiresExpiry: true },
+  { type: 'Management Accounts', requiresExpiry: true },
+  { type: 'Three Months Bank Statements', requiresExpiry: true }
+]
 
 const ParticipantRegistrationStepForm = () => {
   const [form] = Form.useForm()
   const [current, setCurrent] = useState(0)
   const [currentUserName, setCurrentUserName] = useState('')
-  const [documents, setDocuments] = useState([])
-  const [documentDetails, setDocumentDetails] = useState([])
   const [uploading, setUploading] = useState(false)
   const [documentFields, setDocumentFields] = useState(
-    documentTypes.map(type => ({
-      type,
+    documentConfig.map(doc => ({
+      ...doc,
       file: null,
       issueDate: null,
       expiryDate: null
@@ -87,6 +95,10 @@ const ParticipantRegistrationStepForm = () => {
     Record<string, string[]>
   >({})
   const [participantData, setParticipantData] = useState<any>({})
+  const [searchParams] = useSearchParams()
+  const companyCode = searchParams.get('code')
+  const programName = searchParams.get('program')
+  const [participantId, setParticipantId] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -99,23 +111,16 @@ const ParticipantRegistrationStepForm = () => {
         if (userSnap.exists()) {
           const userData = userSnap.data()
           const companyCode = userData.companyCode || ''
-          if (userSnap.exists()) {
-            const userData = userSnap.data()
-            const companyCode = userData.companyCode || ''
-            form.setFieldsValue({
-              companyCode,
-              participantName: userData.name,
-              email: userData.email
-            })
-          }
+          form.setFieldsValue({
+            companyCode,
+            participantName: userData.name,
+            email: userData.email
+          })
           setCurrentUserName(userData.name)
 
           // 🔽 Fetch intervention groups for that company
           const interventionsSnapshot = await getDocs(
-            query(
-              collection(db, 'interventions'),
-              where('companyCode', '==', companyCode)
-            )
+            query(collection(db, 'interventions'))
           )
           console.log(companyCode)
           console.log(interventionGroups)
@@ -168,14 +173,32 @@ const ParticipantRegistrationStepForm = () => {
     return () => unsubscribe()
   }, [])
 
-  const generateSignature = (data: any) =>
-    SHA256(
-      `${data.email}|${data.participantName}|${
-        data.dateOfRegistration
-      }|${currentUserName}|${Date.now()}`
-    )
-      .toString()
-      .substring(0, 16)
+  useEffect(() => {
+    const fetchParticipant = async () => {
+      const user = auth.currentUser
+      if (!user) return
+
+      const q = query(
+        collection(db, 'participants'),
+        where('email', '==', user.email)
+      )
+      const snap = await getDocs(q)
+      if (!snap.empty) {
+        const data = snap.docs[0].data()
+        const id = snap.docs[0].id
+        setParticipantData(data)
+        setParticipantId(id)
+
+        form.setFieldsValue({
+          participantName: data.ownerName,
+          email: data.email,
+          ...data // optional if you're displaying anything else
+        })
+      }
+    }
+
+    fetchParticipant()
+  }, [])
 
   const generateGrowthPlanDocBlob = async (data: any) => {
     const safeText = (text: any) =>
@@ -547,7 +570,8 @@ const ParticipantRegistrationStepForm = () => {
     const oneWeekFromNow = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
 
     return documentFields.filter(doc => {
-      if (!doc.expiryDate) return false
+      if (!doc.requiresExpiry) return false
+      if (!doc.expiryDate) return true // consider missing expiry as non-compliant
       return doc.expiryDate.toDate() <= oneWeekFromNow
     })
   }
@@ -597,10 +621,12 @@ const ParticipantRegistrationStepForm = () => {
 
         uploadedDocs.push({
           type: doc.type,
-          url, // ✅ correct public URL
+          url,
           fileName: name,
           issueDate: doc.issueDate.format('YYYY-MM-DD'),
-          expiryDate: doc.expiryDate?.format?.('YYYY-MM-DD') || null,
+          expiryDate: doc.requiresExpiry
+            ? doc.expiryDate?.format('YYYY-MM-DD') || null
+            : null,
           status: 'valid'
         })
       } catch (err) {
@@ -612,20 +638,17 @@ const ParticipantRegistrationStepForm = () => {
   }
 
   const calculateCompliance = () => {
-    const today = new Date()
-    const oneWeekFromNow = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
+    const oneWeekFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
     const validDocs = documentFields.filter(doc => {
       if (!doc.file || !doc.issueDate) return false
-
-      // No expiry date means it's valid
-      if (!doc.expiryDate) return true
-
-      // Otherwise check that it's not expired and at least 1 week away
-      return doc.expiryDate.toDate() > oneWeekFromNow
+      if (doc.requiresExpiry) {
+        return doc.expiryDate && doc.expiryDate.toDate() > oneWeekFromNow
+      }
+      return true
     })
 
-    return Math.round((validDocs.length / documentTypes.length) * 100)
+    return Math.round((validDocs.length / documentFields.length) * 100)
   }
 
   const deriveStageFromRevenue = (values: any): string => {
@@ -744,9 +767,18 @@ const ParticipantRegistrationStepForm = () => {
       participant.growthPlanDocUrl = growthPlanUrl
 
       const cleanParticipant = removeUndefinedDeep(participant)
-      await addDoc(collection(db, 'participants'), cleanParticipant)
+      await addDoc(collection(db, 'applications'), {
+        participantId,
+        programName,
+        companyCode,
+        applicationStatus: 'pending',
+        motivation: form.getFieldValue('motivation'),
+        challenges: form.getFieldValue('challenges'),
+        selectedInterventions,
+        aiEvaluation: aiEvaluation,
+        submittedAt: new Date().toISOString()
+      })
 
-      await addDoc(collection(db, 'participants'), participant)
       message.success('Participant successfully applied!')
 
       // ✅ Update user role
@@ -788,185 +820,6 @@ const ParticipantRegistrationStepForm = () => {
   }
 
   const steps = [
-    {
-      title: 'Business Info',
-      content: (
-        <Card style={{ backgroundColor: '#f0f5ff' }}>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name='beneficiaryName'
-                label='Beneficiary Name'
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name='idNumber'
-                label='ID Number'
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name='sector'
-                label='Sector'
-                rules={[
-                  { required: true, message: 'Please select or enter a sector' }
-                ]}
-              >
-                <Select
-                  showSearch
-                  allowClear
-                  placeholder='Select or type a sector'
-                  optionFilterProp='children'
-                  filterOption={(input, option) =>
-                    (option?.children as string)
-                      .toLowerCase()
-                      .includes(input.toLowerCase())
-                  }
-                >
-                  <Option value='Agriculture'>Agriculture</Option>
-                  <Option value='Mining'>Mining</Option>
-                  <Option value='Manufacturing'>Manufacturing</Option>
-                  <Option value='Construction'>Construction</Option>
-                  <Option value='Utilities'>
-                    Utilities (Electricity, Water, Gas)
-                  </Option>
-                  <Option value='Wholesale and Retail Trade'>
-                    Wholesale and Retail Trade
-                  </Option>
-                  <Option value='Transport and Logistics'>
-                    Transport and Logistics
-                  </Option>
-                  <Option value='Information Technology'>
-                    Information Technology
-                  </Option>
-                  <Option value='Finance and Insurance'>
-                    Finance and Insurance
-                  </Option>
-                  <Option value='Real Estate'>Real Estate</Option>
-                  <Option value='Professional and Technical Services'>
-                    Professional and Technical Services
-                  </Option>
-                  <Option value='Education'>Education</Option>
-                  <Option value='Healthcare and Social Assistance'>
-                    Healthcare and Social Assistance
-                  </Option>
-                  <Option value='Tourism and Hospitality'>
-                    Tourism and Hospitality
-                  </Option>
-                  <Option value='Public Administration'>
-                    Public Administration
-                  </Option>
-                  <Option value='Creative and Cultural Industries'>
-                    Creative and Cultural Industries
-                  </Option>
-                  <Option value='Other'>Other</Option>
-                </Select>
-              </Form.Item>
-
-              <Form.Item
-                name='natureOfBusiness'
-                label='Nature of Business'
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name='gender'
-                label='Gender'
-                rules={[{ required: true }]}
-              >
-                <Select>
-                  <Option value='Male'>Male</Option>
-                  <Option value='Female'>Female</Option>
-                </Select>
-              </Form.Item>
-              <Form.Item
-                name='dateOfRegistration'
-                label='Date of Registration'
-                rules={[{ required: true, message: 'Please select a date' }]}
-              >
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-              <Form.Item name='registrationNumber' label='Registration Number'>
-                <Input />
-              </Form.Item>
-              <Form.Item name='yearsOfTrading' label='Years of Trading'>
-                <Input type='number' />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
-      )
-    },
-    {
-      title: 'Business Location',
-      content: (
-        <Card style={{ backgroundColor: '#f6ffed' }}>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name='businessAddress'
-                label='Business Address'
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name='province'
-                label='Province'
-                rules={[{ required: true }]}
-              >
-                <Select>
-                  <Option value='Eastern Cape'>Eastern Cape</Option>
-                  <Option value='Free State'>Free State</Option>
-                  <Option value='Gauteng'>Gauteng</Option>
-                  <Option value='KwaZulu-Natal'>KwaZulu-Natal</Option>
-                  <Option value='Limpopo'>Limpopo</Option>
-                  <Option value='Mpumalanga'>Mpumalanga</Option>
-                  <Option value='Northern Cape'>Northern Cape</Option>
-                  <Option value='North West'>North West</Option>
-                  <Option value='Western Cape'>Western Cape</Option>
-                </Select>
-              </Form.Item>
-              <Form.Item name='city' label='City' rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name='hub'
-                label='Host Community'
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name='postalCode'
-                label='Postal Code'
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name='location'
-                label='Location'
-                rules={[{ required: true }]}
-              >
-                <Select>
-                  <Option value='Urban'>Urban</Option>
-                  <Option value='Rural'>Rural</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
-      )
-    },
     {
       title: 'Motivation',
       content: (
@@ -1014,7 +867,11 @@ const ParticipantRegistrationStepForm = () => {
               <Col span={5}>
                 <Upload
                   beforeUpload={file => handleFileUpload(file, index)}
-                  fileList={doc.file ? [doc.file] : []}
+                  fileList={
+                    doc.file
+                      ? [{ uid: '-1', name: doc.file.name, status: 'done' }]
+                      : []
+                  }
                   onRemove={() => {
                     const updated = [...documentFields]
                     updated[index].file = null
@@ -1028,85 +885,25 @@ const ParticipantRegistrationStepForm = () => {
                 <DatePicker
                   placeholder='Issue Date'
                   style={{ width: '100%' }}
-                  value={documentFields[index].issueDate} // 👈 controlled
+                  value={doc.issueDate}
                   onChange={date => handleDateChange(date, 'issueDate', index)}
                 />
               </Col>
-              <Col span={7}>
-                <DatePicker
-                  placeholder='Expiry Date'
-                  style={{ width: '100%' }}
-                  value={documentFields[index].expiryDate} // 👈 controlled
-                  onChange={date => handleDateChange(date, 'expiryDate', index)}
-                />
-              </Col>
+              {doc.requiresExpiry && (
+                <Col span={7}>
+                  <DatePicker
+                    placeholder='Expiry Date'
+                    style={{ width: '100%' }}
+                    value={doc.expiryDate}
+                    onChange={date =>
+                      handleDateChange(date, 'expiryDate', index)
+                    }
+                  />
+                </Col>
+              )}
             </Row>
           ))}
         </Space>
-      )
-    },
-    {
-      title: 'Employees & Revenue',
-      content: (
-        <Card style={{ backgroundColor: '#e6f7ff' }}>
-          <Title level={4}>Annual Data</Title>
-          {getYearFields().map(year => (
-            <div key={year}>
-              <Title level={5}>{year}</Title>
-              <Form.Item
-                name={`empPerm${year}`}
-                label={`Permanent Employees (${year})`}
-                rules={[{ required: true }]}
-              >
-                <Input type='number' />
-              </Form.Item>
-              <Form.Item
-                name={`empTemp${year}`}
-                label={`Temporary Employees (${year})`}
-                rules={[{ required: true }]}
-              >
-                <Input type='number' />
-              </Form.Item>
-              <Form.Item
-                name={`revenue${year}`}
-                label={`Revenue (${year})`}
-                rules={[{ required: true }]}
-              >
-                <Input prefix='R' type='number' />
-              </Form.Item>
-            </div>
-          ))}
-
-          <Divider />
-
-          <Title level={4}>Monthly Data</Title>
-          {getLast3Months().map(month => (
-            <div key={month}>
-              <Title level={5}>{month}</Title>
-              <Form.Item
-                name={`empPerm${month}`}
-                label={`Permanent Employees (${month})`}
-                rules={[{ required: true }]}
-              >
-                <Input type='number' />
-              </Form.Item>
-              <Form.Item
-                name={`empTemp${month}`}
-                label={`Temporary Employees (${month})`}
-                rules={[{ required: true }]}
-              >
-                <Input type='number' />
-              </Form.Item>
-              <Form.Item
-                name={`revenue${month}`}
-                label={`Revenue (${month})`}
-                rules={[{ required: true }]}
-              >
-                <Input prefix='R' type='number' />
-              </Form.Item>
-            </div>
-          ))}
-        </Card>
       )
     },
     {
@@ -1116,7 +913,7 @@ const ParticipantRegistrationStepForm = () => {
           <Title>Pick Your Required Interventions</Title>
           <Collapse>
             {interventionGroups.map(group => (
-              <Collapse.Panel header={group.area} key={group.id}>
+              <Collapse.Panel header={group.area} key={group.area}>
                 <Checkbox.Group
                   value={interventionSelections[group.area] || []}
                   onChange={val => {
@@ -1197,7 +994,7 @@ const ParticipantRegistrationStepForm = () => {
 
       <Spin spinning={uploading} tip='Submitting...'>
         <Card style={{ padding: 24 }}>
-          <Title level={3}>Participant Stepwise Registration</Title>
+          <Title level={3}>Program Stepwise Application</Title>
           <Steps current={current} style={{ marginBottom: 24 }}>
             {steps.map(s => (
               <Step key={s.title} title={s.title} />

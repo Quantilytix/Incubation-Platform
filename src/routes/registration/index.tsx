@@ -47,13 +47,15 @@ export const RegisterPage: React.FC = () => {
       const user = userCred.user
 
       // 2. Add user info to Firestore
+      const assignedRole = role === 'sme' ? 'incubatee' : role
+
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
         email: user.email,
         name: values.name || '',
         createdAt: new Date().toISOString(),
         companyCode: code,
-        role: role // ✅ capture the user type
+        role: assignedRole
       })
 
       // 3. Notify + Redirect
@@ -61,7 +63,11 @@ export const RegisterPage: React.FC = () => {
       setRedirecting(true)
 
       setTimeout(() => {
-        navigate(`/registration/onboarding/${user.uid}`)
+        if (assignedRole === 'incubatee') {
+          navigate('/incubatee/tracker')
+        } else {
+          navigate(`/${role}`)
+        }
       }, 2000)
     } catch (error: any) {
       message.error(error.message)
@@ -244,22 +250,22 @@ export const RegisterPage: React.FC = () => {
       {/* Animations */}
       <style>
         {`
-              @keyframes fadeIn {
-                from { opacity: 0; }
-                to { opacity: 1; }
-              }
+                  @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                  }
 
-              @keyframes fadeInUp {
-                from {
-                  opacity: 0;
-                  transform: translateY(20px);
-                }
-                to {
-                  opacity: 1;
-                  transform: translateY(0);
-                }
-              }
-            `}
+                  @keyframes fadeInUp {
+                    from {
+                      opacity: 0;
+                      transform: translateY(20px);
+                    }
+                    to {
+                      opacity: 1;
+                      transform: translateY(0);
+                    }
+                  }
+                `}
       </style>
     </Spin>
   )
