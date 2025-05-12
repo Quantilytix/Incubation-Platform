@@ -32,7 +32,7 @@ import { useNavigate } from 'react-router-dom'
 import { db } from '@/firebase'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import dayjs from 'dayjs'
-
+import { auth } from '@/firebase'
 const { Title, Paragraph } = Typography
 const { Header, Content } = Layout
 const { TabPane } = Tabs
@@ -57,9 +57,16 @@ const SMEDashboard = () => {
   ).reverse()
 
   // Last 2 years
-  const last2Years = Array.from({ length: 2 }, (_, i) => `${currentYear - i}`)
+  const last2Years = Array.from({ length: 2 }, (_, i) => `${currentYear - i}`)useEffect(() => {
+  const unsubscribe = auth.onAuthStateChanged(user => {
+    if (!user) {
+      message.warning('You are not signed in')
+    }
+  })
 
-  const fetchPrograms = async () => {
+  return () => unsubscribe()
+}, [])
+const fetchPrograms = async () => {
     setLoading(true)
     try {
       const ref = collection(db, 'programs')
