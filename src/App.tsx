@@ -126,13 +126,13 @@ import InterventionDatabaseView from './routes/interventions'
 import ProjectAdminReports from './routes/projectadmin/reports'
 import FinancialReportsInterface from './routes/incubatee/financials'
 import ApplicationTracker from './routes/incubatee/tracker'
-import GrowthPlanDocument from './routes/registration/onboarding/ParticipantGrowthPlanDocument'
 import LandingPage from './routes/landing'
 import RoleDetailPage from './routes/landing/role'
 import SMEDashboard from './routes/incubatee/sme'
 import IncubateeLayout from './components/IncubateeLayout'
 import IncubateeAnalytics from './routes/incubatee/analytics'
 import ProfileForm from './routes/incubatee/profile'
+import GrowthPlanPage from './routes/investor/diagnostic'
 
 const queryClient = new QueryClient()
 
@@ -202,6 +202,10 @@ const App = () => {
                       <Route
                         path='interventions'
                         element={<InterventionsTrackingView />}
+                      />
+                      <Route
+                        path='/incubatee/diagnostic'
+                        element={<GrowthPlanPage />}
                       />
                       <Route
                         path='projects'
@@ -341,10 +345,6 @@ const App = () => {
                     <Route
                       path='/registration/onboarding'
                       element={<ParticipantFormalRegistration />}
-                    />
-                    <Route
-                      path='/registration/growth-plan'
-                      element={<GrowthPlanDocument />}
                     />
                   </Route>
 
