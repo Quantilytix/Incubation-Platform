@@ -19,6 +19,7 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { db } from '@/firebase'
 import dayjs from 'dayjs'
 import { Helmet } from 'react-helmet'
+import { SHA256 } from 'crypto-js'
 
 const { Text } = Typography
 const { Option } = Select
@@ -159,6 +160,26 @@ const InterventionDatabaseView = () => {
       )
     })
   }, [])
+
+  const getGrowthPlanIntervention = (record: any) => {
+    const baseString = `${record.participantId}|${record.beneficiaryName || ''}`
+    const hash = SHA256(baseString).toString().substring(0, 16)
+
+    return {
+      id: `growthplan-${record.participantId}`,
+      interventionTitle: 'Growth Plan Assessment',
+      interventionKey: hash,
+      confirmedAt: record.interventions?.[0]?.confirmedAt || new Date(),
+      consultantIds: [],
+      timeSpent: [],
+      resources: [
+        {
+          label: 'View Growth Plan',
+          link: `/growth-plan/${record.participantId}`
+        }
+      ]
+    }
+  }
 
   const handleFilterChange = (key: string, value: string) => {
     const newFilters = { ...filters, [key]: value }
@@ -302,7 +323,10 @@ const InterventionDatabaseView = () => {
             <Divider />
 
             <ul>
-              {selectedView?.interventions.map((item, index) => (
+              {[
+                ...selectedView.interventions,
+                getGrowthPlanIntervention(selectedView)
+              ].map((item, index) => (
                 <li key={index} style={{ marginBottom: 12 }}>
                   <Space direction='vertical'>
                     <Text strong>{item.interventionTitle}</Text>
