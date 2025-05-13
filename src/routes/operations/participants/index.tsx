@@ -72,35 +72,65 @@ const OperationsParticipantsManagement: React.FC = () => {
     const fetchParticipants = async () => {
       setLoading(true)
       try {
-        const snapshot = await getDocs(collection(db, 'participants'))
-        const participantsList = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
+        const applicationSnap = await getDocs(collection(db, 'applications'))
+        const participantSnap = await getDocs(collection(db, 'participants'))
 
-        let totalRequired = 0
-        let totalCompleted = 0
-        let totalNeeding = 0
+        // Build participant map by doc.id
+        const participantMap = new Map(
+          participantSnap.docs.map(doc => [doc.id, doc.data()])
+        )
 
-        participantsList.forEach((participant: any) => {
-          const required = participant.interventions?.required || []
-          const completed = participant.interventions?.completed || []
-          const assigned = participant.interventions?.assigned || []
+        // Now map over applications, not participants
+        const participantsList = applicationSnap.docs.map(doc => {
+          const app = doc.data()
+          const participantId = app.participantId
+          const participant = participantMap.get(participantId) || {}
 
-          totalRequired += required.length
-          totalCompleted += completed.length
+          const interventions = app.interventions || {}
+          const required = interventions.required || []
+          const completed = interventions.completed || []
+          const assigned = interventions.assigned || []
 
-          if (assigned.length === 0) {
-            totalNeeding += 1
+          console.log(`[${participant.beneficiaryName || 'UNKNOWN'}]`, {
+            required,
+            completed,
+            assigned
+          })
+
+          const progress = calculateProgress(required.length, completed.length)
+
+          return {
+            id: participantId, // Use participantId as row key
+            ...participant,
+            interventions: {
+              required,
+              completed,
+              assigned,
+              participationRate: interventions.participationRate || 0
+            },
+            assignedCount: assigned.length,
+            completedCount: completed.length,
+            progress,
+            stage: app.stage || participant.stage || 'N/A',
+            status: app.status || participant.status || 'inactive'
           }
         })
 
+        // Update state
         setParticipants(participantsList)
         setMetrics({
           totalParticipants: participantsList.length,
-          totalRequiredInterventions: totalRequired,
-          totalCompletedInterventions: totalCompleted,
-          totalNeedingAssignment: totalNeeding
+          totalRequiredInterventions: participantsList.reduce(
+            (a, p) => a + p.interventions.required.length,
+            0
+          ),
+          totalCompletedInterventions: participantsList.reduce(
+            (a, p) => a + p.interventions.completed.length,
+            0
+          ),
+          totalNeedingAssignment: participantsList.filter(
+            p => p.interventions.assigned.length === 0
+          ).length
         })
       } catch (error) {
         console.error('Error fetching participants:', error)
@@ -219,18 +249,13 @@ const OperationsParticipantsManagement: React.FC = () => {
     {
       title: 'Progress',
       key: 'progress',
-      render: (record: any) => {
-        const required = record.interventions?.required?.length ?? 0
-        const completed = record.interventions?.completed?.length ?? 0
-        const progress = calculateProgress(required, completed)
-        return (
-          <Progress
-            percent={progress}
-            size='small'
-            status={progress === 100 ? 'success' : 'active'}
-          />
-        )
-      }
+      render: (record: any) => (
+        <Progress
+          percent={record.progress}
+          size='small'
+          status={record.progress === 100 ? 'success' : 'active'}
+        />
+      )
     },
     {
       title: 'Participation Rate',

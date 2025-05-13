@@ -55,7 +55,7 @@ const ProfileForm: React.FC = () => {
 
       const defaultValues = {
         email: fallbackEmail,
-        ownerName: fallbackName
+        participantName: fallbackName
       }
 
       const q = query(
@@ -227,7 +227,7 @@ const ProfileForm: React.FC = () => {
         <Row gutter={16}>
           <Col span={8}>
             <Form.Item
-              name='ownerName'
+              name='participantName'
               label='Owner Name'
               rules={[{ required: true }]}
             >
@@ -275,7 +275,7 @@ const ProfileForm: React.FC = () => {
         {/* Company Info */}
         <Divider orientation='left'>Company Info</Divider>
         <Row gutter={16}>
-          <Col span={8}>
+          <Col span={12}>
             <Form.Item
               name='beneficiaryName'
               label='Company Name'
@@ -284,7 +284,7 @@ const ProfileForm: React.FC = () => {
               <Input />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col span={12}>
             <Form.Item
               name='sector'
               label='Sector'
@@ -299,25 +299,16 @@ const ProfileForm: React.FC = () => {
               </Select>
             </Form.Item>
           </Col>
-          <Col span={8}>
+        </Row>
+        <Row>
+          <Col span={24}>
             <Form.Item name='natureOfBusiness' label='Nature of Business'>
-              <Input />
+              <Input.TextArea />
             </Form.Item>
           </Col>
         </Row>
-
         <Row gutter={16}>
-          <Col span={8}>
-            <Form.Item name='blackOwnedPercent' label='Black-Owned %'>
-              <InputNumber
-                addonAfter='%'
-                min={0}
-                max={100}
-                style={{ width: '100%' }}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
+          <Col span={12}>
             <Form.Item name='beeLevel' label='BEEE Level'>
               <Select>
                 {[1, 2, 3, 4, 5, 6, 7, 8].map(level => (
@@ -328,9 +319,36 @@ const ProfileForm: React.FC = () => {
               </Select>
             </Form.Item>
           </Col>
-          <Col span={8}>
-            <Form.Item name='registrationNumber' label='Registration Number'>
-              <Input />
+          <Col span={12}>
+            <Form.Item name='youthOwnedPercent' label='Youth-Owned %'>
+              <InputNumber
+                addonAfter='%'
+                min={0}
+                max={100}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item name='femaleOwnedPercent' label='Female-Owned %'>
+              <InputNumber
+                addonAfter='%'
+                min={0}
+                max={100}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item name='blackOwnedPercent' label='Black-Owned %'>
+              <InputNumber
+                addonAfter='%'
+                min={0}
+                max={100}
+                style={{ width: '100%' }}
+              />
             </Form.Item>
           </Col>
         </Row>
@@ -344,6 +362,11 @@ const ProfileForm: React.FC = () => {
           <Col span={8}>
             <Form.Item name='yearsOfTrading' label='Years of Trading'>
               <InputNumber min={0} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item name='registrationNumber' label='Registration Number'>
+              <Input />
             </Form.Item>
           </Col>
         </Row>

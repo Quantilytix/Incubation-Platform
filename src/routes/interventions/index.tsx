@@ -27,7 +27,9 @@ const InterventionDatabaseView = () => {
   const [records, setRecords] = useState<any[]>([])
   const [filtered, setFiltered] = useState<any[]>([])
   const [companyCode, setCompanyCode] = useState<string | null>(null)
-  const [programOptions, setProgramOptions] = useState<string[]>([])
+  const [programOptions, setProgramOptions] = useState<
+    { id: string; name: string }[]
+  >([])
   const [filters, setFilters] = useState({
     programId: 'all',
     type: 'all',
@@ -93,7 +95,7 @@ const InterventionDatabaseView = () => {
       const programsSnap = await getDocs(collection(db, 'programs'))
       const prMap: any = {}
       programsSnap.forEach(doc => {
-        prMap[doc.id] = doc.data().programName
+        prMap[doc.id] = doc.data().name
       })
       setProgramMap(prMap)
 
@@ -113,9 +115,10 @@ const InterventionDatabaseView = () => {
         const data = doc.data()
 
         const key = `${data.programId}_${data.participantId}`
+
         if (!grouped.has(key)) {
           grouped.set(key, {
-            programId: data.programId,
+            programId: data.programId, // ✅ correct
             participantId: data.participantId,
             beneficiaryName: data.beneficiaryName,
             province: data.province,

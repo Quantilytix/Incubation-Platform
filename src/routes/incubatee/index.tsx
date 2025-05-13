@@ -172,7 +172,6 @@ export const IncubateeDashboard: React.FC = () => {
         setParticipantId(pid)
 
         // Revenue & Headcount
-
         const monthLabels = [
           'Jan',
           'Feb',
@@ -182,43 +181,54 @@ export const IncubateeDashboard: React.FC = () => {
           'Jun',
           'Jul',
           'Aug',
-          'Sept',
+          'Sep',
           'Oct',
           'Nov',
           'Dec'
         ]
-        const fallbackRevenue = (month: string) =>
-          participant[`revenue_${month}`] ?? 0
-
-        const fallbackPerm = (month: string) =>
-          participant[`permHeadcount_${month}`] ?? 0
-
-        const fallbackTemp = (month: string) =>
-          participant[`tempHeadcount_${month}`] ?? 0
 
         const revMonthly = participant.revenueHistory?.monthly || {}
         const headMonthly = participant.headcountHistory?.monthly || {}
 
         setRevenueData(
-          monthLabels.map(month => revMonthly[month] ?? fallbackRevenue(month))
+          monthLabels.map(month => {
+            // Prefer revenueHistory.monthly[month], fallback to flat key
+            const monthly = revMonthly[month]
+            const flat = participant[`revenue_${month}`]
+            return typeof monthly === 'number'
+              ? monthly
+              : typeof flat === 'number'
+              ? flat
+              : 0
+          })
         )
 
-        setAvgRevenueData(
-          monthLabels.map(
-            month => (revMonthly[month] ?? fallbackRevenue(month)) * 0.85
-          )
+        setAvgRevenueData(prev =>
+          monthLabels.map((_, i) => revenueData[i] * 0.85)
         )
 
         setPermHeadcount(
-          monthLabels.map(
-            month => headMonthly[month]?.permanent ?? fallbackPerm(month)
-          )
+          monthLabels.map(month => {
+            const monthly = headMonthly[month]?.permanent
+            const flat = participant[`permHeadcount_${month}`]
+            return typeof monthly === 'number'
+              ? monthly
+              : typeof flat === 'number'
+              ? flat
+              : 0
+          })
         )
 
         setTempHeadcount(
-          monthLabels.map(
-            month => headMonthly[month]?.temporary ?? fallbackTemp(month)
-          )
+          monthLabels.map(month => {
+            const monthly = headMonthly[month]?.temporary
+            const flat = participant[`tempHeadcount_${month}`]
+            return typeof monthly === 'number'
+              ? monthly
+              : typeof flat === 'number'
+              ? flat
+              : 0
+          })
         )
 
         setParticipation(participant.interventions?.participationRate || 0)

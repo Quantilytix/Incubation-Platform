@@ -38,6 +38,7 @@ import {
 } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { db } from '@/firebase'
+import { v4 as uuidv4 } from 'uuid'
 import dayjs from 'dayjs'
 
 const { Title, Text } = Typography
@@ -349,6 +350,7 @@ const InterventionsTrackingView: React.FC = () => {
     if (!selectedIntervention) return
 
     try {
+      // Update assigned intervention
       await updateDoc(
         doc(db, 'assignedInterventions', selectedIntervention.id),
         {
@@ -356,46 +358,42 @@ const InterventionsTrackingView: React.FC = () => {
           feedback: {
             rating: values.rating,
             comments: values.feedback
-          }
+          },
+          updatedAt: new Date()
         }
       )
-      try {
-        await addDoc(collection(db, 'notifications'), {
-          participantId: selectedIntervention.participantId,
-          consultantId: selectedIntervention.consultantId,
-          interventionId: selectedIntervention.id,
-          interventionTitle: selectedIntervention.interventionTitle,
-          type: 'intervention-confirmed',
-          recipientRoles: ['consultant', 'projectadmin'],
-          message: {
-            consultant: `Beneficiary ${selectedIntervention.beneficiaryName} confirmed the intervention.`,
-            projectadmin: `Intervention "${selectedIntervention.interventionTitle}" has been confirmed.`,
-            incubatee: `You confirmed the completion of: ${selectedIntervention.interventionTitle}.`
-          },
-          createdAt: new Date(),
-          readBy: {}
-        })
-      } catch (error) {}
 
-      setAssignedInterventions(prev =>
-        prev.map(item =>
-          item.id === selectedIntervention.id
-            ? {
-                ...item,
-                userCompletionStatus: 'confirmed',
-                feedback: {
-                  rating: values.rating,
-                  comments: values.feedback
-                }
-              }
-            : item
-        )
-      )
+      // Prepare full intervention database record
+      const fullEntry = await buildInterventionDatabaseEntry({
+        ...selectedIntervention,
+        feedback: {
+          rating: values.rating,
+          comments: values.feedback
+        }
+      })
+
+      await addDoc(collection(db, 'interventionsDatabase'), fullEntry)
+
+      await addDoc(collection(db, 'notifications'), {
+        participantId: selectedIntervention.participantId,
+        consultantId: selectedIntervention.consultantId,
+        interventionId: selectedIntervention.id,
+        interventionTitle: selectedIntervention.interventionTitle,
+        type: 'intervention-confirmed',
+        recipientRoles: ['consultant', 'projectadmin'],
+        message: {
+          consultant: `Beneficiary ${selectedIntervention.beneficiaryName} confirmed the intervention.`,
+          projectadmin: `Intervention "${selectedIntervention.interventionTitle}" has been confirmed.`,
+          incubatee: `You confirmed the completion of: ${selectedIntervention.interventionTitle}.`
+        },
+        createdAt: new Date(),
+        readBy: {}
+      })
 
       setIsConfirmModalVisible(false)
       notification.success({
         message: 'Success',
-        description: 'Intervention marked as completed.'
+        description: 'Intervention marked as completed and saved.'
       })
     } catch (error) {
       console.error('Error confirming completion:', error)
@@ -405,6 +403,7 @@ const InterventionsTrackingView: React.FC = () => {
       })
     }
   }
+
   const handleRejectCompletion = async (
     intervention: AssignedIntervention,
     reason: string
@@ -463,6 +462,44 @@ const InterventionsTrackingView: React.FC = () => {
       })
     }
   }
+
+  const buildInterventionDatabaseEntry = async (
+    intervention: AssignedIntervention
+  ) => {
+    const participantSnap = await getDoc(
+      doc(db, 'participants', intervention.participantId)
+    )
+    const participant = participantSnap.exists() ? participantSnap.data() : {}
+
+    return {
+      interventionId: intervention.interventionId,
+      interventionTitle: intervention.interventionTitle,
+      areaOfSupport: intervention.areaOfSupport,
+      targetType: intervention.targetType,
+      targetMetric: intervention.targetMetric,
+      targetValue: intervention.targetValue,
+      interventionType: intervention.type,
+      timeSpent: [intervention.timeSpent || 0],
+      consultantIds: [intervention.consultantId],
+      feedback: intervention.feedback,
+      participantId: intervention.participantId,
+      beneficiaryName:
+        intervention.beneficiaryName || participant.beneficiaryName || '',
+      programId: participant.programId || '',
+      companyCode: participant.companyCode || '',
+      hub: participant.hub || '',
+      province: participant.province || '',
+      confirmedAt: new Date(),
+      createdAt: new Date(intervention.createdAt || Date.now()),
+      updatedAt: new Date(),
+      resources: intervention.resources || [],
+      quarter: getQuarter(new Date()),
+      interventionKey: uuidv4()
+    }
+  }
+
+  // Utility to get the current quarter
+  const getQuarter = (date: Date) => `Q${Math.floor(date.getMonth() / 3) + 1}`
 
   const filteredInterventions = assignedInterventions.filter(item => {
     if (filters.status === 'all') return true
