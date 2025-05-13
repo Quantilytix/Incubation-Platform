@@ -132,7 +132,7 @@ import SMEDashboard from './routes/incubatee/sme'
 import IncubateeLayout from './components/IncubateeLayout'
 import IncubateeAnalytics from './routes/incubatee/analytics'
 import ProfileForm from './routes/incubatee/profile'
-import GrowthPlanPage from './routes/investor/diagnostic'
+import GrowthPlanPage from './routes/incubatee/diagnostic'
 
 const queryClient = new QueryClient()
 
