@@ -159,6 +159,7 @@ const SMEDashboard = () => {
       const values = await applicationForm.validateFields()
 
       const query = new URLSearchParams({
+        id: activeProgram.id,
         code: activeProgram.companyCode,
         program: activeProgram.name
       }).toString()

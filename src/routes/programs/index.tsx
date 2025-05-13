@@ -128,7 +128,17 @@ const ProgramManager: React.FC = () => {
         assignedAdmin: values.assignedAdmin || null
       }
 
-      await addDoc(collection(db, 'programs'), payload)
+      const docRef = await addDoc(collection(db, 'programs'), {
+        ...payload,
+        cohortYear:
+          values.cohortYear || dayjs(values.startDate).year() || dayjs().year(), // fallback
+        description: values.description || ''
+      })
+
+      // Update to include the generated ID inside the document itself
+      await updateDoc(docRef, {
+        id: docRef.id
+      })
 
       if (values.assignedAdmin) {
         const selectedAdmin = consultantOptions.find(
@@ -494,6 +504,16 @@ const ProgramManager: React.FC = () => {
               <Form.Item name='status' label='Status'>
                 <Input placeholder='e.g., Active, Completed, Upcoming' />
               </Form.Item>
+              <Form.Item
+                name='cohortYear'
+                label='Cohort Year'
+                rules={[
+                  { required: true, message: 'Please input the cohort year' }
+                ]}
+              >
+                <Input placeholder='e.g., 2025' />
+              </Form.Item>
+
               <Form.Item name='startDate' label='Start Date'>
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
@@ -556,6 +576,9 @@ const ProgramManager: React.FC = () => {
               <Select.Option value='Completed'>Completed</Select.Option>
               <Select.Option value='Upcoming'>Upcoming</Select.Option>
             </Select>
+          </Form.Item>
+          <Form.Item name='cohortYear' label='Cohort Year'>
+            <Input />
           </Form.Item>
           <Form.Item name='startDate' label='Start Date'>
             <DatePicker style={{ width: '100%' }} />

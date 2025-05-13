@@ -96,7 +96,8 @@ const ParticipantRegistrationStepForm = () => {
   >({})
   const [participantData, setParticipantData] = useState<any>({})
   const [searchParams] = useSearchParams()
-  const companyCode = searchParams.get('code')
+  const companyCode = searchParams.get('id')
+  const programId = searchParams.get('program')
   const programName = searchParams.get('program')
   const [participantId, setParticipantId] = useState<string | null>(null)
 

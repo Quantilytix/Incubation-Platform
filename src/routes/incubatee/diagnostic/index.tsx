@@ -1,20 +1,33 @@
 import React, { useEffect, useState } from 'react'
 import {
+  Alert,
   Card,
+  Collapse,
+  Checkbox,
   Typography,
   Spin,
   Table,
   Divider,
   message,
   Button,
-  Modal
+  Modal,
+  notification
 } from 'antd'
-import { collection, query, where, getDocs } from 'firebase/firestore'
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+  updateDoc,
+  doc
+} from 'firebase/firestore'
 import { auth, db } from '@/firebase'
 import { SHA256 } from 'crypto-js'
 import dayjs from 'dayjs'
 
 const { Title, Paragraph, Text } = Typography
+const { Panel } = Collapse
 
 const GrowthPlanPage: React.FC = () => {
   const [applicationData, setApplicationData] = useState<any>(null)
@@ -25,6 +38,8 @@ const GrowthPlanPage: React.FC = () => {
   const [allInterventions, setAllInterventions] = useState<any[]>([])
   const [selectedAi, setSelectedAi] = useState<any[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedInModal, setSelectedInModal] = useState<any[]>([])
+  const [interventionsConfirmed, setInterventionsConfirmed] = useState(false)
 
   function parseAiRawResponse (raw: string): any {
     try {
@@ -37,19 +52,6 @@ const GrowthPlanPage: React.FC = () => {
       console.warn('Failed to parse AI response:', e)
       return null
     }
-  }
-
-  const getAvailableYears = () => {
-    const keys1 = Object.keys(data?.revenueHistory?.yearly || {})
-    const keys2 = Object.keys(data || {}).filter(k => k.startsWith('revenue_'))
-    const allYears = new Set([
-      ...keys1,
-      ...keys2.map(k => k.replace('revenue_', ''))
-    ])
-    return Array.from(allYears)
-      .map(y => parseInt(y))
-      .filter(Boolean)
-      .sort()
   }
 
   useEffect(() => {
@@ -123,30 +125,33 @@ const GrowthPlanPage: React.FC = () => {
   const totalSelected = manualInterventions.length + selectedAi.length
   const canAddMore = totalSelected < 8
 
-  // Compute the last 3 months dynamically
-  const getLastThreeMonths = () => {
-    const now = dayjs()
-    return [...Array(3)]
-      .map((_, i) => now.subtract(i, 'month').format('MMM')) // Jan, Feb, etc.
-      .reverse()
-  }
-
-  // Replace your getMonthlyData
   const getMonthlyData = () => {
-    const recentMonths = getLastThreeMonths()
+    const now = dayjs()
+    const recentMonths = [...Array(3)]
+      .map(
+        (_, i) => now.subtract(i, 'month').format('MMMM') // 'Jan', 'Feb', etc.
+      )
+      .reverse()
 
     return recentMonths.map(monthKey => {
+      const lower = monthKey.toLowerCase() // e.g. 'may'
+
       const rev =
         participantData?.revenueHistory?.monthly?.[monthKey] ??
         participantData?.[`revenue_${monthKey}`] ??
+        participantData?.[`revenue_${lower}`] ??
         0
+
       const perm =
         participantData?.headcountHistory?.monthly?.[monthKey]?.permanent ??
         participantData?.[`permHeadcount_${monthKey}`] ??
+        participantData?.[`permHeadcount_${lower}`] ??
         0
+
       const temp =
         participantData?.headcountHistory?.monthly?.[monthKey]?.temporary ??
         participantData?.[`tempHeadcount_${monthKey}`] ??
+        participantData?.[`tempHeadcount_${lower}`] ??
         0
 
       return {
@@ -158,7 +163,6 @@ const GrowthPlanPage: React.FC = () => {
     })
   }
 
-  // Replace getAnnualData with this dynamic extractor
   const getAnnualData = () => {
     const keys1 = Object.keys(participantData?.revenueHistory?.yearly || {})
     const keys2 = Object.keys(participantData || {}).filter(k =>
@@ -203,15 +207,115 @@ const GrowthPlanPage: React.FC = () => {
       .toString()
       .substring(0, 16)
   }
+  const handleConfirmGrowthPlan = async () => {
+    try {
+      const required = manualInterventions
+      const growthPlanUrl = applicationData?.growthPlanDocUrl
+      if (!growthPlanUrl) {
+        notification.error({
+          message: 'Missing File URL',
+          description:
+            'The Diagnostic Needs Plan file URL is not available in the application data.'
+        })
+        return
+      }
+
+      const completed = [
+        ...(applicationData?.interventions?.completed || []),
+        {
+          id: 'diagnostic-plan',
+          title: 'Diagnostic Needs Assessment Plan Development',
+          area: 'Planning',
+          confirmedAt: new Date(),
+          resources: [
+            {
+              type: 'document',
+              label: 'Diagnostic Needs Plan PDF',
+              link: growthPlanUrl
+            }
+          ]
+        }
+      ]
+
+      // Find application doc ID
+      const appSnap = await getDocs(
+        query(
+          collection(db, 'applications'),
+          where('email', '==', auth.currentUser?.email)
+        )
+      )
+
+      const appDocId = appSnap.docs[0].id
+
+      // Update application document
+      await updateDoc(doc(db, 'applications', appDocId), {
+        'interventions.required': required,
+        'interventions.completed': completed,
+        growthPlanConfirmed: true
+      })
+
+      // Add to interventionsDatabase
+      await addDoc(collection(db, 'interventionsDatabase'), {
+        programId: applicationData.programId,
+        companyCode: applicationData.companyCode,
+        interventionId: 'diagnostic-plan',
+        interventionTitle: 'Diagnostic Needs Assessment Plan Development',
+        areaOfSupport: 'Planning',
+        participantId: participantData.participantId,
+        beneficiaryName: participantData.beneficiaryName,
+        hub: participantData.hub,
+        province: participantData.province,
+        quarter: 'Q' + (Math.floor(new Date().getMonth() / 3) + 1),
+        consultantIds: [],
+        timeSpent: [],
+        interventionType: 'singular',
+        targetMetric: '',
+        targetType: 'custom',
+        targetValue: 0,
+        feedback: null,
+        confirmedAt: new Date(),
+        createdAt: participantData.createdAt || new Date(),
+        updatedAt: new Date(),
+        interventionKey: SHA256(participantData.email + 'diagnostic-plan')
+          .toString()
+          .substring(0, 12),
+        resources: [
+          {
+            type: 'document',
+            label: 'Diagnostic Needs Plan PDF',
+            link: applicationData.growthPlanDocUrl
+          }
+        ]
+      })
+
+      notification.success({
+        message: 'Diagnostic Needs Plan Confirmed',
+        description:
+          'Your selections and completed diagnostic needs plan have been saved.'
+      })
+
+      setInterventionsConfirmed(true)
+    } catch (err) {
+      console.error('Confirmation failed', err)
+      notification.error({
+        message: 'Error',
+        description:
+          'Something went wrong while confirming your diagnostic needs plan.'
+      })
+    }
+  }
 
   if (loading) return <Spin tip='Loading...' style={{ marginTop: 64 }} />
   if (!applicationData || !participantData)
-    return <Paragraph>No growth plan data available.</Paragraph>
+    return (
+      <Paragraph>No diagnostic needs assessment plan data available.</Paragraph>
+    )
 
   return (
     <Card style={{ padding: 24 }}>
       <Title level={3}>
-        {participantData.beneficiaryName || 'Participant'} Diagnostic Assessment
+        {participantData.beneficiaryName || 'Participant'} Diagnostic Needs
+        Assessment
       </Title>
 
       <Divider>1. Business Overview</Divider>
@@ -287,7 +391,7 @@ const GrowthPlanPage: React.FC = () => {
 
       <Divider>4. Compliance</Divider>
       <Paragraph>
-        <Text strong>Compliance Score:</Text> {participantData.complianceRate}%
+        <Text strong>Compliance Score:</Text> {applicationData.complianceRate}%
       </Paragraph>
 
       <Divider>5. Interventions</Divider>
@@ -300,18 +404,19 @@ const GrowthPlanPage: React.FC = () => {
           { title: 'Area', dataIndex: 'area' },
           {
             title: 'Action',
-            render: (_, record) => (
-              <Button
-                danger
-                onClick={() =>
-                  setManualInterventions(prev =>
-                    prev.filter(i => i.id !== record.id)
-                  )
-                }
-              >
-                Remove
-              </Button>
-            )
+            render: (_, record) =>
+              !interventionsConfirmed && (
+                <Button
+                  danger
+                  onClick={() =>
+                    setManualInterventions(prev =>
+                      prev.filter(i => i.id !== record.id)
+                    )
+                  }
+                >
+                  Remove
+                </Button>
+              )
           }
         ]}
         rowKey='id'
@@ -329,36 +434,93 @@ const GrowthPlanPage: React.FC = () => {
         </Paragraph>
       )}
 
-      <Button type='primary' onClick={() => setIsModalOpen(true)}>
-        + Add New Intervention
-      </Button>
+      {!interventionsConfirmed && (
+        <Button type='primary' onClick={() => setIsModalOpen(true)}>
+          + Add New Intervention
+        </Button>
+      )}
+
       <Modal
         title='Select Interventions'
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
-        onOk={() => setIsModalOpen(false)}
+        onOk={() => {
+          setManualInterventions(prev => [
+            ...prev,
+            ...selectedInModal
+              .filter(
+                newInt => !prev.some(existing => existing.id === newInt.id)
+              )
+              .map(item => ({
+                id: item.id,
+                title: item.interventionTitle || item.title || 'Untitled',
+                area: item.areaOfSupport || item.area || 'Unknown'
+              }))
+          ])
+          setSelectedInModal([])
+          setIsModalOpen(false)
+        }}
+        okText='Add Selected'
+        okButtonProps={{ disabled: selectedInModal.length === 0 }}
       >
-        <Table
-          size='small'
-          rowSelection={{
-            type: 'checkbox',
-            onChange: (selectedRowKeys, selectedRows) => {
-              setManualInterventions(prev => [
-                ...prev,
-                ...selectedRows.filter(
-                  newInt => !prev.some(existing => existing.id === newInt.id)
-                )
-              ])
-            }
-          }}
-          dataSource={allInterventions}
-          columns={[
-            { title: 'Title', dataIndex: 'title' },
-            { title: 'Area', dataIndex: 'area' }
-          ]}
-          rowKey='id'
-          pagination={false}
-        />
+        <Paragraph>
+          <Text strong>Remaining:</Text>{' '}
+          {8 - totalSelected - selectedInModal.length} interventions
+        </Paragraph>
+
+        {totalSelected + selectedInModal.length >= 8 && (
+          <Alert
+            type='warning'
+            showIcon
+            message='You have reached the maximum allowed interventions (8). Remove one before adding more.'
+            style={{ marginBottom: 12 }}
+          />
+        )}
+
+        <Collapse accordion>
+          {Object.entries(
+            allInterventions.reduce((acc, intv) => {
+              const key = intv.areaOfSupport || 'Other'
+              if (!acc[key]) acc[key] = []
+              acc[key].push(intv)
+              return acc
+            }, {} as Record<string, any[]>)
+          ).map(([area, interventions]) => (
+            <Panel header={area} key={area}>
+              <Checkbox.Group
+                style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+                value={selectedInModal.map(i => i.id)}
+                onChange={(checked: any[]) => {
+                  const newSelection = interventions.filter(i =>
+                    checked.includes(i.id)
+                  )
+
+                  if (totalSelected + newSelection.length > 8) {
+                    message.warning(
+                      'You can only select up to 8 interventions.'
+                    )
+                    return
+                  }
+
+                  setSelectedInModal(newSelection)
+                }}
+              >
+                {interventions.map(intv => (
+                  <Checkbox
+                    key={intv.id}
+                    value={intv.id}
+                    disabled={
+                      !selectedInModal.some(sel => sel.id === intv.id) &&
+                      totalSelected + selectedInModal.length >= 8
+                    }
+                  >
+                    {intv.interventionTitle}
+                  </Checkbox>
+                ))}
+              </Checkbox.Group>
+            </Panel>
+          ))}
+        </Collapse>
       </Modal>
 
       <Divider>6. AI Recommended Interventions</Divider>
@@ -371,19 +533,20 @@ const GrowthPlanPage: React.FC = () => {
           { title: 'Area', dataIndex: 'area' },
           {
             title: 'Action',
-            render: (_, record) => (
-              <Button
-                type='primary'
-                onClick={() => {
-                  if (!selectedAi.some(r => r.id === record.id)) {
-                    setSelectedAi(prev => [...prev, record])
-                  }
-                }}
-                disabled={selectedAi.some(r => r.id === record.id)}
-              >
-                Confirm
-              </Button>
-            )
+            render: (_, record) =>
+              !interventionsConfirmed && (
+                <Button
+                  type='primary'
+                  onClick={() => {
+                    if (!selectedAi.some(r => r.id === record.id)) {
+                      setSelectedAi(prev => [...prev, record])
+                    }
+                  }}
+                  disabled={selectedAi.some(r => r.id === record.id)}
+                >
+                  Confirm
+                </Button>
+              )
           }
         ]}
         rowKey='id'
@@ -403,21 +566,43 @@ const GrowthPlanPage: React.FC = () => {
 
       <Divider>7. Online Presence</Divider>
       <Paragraph>
-        <Text strong>Facebook:</Text> {participantData.facebook}
+        <Text strong>Facebook:</Text> {applicationData.facebook}
       </Paragraph>
       <Paragraph>
-        <Text strong>Instagram:</Text> {participantData.instagram}
+        <Text strong>Instagram:</Text> {applicationData.instagram}
       </Paragraph>
       <Paragraph>
-        <Text strong>LinkedIn:</Text> {participantData.linkedIn}
+        <Text strong>LinkedIn:</Text> {applicationData.linkedIn}
       </Paragraph>
 
       <Divider>8. Signature</Divider>
       <Paragraph>
-        This document was generated based on your submitted data.
+        This document was generated based on Information.
         <br />
         <Text strong>Signature:</Text> {getDigitalSignature()}
       </Paragraph>
+
+      {!interventionsConfirmed && (
+        <div style={{ marginTop: 24, textAlign: 'center' }}>
+          <Button
+            type='primary'
+            size='large'
+            onClick={() => {
+              handleConfirmGrowthPlan()
+            }}
+            disabled={totalSelected > 8}
+          >
+            Confirm Diagnostic Plan
+          </Button>
+
+          {interventionsConfirmed && (
+            <Paragraph type='success' style={{ marginTop: 24 }}>
+              ✅ Diagnostic Needs Assessment Plan has been confirmed and saved.
+              Interventions are now locked.
+            </Paragraph>
+          )}
+        </div>
+      )}
     </Card>
   )
 }

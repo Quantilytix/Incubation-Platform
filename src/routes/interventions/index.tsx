@@ -161,26 +161,6 @@ const InterventionDatabaseView = () => {
     })
   }, [])
 
-  const getGrowthPlanIntervention = (record: any) => {
-    const baseString = `${record.participantId}|${record.beneficiaryName || ''}`
-    const hash = SHA256(baseString).toString().substring(0, 16)
-
-    return {
-      id: `growthplan-${record.participantId}`,
-      interventionTitle: 'Growth Plan Assessment',
-      interventionKey: hash,
-      confirmedAt: record.interventions?.[0]?.confirmedAt || new Date(),
-      consultantIds: [],
-      timeSpent: [],
-      resources: [
-        {
-          label: 'View Growth Plan',
-          link: `/growth-plan/${record.participantId}`
-        }
-      ]
-    }
-  }
-
   const handleFilterChange = (key: string, value: string) => {
     const newFilters = { ...filters, [key]: value }
     setFilters(newFilters)
@@ -323,10 +303,7 @@ const InterventionDatabaseView = () => {
             <Divider />
 
             <ul>
-              {[
-                ...selectedView.interventions,
-                getGrowthPlanIntervention(selectedView)
-              ].map((item, index) => (
+              {[...selectedView.interventions].map((item, index) => (
                 <li key={index} style={{ marginBottom: 12 }}>
                   <Space direction='vertical'>
                     <Text strong>{item.interventionTitle}</Text>
