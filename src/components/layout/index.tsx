@@ -30,7 +30,9 @@ import {
   UserOutlined,
   CalendarOutlined,
   AuditOutlined,
-  ProfileOutlined
+  ProfileOutlined,
+  DollarOutlined,
+  LineChartOutlined
 } from '@ant-design/icons'
 
 const { Header, Sider, Content } = Layout
@@ -252,7 +254,7 @@ export const CustomLayout: React.FC = () => {
         key: 'analytics',
         to: '/consultant/analytics',
         label: 'Analytics',
-        icon: <PieChartOutlined />
+        icon: <LineChartOutlined />
       }
     ],
 
@@ -303,6 +305,12 @@ export const CustomLayout: React.FC = () => {
         icon: <DashboardOutlined />
       },
       {
+        key: 'diagnostic',
+        to: '/incubatee/diagnostic',
+        label: 'Diagnostic Assessment',
+        icon: <FormOutlined />
+      },
+      {
         key: 'interventions',
         to: '/incubatee/interventions',
         label: 'Tracker',
@@ -312,7 +320,7 @@ export const CustomLayout: React.FC = () => {
         key: 'financials',
         to: '/incubatee/financials',
         label: 'Financial Portal',
-        icon: <SolutionOutlined />
+        icon: <DollarOutlined />
       },
       {
         key: 'projects',
