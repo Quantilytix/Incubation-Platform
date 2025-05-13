@@ -380,6 +380,7 @@ export const DirectorDashboard: React.FC = () => {
 
     fetchData()
   }, [])
+
   // 🔽 Load notifications on mount
   useEffect(() => {
     const fetchNotifications = async () => {
@@ -394,40 +395,22 @@ export const DirectorDashboard: React.FC = () => {
 
     fetchNotifications()
   }, [])
+
   useEffect(() => {
     const fetchTasksAndApplications = async () => {
       setLoading(true)
       try {
-        const taskSnap = await getDocs(collection(db, 'tasks'))
         const applicationSnap = await getDocs(collection(db, 'applications'))
 
         const now = dayjs()
         const upcoming: any[] = []
         const overdue: any[] = []
 
-        taskSnap.docs.forEach(doc => {
-          const task = { id: doc.id, ...doc.data() }
-          const dueDate = task.dueDate?.toDate?.()
-
-          if (!dueDate) return
-
-          const due = dayjs(dueDate)
-          if (due.isBefore(now, 'day')) {
-            overdue.push(task)
-          } else if (due.isBefore(now.add(7, 'days'), 'day')) {
-            upcoming.push(task)
-          }
-        })
-
         const pendingApps = applicationSnap.docs
           .map(doc => ({ id: doc.id, ...doc.data() }))
           .filter(app => app.applicationStatus?.toLowerCase() === 'pending')
 
         setPendingApplications(pendingApps)
-
-        setTasks([...overdue, ...upcoming])
-        setOverdueTasks(overdue)
-        setUpcomingTasks(upcoming)
         setPendingApplications(pendingApps)
       } catch (err) {
         console.error('Failed to fetch overview data:', err)
@@ -437,6 +420,57 @@ export const DirectorDashboard: React.FC = () => {
     }
 
     fetchTasksAndApplications()
+  }, [])
+  useEffect(() => {
+    const fetchOverdueInterventions = async () => {
+      setLoading(true)
+      try {
+        const email = currentUser?.email
+        if (!email) return
+
+        // 1. Get the current user's company code
+        const userSnap = await getDocs(
+          query(collection(db, 'users'), where('email', '==', email))
+        )
+        const companyCode = userSnap.docs[0]?.data()?.companyCode
+        if (!companyCode) return
+
+        // 2. Get consultant IDs with same company code
+        const consultantSnap = await getDocs(
+          query(
+            collection(db, 'consultants'),
+            where('companyCode', '==', companyCode)
+          )
+        )
+        const consultantIds = consultantSnap.docs.map(doc => doc.id)
+
+        // 3. Get assignedInterventions linked to those consultants
+        const interventionSnap = await getDocs(
+          collection(db, 'assignedInterventions')
+        )
+        const allInterventions = interventionSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+
+        const now = new Date()
+
+        const overdue = allInterventions.filter(
+          i =>
+            consultantIds.includes(i.consultantId) &&
+            i.dueDate?.toDate?.() < now &&
+            i.consultantCompletionStatus !== 'done'
+        )
+
+        setOverdueTasks(overdue)
+      } catch (err) {
+        console.error('Failed to fetch overdue interventions:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchOverdueInterventions()
   }, [])
 
   const getCurrentUserCompanyCode = async () => {
@@ -1183,25 +1217,19 @@ export const DirectorDashboard: React.FC = () => {
         <Spin spinning={loading}>
           <Row gutter={[16, 16]}>
             <Col xs={24} md={12}>
-              <Card title='🔴 Overdue Tasks'>
+              <Card title='🔴 Overdue Interventions'>
                 <List
                   dataSource={overdueTasks}
                   renderItem={item => (
-                    <List.Item
-                      actions={[
-                        <Button size='small' onClick={() => remindUser(item)}>
-                          Remind
-                        </Button>
-                      ]}
-                    >
+                    <List.Item>
                       <List.Item.Meta
-                        title={item.title}
+                        title={item.interventionTitle}
                         description={`Due: ${dayjs(
                           item.dueDate.toDate()
                         ).format('YYYY-MM-DD')}`}
                       />
                       <Tag color='red'>Overdue</Tag>
-                      <Tag>{item.assignedRole}</Tag>
+                      <Tag>{item.beneficiaryName}</Tag>
                     </List.Item>
                   )}
                 />

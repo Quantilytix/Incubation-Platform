@@ -258,7 +258,7 @@ const SMEDashboard = () => {
 
         <Divider orientation='left'>Eligibility Criteria</Divider>
         <ul>
-          <li>Minimum BEEE level: 4 or better</li>
+          <li>Minimum BEEE level: 2 or better</li>
           <li>Black-owned ≥ 51%</li>
           <li>Startup must be operational</li>
           {/* These could be dynamic from program definition later */}

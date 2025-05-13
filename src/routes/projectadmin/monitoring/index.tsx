@@ -3,7 +3,6 @@ import { Card, Select, Typography, Row, Col, Button, Modal } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import { Helmet } from 'react-helmet'
-// import heatmap from 'highcharts/modules/heatmap'
 
 import('highcharts/modules/heatmap').then(HeatmapModule => {
   HeatmapModule.default(Highcharts)
@@ -282,14 +281,11 @@ const MonitoringEvaluationEvaluation = () => {
     },
     colorAxis: {
       min: 0,
+      max: 20,
       stops: [
-        [0.0, '#00FF00'], // Bright green
-        [0.25, '#66FF66'], // Light green
-        [0.4, '#66CCFF'], // Sky blue
-        [0.5, '#0000FF'], // Blue
-        [0.65, '#9966FF'], // Violet tint
-        [0.8, '#FF6666'], // Light red
-        [1.0, '#FF0000'] // Bright red
+        [0, '#00A651'], // Green (Low frequency)
+        [0.5, '#FFC107'], // Amber (Moderate frequency)
+        [1, '#D32F2F'] // Red (High frequency)
       ]
     },
     legend: {

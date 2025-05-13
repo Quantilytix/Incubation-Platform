@@ -92,13 +92,74 @@ const ProfileForm: React.FC = () => {
       const user = auth.currentUser
       if (!user) throw new Error('User not authenticated')
 
+      // Extract and normalize headcount & revenue fields
+      const monthly: Record<string, any> = {}
+      const annual: Record<string, any> = {}
+
+      Object.entries(values).forEach(([key, value]) => {
+        if (key.startsWith('revenue_')) {
+          const suffix = key.replace('revenue_', '')
+          if (isNaN(Number(suffix))) {
+            // Monthly
+            if (!monthly[suffix]) monthly[suffix] = {}
+            monthly[suffix].revenue = value
+          } else {
+            // Annual
+            if (!annual[suffix]) annual[suffix] = {}
+            annual[suffix].revenue = value
+          }
+        }
+        if (key.startsWith('permHeadcount_')) {
+          const suffix = key.replace('permHeadcount_', '')
+          if (isNaN(Number(suffix))) {
+            if (!monthly[suffix]) monthly[suffix] = {}
+            monthly[suffix].permanent = value
+          } else {
+            if (!annual[suffix]) annual[suffix] = {}
+            annual[suffix].permanent = value
+          }
+        }
+        if (key.startsWith('tempHeadcount_')) {
+          const suffix = key.replace('tempHeadcount_', '')
+          if (isNaN(Number(suffix))) {
+            if (!monthly[suffix]) monthly[suffix] = {}
+            monthly[suffix].temporary = value
+          } else {
+            if (!annual[suffix]) annual[suffix] = {}
+            annual[suffix].temporary = value
+          }
+        }
+      })
+
       const data = {
         ...values,
         dateOfRegistration: values.dateOfRegistration
           ? values.dateOfRegistration.toDate()
           : null,
         email: user.email,
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        revenueHistory: {
+          monthly: Object.fromEntries(
+            Object.entries(monthly).map(([k, v]) => [k, v.revenue || 0])
+          ),
+          annual: Object.fromEntries(
+            Object.entries(annual).map(([k, v]) => [k, v.revenue || 0])
+          )
+        },
+        headcountHistory: {
+          monthly: Object.fromEntries(
+            Object.entries(monthly).map(([k, v]) => [
+              k,
+              { permanent: v.permanent || 0, temporary: v.temporary || 0 }
+            ])
+          ),
+          annual: Object.fromEntries(
+            Object.entries(annual).map(([k, v]) => [
+              k,
+              { permanent: v.permanent || 0, temporary: v.temporary || 0 }
+            ])
+          )
+        }
       }
 
       if (participantDocId) {

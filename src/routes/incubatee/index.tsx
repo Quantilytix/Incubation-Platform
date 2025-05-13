@@ -35,11 +35,26 @@ import {
 } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { db, auth } from '@/firebase'
+import dayjs from 'dayjs'
+import { v4 as uuidv4 } from 'uuid'
 
 const { Title } = Typography
 const { Option } = Select
 
-const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May']
+const months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+]
 interface AssignedIntervention {
   id: string
   interventionId: string
@@ -60,8 +75,8 @@ interface AssignedIntervention {
 
   consultantStatus: 'pending' | 'accepted' | 'declined'
   userStatus: 'pending' | 'accepted' | 'declined'
-  consultantCompletionStatus: 'none' | 'done'
-  userCompletionStatus: 'none' | 'confirmed' | 'rejected'
+  consultantCompletionStatus: 'pending' | 'done'
+  userCompletionStatus: 'pending' | 'confirmed' | 'rejected'
 
   resources?: {
     type: 'document' | 'link'
@@ -107,6 +122,13 @@ export const IncubateeDashboard: React.FC = () => {
   const [expandedChart, setExpandedChart] = useState<
     'revenue' | 'avgRevenue' | null
   >(null)
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false)
+  const [selectedIntervention, setSelectedIntervention] =
+    useState<AssignedIntervention | null>(null)
+  const [feedbackRating, setFeedbackRating] = useState<number>(0)
+  const [feedbackComments, setFeedbackComments] = useState<string>('')
+  const [isRejectModalVisible, setIsRejectModalVisible] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
 
   useEffect(() => {
     const fetchUserRole = async () => {
@@ -150,19 +172,76 @@ export const IncubateeDashboard: React.FC = () => {
         setParticipantId(pid)
 
         // Revenue & Headcount
+
+        const monthLabels = [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sept',
+          'Oct',
+          'Nov',
+          'Dec'
+        ]
+        const fallbackRevenue = (month: string) =>
+          participant[`revenue_${month}`] ?? 0
+
+        const fallbackPerm = (month: string) =>
+          participant[`permHeadcount_${month}`] ?? 0
+
+        const fallbackTemp = (month: string) =>
+          participant[`tempHeadcount_${month}`] ?? 0
+
         const revMonthly = participant.revenueHistory?.monthly || {}
         const headMonthly = participant.headcountHistory?.monthly || {}
-        const sortedMonths = Object.keys(revMonthly).sort()
 
-        setRevenueData(sortedMonths.map(m => revMonthly[m] || 0))
-        setAvgRevenueData(sortedMonths.map(m => (revMonthly[m] || 0) * 0.85))
-        setPermHeadcount(sortedMonths.map(m => headMonthly[m]?.permanent || 0))
-        setTempHeadcount(sortedMonths.map(m => headMonthly[m]?.temporary || 0))
+        setRevenueData(
+          monthLabels.map(month => revMonthly[month] ?? fallbackRevenue(month))
+        )
+
+        setAvgRevenueData(
+          monthLabels.map(
+            month => (revMonthly[month] ?? fallbackRevenue(month)) * 0.85
+          )
+        )
+
+        setPermHeadcount(
+          monthLabels.map(
+            month => headMonthly[month]?.permanent ?? fallbackPerm(month)
+          )
+        )
+
+        setTempHeadcount(
+          monthLabels.map(
+            month => headMonthly[month]?.temporary ?? fallbackTemp(month)
+          )
+        )
+
         setParticipation(participant.interventions?.participationRate || 0)
 
         // Compliance Docs
-        const docs = participant.complianceDocuments || []
-        const invalidDocs = docs.filter((doc: any) => doc.status !== 'valid')
+        const applicationSnap = await getDocs(
+          query(
+            collection(db, 'applications'),
+            where('participantId', '==', pid)
+          )
+        )
+
+        let complianceDocs: any[] = []
+
+        if (!applicationSnap.empty) {
+          const appData = applicationSnap.docs[0].data()
+          complianceDocs = appData.complianceDocuments || []
+        }
+
+        const invalidDocs = complianceDocs.filter(
+          (doc: any) => !['valid', 'approved'].includes(doc.status)
+        )
+
         setOutstandingDocs(invalidDocs.length)
 
         // Notifications
@@ -202,14 +281,20 @@ export const IncubateeDashboard: React.FC = () => {
           item =>
             item.userStatus === 'accepted' &&
             item.consultantCompletionStatus === 'done' &&
-            item.userCompletionStatus === 'none'
+            item.userCompletionStatus === 'pending'
         )
 
         setPendingInterventions(
           [...pending, ...needsConfirmation].map(item => ({
             id: item.id,
             title: item.interventionTitle,
-            date: item.dueDate || 'TBD'
+            type:
+              item.consultantCompletionStatus === 'done' &&
+              item.userCompletionStatus === 'pending'
+                ? 'confirmation'
+                : 'assignment',
+            date: formatDueDate(item.dueDate),
+            full: item // for later use in modals
           }))
         )
 
@@ -219,6 +304,18 @@ export const IncubateeDashboard: React.FC = () => {
 
     fetchData()
   }, [])
+
+  const formatDueDate = (dueDate: any): string => {
+    if (!dueDate) return 'TBD'
+    if (dueDate?.seconds)
+      return dayjs(dueDate.seconds * 1000).format('YYYY-MM-DD')
+    if (typeof dueDate === 'string' || dueDate instanceof Date) {
+      return dayjs(dueDate).isValid()
+        ? dayjs(dueDate).format('YYYY-MM-DD')
+        : 'TBD'
+    }
+    return 'TBD'
+  }
 
   const handleAccept = async (interventionId: string) => {
     const ref = doc(db, 'assignedInterventions', interventionId)
@@ -301,6 +398,112 @@ export const IncubateeDashboard: React.FC = () => {
     }
   }
 
+  const handleRejectCompletion = async () => {
+    if (!selectedIntervention || !rejectReason.trim()) {
+      return message.warning('Please provide a reason.')
+    }
+
+    const ref = doc(db, 'assignedInterventions', selectedIntervention.id)
+
+    await updateDoc(ref, {
+      userCompletionStatus: 'rejected',
+      rejectionReason: rejectReason,
+      updatedAt: new Date()
+    })
+
+    await addDoc(collection(db, 'notifications'), {
+      participantId: selectedIntervention.participantId,
+      consultantId: selectedIntervention.consultantId,
+      interventionId: selectedIntervention.id,
+      interventionTitle: selectedIntervention.interventionTitle,
+      type: 'completion-rejected',
+      recipientRoles: ['projectadmin', 'consultant', 'beneficiary'],
+      message: {
+        consultant: `Beneficiary ${selectedIntervention.beneficiaryName} rejected the completion of: ${selectedIntervention.interventionTitle}.`,
+        projectadmin: `Completion rejected for: ${selectedIntervention.interventionTitle}.`,
+        beneficiary: `You rejected the completion of: ${selectedIntervention.interventionTitle}.`
+      },
+      reason: rejectReason,
+      createdAt: new Date(),
+      readBy: {}
+    })
+
+    message.success('Intervention completion rejected.')
+
+    setIsRejectModalVisible(false)
+    setRejectReason('')
+  }
+
+  const handleConfirmIntervention = async () => {
+    if (!selectedIntervention) return
+
+    const ref = doc(db, 'assignedInterventions', selectedIntervention.id)
+
+    await updateDoc(ref, {
+      userCompletionStatus: 'confirmed',
+      feedback: {
+        rating: feedbackRating,
+        comments: feedbackComments
+      },
+      updatedAt: new Date()
+    })
+
+    // Fetch participant info
+    const participantSnap = await getDoc(
+      doc(db, 'participants', selectedIntervention.participantId)
+    )
+    const participant = participantSnap.exists() ? participantSnap.data() : {}
+
+    const interventionData = {
+      programId: participant.programId || '',
+      companyCode: participant.companyCode || '',
+      interventionId: selectedIntervention.interventionId,
+      interventionTitle: selectedIntervention.interventionTitle,
+      areaOfSupport: selectedIntervention.areaOfSupport,
+      participantId: selectedIntervention.participantId,
+      beneficiaryName:
+        selectedIntervention.beneficiaryName || participant.beneficiaryName,
+      hub: participant.hub || '',
+      province: participant.province || '',
+      quarter: getQuarter(new Date()),
+      consultantIds: [selectedIntervention.consultantId],
+      timeSpent: [selectedIntervention.timeSpent || 0],
+      interventionType: selectedIntervention.type,
+      targetMetric: selectedIntervention.targetMetric,
+      targetType: selectedIntervention.targetType,
+      targetValue: selectedIntervention.targetValue,
+      feedback: {
+        rating: feedbackRating,
+        comments: feedbackComments
+      },
+      confirmedAt: new Date(),
+      createdAt: new Date(selectedIntervention.createdAt || Date.now()),
+      updatedAt: new Date(),
+      interventionKey: uuidv4()
+    }
+
+    await addDoc(collection(db, 'interventionsDatabase'), interventionData)
+
+    await addDoc(collection(db, 'notifications'), {
+      participantId: selectedIntervention.participantId,
+      consultantId: selectedIntervention.consultantId,
+      interventionId: selectedIntervention.id,
+      interventionTitle: selectedIntervention.interventionTitle,
+      type: 'intervention-confirmed',
+      recipientRoles: ['projectadmin', 'consultant', 'beneficiary'],
+      message: {
+        consultant: `Beneficiary ${selectedIntervention.beneficiaryName} confirmed the completion of: ${selectedIntervention.interventionTitle}.`,
+        projectadmin: `Completion confirmed for: ${selectedIntervention.interventionTitle}.`,
+        beneficiary: `You confirmed the intervention: ${selectedIntervention.interventionTitle}.`
+      },
+      createdAt: new Date(),
+      readBy: {}
+    })
+
+    message.success('Intervention confirmed and saved.')
+    setConfirmModalVisible(false)
+  }
+
   const handleMarkAsRead = async (id: string) => {
     const ref = doc(db, 'notifications', id)
     await updateDoc(ref, {
@@ -341,6 +544,13 @@ export const IncubateeDashboard: React.FC = () => {
     userRole && visibleNotifications.length
       ? visibleNotifications.filter(n => !n.readBy?.[userRole]).length
       : 0
+  const formatCurrencyAbbreviation = (value: number): string => {
+    if (value >= 1_000_000_000)
+      return `R ${(value / 1_000_000_000).toFixed(1)}B`
+    if (value >= 1_000_000) return `R ${(value / 1_000_000).toFixed(1)}M`
+    if (value >= 1_000) return `R ${(value / 1_000).toFixed(1)}K`
+    return `R ${value}`
+  }
 
   const revenueChart: Highcharts.Options = {
     chart: { zoomType: 'xy' },
@@ -350,18 +560,44 @@ export const IncubateeDashboard: React.FC = () => {
       { title: { text: 'Revenue (ZAR)' } },
       { title: { text: 'Workers' }, opposite: true }
     ],
-    plotOptions: {
-      series: {
+    series: [
+      {
+        name: 'Permanent',
+        type: 'column',
+        data: permHeadcount,
+        yAxis: 1,
         dataLabels: {
           enabled: true,
-          format: '{point.y}'
+          formatter: function () {
+            return this.y && this.y > 0 ? this.y : null
+          }
+        }
+      },
+      {
+        name: 'Temporary',
+        type: 'column',
+        data: tempHeadcount,
+        yAxis: 1,
+        dataLabels: {
+          enabled: true,
+          formatter: function () {
+            return this.y && this.y > 0 ? this.y : null
+          }
+        }
+      },
+      {
+        name: 'Revenue',
+        type: 'spline',
+        data: revenueData,
+        dataLabels: {
+          enabled: true,
+          formatter: function () {
+            return this.y && this.y > 0
+              ? formatCurrencyAbbreviation(this.y)
+              : null
+          }
         }
       }
-    },
-    series: [
-      { name: 'Permanent', type: 'column', data: permHeadcount, yAxis: 1 },
-      { name: 'Temporary', type: 'column', data: tempHeadcount, yAxis: 1 },
-      { name: 'Revenue', type: 'spline', data: revenueData }
     ]
   }
 
@@ -374,7 +610,9 @@ export const IncubateeDashboard: React.FC = () => {
       series: {
         dataLabels: {
           enabled: true,
-          format: '{point.y}'
+          formatter: function () {
+            return this.y > 0 ? Highcharts.numberFormat(this.y, 0) : null
+          }
         }
       }
     },
@@ -384,13 +622,29 @@ export const IncubateeDashboard: React.FC = () => {
         name: 'Total Revenue',
         type: 'spline',
         data: revenueData,
-        color: '#52c41a'
+        color: '#52c41a',
+        dataLabels: {
+          enabled: true,
+          formatter: function () {
+            return this.y && this.y > 0
+              ? formatCurrencyAbbreviation(this.y)
+              : null
+          }
+        }
       },
       {
         name: 'Avg Revenue',
         type: 'spline',
         data: avgRevenueData,
-        color: '#faad14'
+        color: '#faad14',
+        dataLabels: {
+          enabled: true,
+          formatter: function () {
+            return this.y && this.y > 0
+              ? formatCurrencyAbbreviation(this.y)
+              : null
+          }
+        }
       }
     ]
   }
@@ -425,7 +679,10 @@ export const IncubateeDashboard: React.FC = () => {
               <Card>
                 <Statistic
                   title='Total Workers'
-                  value={permHeadcount.at(-1) + tempHeadcount.at(-1)}
+                  value={
+                    permHeadcount.reduce((a, b) => a + b, 0) +
+                    tempHeadcount.reduce((a, b) => a + b, 0)
+                  }
                   prefix={<TeamOutlined />}
                 />
               </Card>
@@ -479,21 +736,48 @@ export const IncubateeDashboard: React.FC = () => {
                 dataSource={pendingInterventions}
                 renderItem={item => (
                   <List.Item
-                    actions={[
-                      <Button type='link' onClick={() => handleAccept(item.id)}>
-                        Accept
-                      </Button>,
-                      <Button
-                        danger
-                        type='link'
-                        onClick={() => {
-                          setSelectedInterventionId(item.id)
-                          setDeclineModalVisible(true)
-                        }}
-                      >
-                        Decline
-                      </Button>
-                    ]}
+                    actions={
+                      item.type === 'assignment'
+                        ? [
+                            <Button
+                              type='link'
+                              onClick={() => handleAccept(item.id)}
+                            >
+                              Accept
+                            </Button>,
+                            <Button
+                              danger
+                              type='link'
+                              onClick={() => {
+                                setSelectedInterventionId(item.id)
+                                setDeclineModalVisible(true)
+                              }}
+                            >
+                              Decline
+                            </Button>
+                          ]
+                        : [
+                            <Button
+                              type='link'
+                              onClick={() => {
+                                setSelectedIntervention(item.full)
+                                setConfirmModalVisible(true)
+                              }}
+                            >
+                              Confirm
+                            </Button>,
+                            <Button
+                              danger
+                              type='link'
+                              onClick={() => {
+                                setSelectedIntervention(item.full)
+                                setIsRejectModalVisible(true)
+                              }}
+                            >
+                              Reject
+                            </Button>
+                          ]
+                    }
                   >
                     <List.Item.Meta
                       title={item.title}
@@ -619,6 +903,25 @@ export const IncubateeDashboard: React.FC = () => {
         </Modal>
 
         <Modal
+          title='Reject Completion'
+          open={isRejectModalVisible}
+          onCancel={() => {
+            setIsRejectModalVisible(false)
+            setRejectReason('')
+          }}
+          onOk={handleRejectCompletion}
+          okButtonProps={{ danger: true }}
+          okText='Submit Rejection'
+        >
+          <Input.TextArea
+            rows={4}
+            value={rejectReason}
+            onChange={e => setRejectReason(e.target.value)}
+            placeholder='Please explain why you’re rejecting this intervention’s completion...'
+          />
+        </Modal>
+
+        <Modal
           title={
             expandedChart === 'revenue'
               ? 'Expanded: Revenue vs Workforce'
@@ -652,6 +955,50 @@ export const IncubateeDashboard: React.FC = () => {
           onClick={() => setNotificationsModalVisible(true)}
         />
       </div>
+      <Modal
+        title='Confirm Intervention Completion'
+        open={confirmModalVisible}
+        footer={[
+          <Button key='reject' danger onClick={handleRejectCompletion}>
+            Reject Completion
+          </Button>,
+          <Button key='cancel' onClick={() => setConfirmModalVisible(false)}>
+            Cancel
+          </Button>,
+          <Button
+            key='submit'
+            type='primary'
+            onClick={handleConfirmIntervention}
+          >
+            Confirm Completion
+          </Button>
+        ]}
+        onCancel={() => setConfirmModalVisible(false)}
+        onOk={handleConfirmIntervention}
+      >
+        <p>
+          <strong>{selectedIntervention?.interventionTitle}</strong>
+        </p>
+        <p>Are you confirming this intervention was completed successfully?</p>
+        <Input
+          placeholder='Feedback comments'
+          value={feedbackComments}
+          onChange={e => setFeedbackComments(e.target.value)}
+          style={{ marginBottom: 8 }}
+        />
+        <Select
+          placeholder='Rating'
+          value={feedbackRating}
+          onChange={val => setFeedbackRating(val)}
+          style={{ width: '100%' }}
+        >
+          {[5, 4, 3, 2, 1].map(star => (
+            <Option key={star} value={star}>
+              {`${star} Star${star !== 1 ? 's' : ''}`}
+            </Option>
+          ))}
+        </Select>
+      </Modal>
     </Spin>
   )
 }

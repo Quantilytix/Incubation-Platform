@@ -164,7 +164,7 @@ export const InterventionTrack: React.FC = () => {
         readBy: {},
         recipientRoles: [
           'consultant',
-          'incubateer',
+          'incubatee',
           'projectadmin',
           'operations'
         ],

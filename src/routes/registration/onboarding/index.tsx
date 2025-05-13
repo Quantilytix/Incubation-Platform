@@ -638,7 +638,16 @@ const ParticipantRegistrationStepForm = () => {
     const uploadedDocs = []
 
     for (const doc of documentFields) {
-      if (!doc.file) continue
+      if (!doc.file) {
+        uploadedDocs.push({
+          type: doc.type,
+          url: null,
+          fileName: null,
+          expiryDate: null,
+          status: 'missing'
+        })
+        continue
+      }
 
       try {
         const { url, name } = await uploadFileAndGetURL(doc.file)
@@ -660,18 +669,18 @@ const ParticipantRegistrationStepForm = () => {
     return uploadedDocs
   }
 
-  const calculateCompliance = () => {
+  const calculateCompliance = (docs: any[]) => {
+    const totalRequired = docs.length
     const oneWeekFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
-    const validDocs = documentFields.filter(doc => {
-      if (!doc.file) return false
-      if (doc.requiresExpiry) {
-        return doc.expiryDate && doc.expiryDate.toDate() > oneWeekFromNow
-      }
+    const validDocs = docs.filter(doc => {
+      if (doc.status !== 'valid') return false
+      if (doc.expiryDate && new Date(doc.expiryDate) <= oneWeekFromNow)
+        return false
       return true
     })
 
-    return Math.round((validDocs.length / documentFields.length) * 100)
+    return Math.round((validDocs.length / totalRequired) * 100)
   }
 
   const deriveStageFromRevenue = (values: any): string => {
@@ -703,7 +712,8 @@ const ParticipantRegistrationStepForm = () => {
     await form.validateFields()
     const values = form.getFieldsValue(true) // true = get all values, even unmounted
 
-    const complianceRate = calculateCompliance()
+    const uploadedDocs = await uploadAllDocuments()
+    const complianceRate = calculateCompliance(uploadedDocs)
 
     if (complianceRate < 10) {
       message.error(

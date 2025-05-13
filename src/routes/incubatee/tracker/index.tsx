@@ -44,22 +44,18 @@ const ApplicationTracker = () => {
       if (!currentUser) return
 
       try {
-        // Step 1: Fetch user metadata
         const userRef = doc(db, 'users', currentUser.uid)
         const userSnap = await getDoc(userRef)
         if (!userSnap.exists()) return
 
         const userData = userSnap.data()
-        const companyCode = userData.companyCode || ''
-        setCompanyCode(companyCode)
+        const code = userData.companyCode || ''
+        setCompanyCode(code)
         setBeneficiaryName(userData.beneficiaryName || '')
 
-        // Step 2: Fetch programs by companyCode
+        // 🟢 Step 1: Load all programs
         const programsSnap = await getDocs(
-          query(
-            collection(db, 'programs'),
-            where('companyCode', '==', companyCode)
-          )
+          query(collection(db, 'programs'), where('companyCode', '==', code))
         )
         const allPrograms = programsSnap.docs.map(doc => ({
           id: doc.id,
@@ -67,7 +63,7 @@ const ApplicationTracker = () => {
         }))
         setPrograms(allPrograms)
 
-        // Step 3: Fetch applications by email
+        // 🟢 Step 2: Load all applications
         const appsSnap = await getDocs(
           query(
             collection(db, 'applications'),
@@ -78,6 +74,7 @@ const ApplicationTracker = () => {
         const apps = appsSnap.docs.map(doc => {
           const data = doc.data()
           const matchedProgram = allPrograms.find(p => p.id === data.programId)
+
           console.log('📎 Matching Program:', matchedProgram)
 
           return {
@@ -89,17 +86,16 @@ const ApplicationTracker = () => {
               'Unnamed Program'
           }
         })
+
         setApplications(apps)
 
-        // Step 4: Filter available programs (not already applied)
-        const appliedIds = new Set(apps.map(app => app.programId))
-        const notAppliedPrograms = allPrograms.filter(
-          p => !appliedIds.has(p.id)
-        )
-        setAvailablePrograms(notAppliedPrograms)
+        // 🟢 Step 3: Filter available programs
+        const appliedProgramIds = new Set(apps.map(app => app.programId))
+        const available = allPrograms.filter(p => !appliedProgramIds.has(p.id))
+        setAvailablePrograms(available)
       } catch (err) {
-        console.error('Error loading application data:', err)
-        message.error('Failed to load application data')
+        console.error('Error loading data:', err)
+        message.error('Could not load applications.')
       } finally {
         setLoading(false)
       }
@@ -144,43 +140,6 @@ const ApplicationTracker = () => {
       title: 'Compliance',
       dataIndex: 'complianceRate',
       render: (rate: number) => <strong>{rate || 0}%</strong>
-    }
-  ]
-
-  const programColumns = [
-    {
-      title: 'Title',
-      dataIndex: 'programName'
-    },
-    {
-      title: 'Type',
-      dataIndex: 'type'
-    },
-    {
-      title: 'Action',
-      render: (record: any) => {
-        const alreadyApplied = applications.some(
-          app => app.programId === record.id
-        )
-
-        const handleApply = () => {
-          if (record.registrationLink) {
-            navigate(record.registrationLink)
-          } else {
-            message.warning('This program does not have a registration link.')
-          }
-        }
-
-        return (
-          <Button
-            type='primary'
-            disabled={alreadyApplied}
-            onClick={handleApply}
-          >
-            {alreadyApplied ? 'Applied' : 'Apply'}
-          </Button>
-        )
-      }
     }
   ]
 
@@ -230,18 +189,6 @@ const ApplicationTracker = () => {
                 rowKey='id'
                 columns={applicationColumns}
                 dataSource={applications}
-                loading={loading}
-                pagination={{ pageSize: 5 }}
-                scroll={{ x: true }}
-                style={{ padding: '16px' }}
-              />
-            </Card>
-
-            <Card title='🗂️ Available Programs' bodyStyle={{ padding: 0 }}>
-              <Table
-                rowKey='id'
-                columns={programColumns}
-                dataSource={availablePrograms}
                 loading={loading}
                 pagination={{ pageSize: 5 }}
                 scroll={{ x: true }}
