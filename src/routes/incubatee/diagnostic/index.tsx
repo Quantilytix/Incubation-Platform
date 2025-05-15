@@ -77,19 +77,40 @@ const GrowthPlanPage: React.FC = () => {
         setManualInterventions(application?.interventions?.required || [])
 
         // AI Interventions from raw_response
-        const parsedAi = parseAiRawResponse(
-          application?.aiEvaluation?.raw_response || ''
-        )
-        const parsedText = parsedAi?.['Recommended Interventions'] || ''
-        const aiList = parsedText
-          .split('\n')
-          .filter(line => line.trim())
-          .map((txt, i) => ({
-            id: `ai-${i}`,
-            title: txt.trim(),
-            area: 'AI Suggested'
-          }))
-        setAiInterventions(aiList)
+        let aiRecommended = []
+
+        // Case 1: structured directly
+        if (
+          typeof application?.aiEvaluation?.['Recommended Interventions'] ===
+          'object'
+        ) {
+          const recs = application.aiEvaluation['Recommended Interventions']
+          aiRecommended = Object.entries(recs).flatMap(([area, items]) =>
+            items.map((title: string, i: number) => ({
+              id: `ai-${area}-${i}`,
+              title,
+              area
+            }))
+          )
+        } else if (
+          typeof application?.aiEvaluation?.raw_response === 'string'
+        ) {
+          // Case 2: from raw_response markdown
+          const parsedAi = parseAiRawResponse(
+            application.aiEvaluation.raw_response
+          )
+          const recs = parsedAi?.['Recommended Interventions'] || {}
+
+          aiRecommended = Object.entries(recs).flatMap(([area, items]) =>
+            items.map((title: string, i: number) => ({
+              id: `ai-${area}-${i}`,
+              title,
+              area
+            }))
+          )
+        }
+
+        setAiInterventions(aiRecommended)
 
         // Fetch participant (where email matches)
         const partSnap = await getDocs(

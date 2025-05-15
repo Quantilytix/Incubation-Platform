@@ -39,24 +39,48 @@ const ApplicationsPage: React.FC = () => {
       const apps = snapshot.docs.map(doc => {
         const data = doc.data()
 
-        let aiRaw = data.aiEvaluation?.raw_response
-        let ai = {}
+        let aiEvaluation = data.aiEvaluation
+        let ai = {
+          'AI Recommendation': 'Pending',
+          'AI Score': 'N/A',
+          Justification: 'No justification provided.'
+        }
 
         try {
-          if (typeof aiRaw === 'string') {
-            // Remove markdown code fences and 'json' label
-            const cleaned = aiRaw
+          if (typeof aiEvaluation?.raw_response === 'string') {
+            // Case 1: raw_response exists and is a string
+            const cleaned = aiEvaluation.raw_response
               .replace(/```json/i, '')
               .replace(/```/g, '')
               .trim()
+            const parsed = JSON.parse(cleaned)
 
-            ai = JSON.parse(cleaned)
-          } else if (typeof aiRaw === 'object' && aiRaw !== null) {
-            ai = aiRaw
+            ai['AI Recommendation'] = parsed['AI Recommendation'] || 'Pending'
+            ai['AI Score'] = parsed['AI Score'] ?? 'N/A'
+            ai['Justification'] =
+              parsed['Justification'] || 'No justification provided.'
+          } else if (
+            typeof aiEvaluation === 'object' &&
+            aiEvaluation !== null &&
+            !aiEvaluation.raw_response
+          ) {
+            // Case 2: structured directly
+            ai['AI Recommendation'] =
+              aiEvaluation['AI Recommendation'] || 'Pending'
+            ai['AI Score'] = aiEvaluation['AI Score'] ?? 'N/A'
+            ai['Justification'] =
+              aiEvaluation['Justification'] || 'No justification provided.'
           }
         } catch (err) {
-          console.warn('Failed to parse aiEvaluation.raw_response:', aiRaw, err)
-          ai = {}
+          console.warn(
+            '⚠️ Failed to parse aiEvaluation data:',
+            aiEvaluation,
+            err
+          )
+
+          if (typeof aiEvaluation?.raw_response === 'string') {
+            ai['Justification'] = aiEvaluation.raw_response
+          }
         }
 
         return {
@@ -487,9 +511,9 @@ const ApplicationsPage: React.FC = () => {
             <Text>
               <strong>Justification:</strong>
             </Text>
-            <Text>
-              {selectedApplication.aiJustification ??
-                'No justification provided'}
+            <Text style={{ whiteSpace: 'pre-line' }}>
+              {selectedApplication.aiJustification ||
+                'No justification provided by AI.'}
             </Text>
           </Space>
         )}

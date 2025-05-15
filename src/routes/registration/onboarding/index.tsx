@@ -821,18 +821,6 @@ const ParticipantRegistrationStepForm = () => {
       const aiEvaluation = await evaluateWithAI(participant)
       participant.aiEvaluation = aiEvaluation
 
-      if (aiEvaluation) {
-        // Merge AI interventions into required interventions
-        participant.interventions.required.push({
-          id: 'ai-recommended',
-          title: aiEvaluation['Recommended Interventions'],
-          area: 'AI Recommended'
-        })
-
-        // Optional: store AI metadata
-        participant.aiEvaluation = aiEvaluation
-      }
-
       const complianceIssues = [
         ...getMissingDocuments().map(doc => `${doc.type} (missing)`),
         ...getExpiredDocuments().map(
