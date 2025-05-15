@@ -7,17 +7,29 @@ import {
   message,
   Button,
   Typography,
-  Form
+  Upload,
+  Tooltip
 } from 'antd'
 import {
   AppstoreOutlined,
   BarChartOutlined,
   LineChartOutlined,
-  UserOutlined
+  UserOutlined,
+  MenuUnfoldOutlined,
+  MenuFoldOutlined,
+  EditOutlined
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
-import { auth, db } from '@/firebase'
-import { collection, query, where, getDocs } from 'firebase/firestore'
+import { auth, db, storage } from '@/firebase'
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  updateDoc
+} from 'firebase/firestore'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 
 const { Header, Sider, Content } = Layout
 const { Title } = Typography
@@ -28,10 +40,8 @@ const IncubateeLayout: React.FC = () => {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState(false)
-  const [profileDrawerVisible, setProfileDrawerVisible] = useState(false)
-  const [profileForm] = Form.useForm()
-  const [last3Months, setLast3Months] = useState<string[]>([])
-  const [last2Years, setLast2Years] = useState<string[]>([])
+  const [participantDocId, setParticipantDocId] = useState<string | null>(null)
+
   const selectedKey = location.pathname.includes('/tracker')
     ? 'tracker'
     : location.pathname.includes('/analytics')
@@ -53,13 +63,13 @@ const IncubateeLayout: React.FC = () => {
         const snapshot = await getDocs(q)
 
         if (!snapshot.empty) {
-          const data = snapshot.docs[0].data()
-          if (data.logoUrl) {
-            setLogoUrl(data.logoUrl)
-          }
+          const docRef = snapshot.docs[0]
+          const data = docRef.data()
+          setParticipantDocId(docRef.id)
+          if (data.logoUrl) setLogoUrl(data.logoUrl)
         }
       } catch (err) {
-        message.error('Failed to load incubatee logo.')
+        message.error('Failed to load logo.')
         console.error(err)
       } finally {
         setLoading(false)
@@ -69,18 +79,39 @@ const IncubateeLayout: React.FC = () => {
     fetchLogoFromParticipants()
   }, [])
 
+  const handleUpload = async (file: File) => {
+    if (!participantDocId) return
+    const fileRef = ref(storage, `logos/${Date.now()}_${file.name}`)
+    await uploadBytes(fileRef, file)
+    const url = await getDownloadURL(fileRef)
+
+    await updateDoc(doc(db, 'participants', participantDocId), {
+      logoUrl: url
+    })
+    setLogoUrl(url)
+    message.success('Logo updated successfully.')
+    return false // prevent auto-upload
+  }
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      {/* ✅ Sidebar with logo */}
-      <Sider theme='light' width={240}>
+      <Sider
+        theme='light'
+        width={240}
+        collapsible
+        collapsed={collapsed}
+        trigger={null}
+        style={{ borderRight: '1px solid #f0f0f0' }}
+      >
         <div
           style={{
-            height: 80,
+            height: 64,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: '12px',
-            borderBottom: '1px solid #f0f0f0'
+            borderBottom: '1px solid #f0f0f0',
+            position: 'relative'
           }}
         >
           {loading ? (
@@ -88,12 +119,32 @@ const IncubateeLayout: React.FC = () => {
           ) : logoUrl ? (
             <img
               src={logoUrl}
-              alt='Incubatee Logo'
+              alt='Logo'
               style={{ height: 48, objectFit: 'contain' }}
             />
           ) : (
             <Avatar size={48} icon={<UserOutlined />} />
           )}
+
+          {/* 🖼 Edit icon overlay */}
+          <Upload
+            showUploadList={false}
+            beforeUpload={handleUpload}
+            accept='image/*'
+          >
+            <Tooltip title='Edit Logo'>
+              <Button
+                shape='circle'
+                icon={<EditOutlined />}
+                size='small'
+                style={{
+                  position: 'absolute',
+                  right: 8,
+                  top: 8
+                }}
+              />
+            </Tooltip>
+          </Upload>
         </div>
 
         <Menu
@@ -101,10 +152,7 @@ const IncubateeLayout: React.FC = () => {
           mode='inline'
           selectedKeys={[selectedKey]}
           onClick={({ key }) => {
-            if (key === 'tracker') navigate('/incubatee/tracker')
-            else if (key === 'profile') navigate('/incubatee/profile')
-            else if (key === 'programs') navigate('/incubatee/sme')
-            else if (key === 'analytics') navigate('/incubatee/analytics')
+            navigate(`/incubatee/${key}`)
           }}
         >
           <Menu.Item key='tracker' icon={<AppstoreOutlined />}>
@@ -113,7 +161,7 @@ const IncubateeLayout: React.FC = () => {
           <Menu.Item key='profile' icon={<UserOutlined />}>
             My Profile
           </Menu.Item>
-          <Menu.Item key='programs' icon={<BarChartOutlined />}>
+          <Menu.Item key='sme' icon={<BarChartOutlined />}>
             Programs
           </Menu.Item>
           <Menu.Item key='analytics' icon={<LineChartOutlined />}>
@@ -122,10 +170,10 @@ const IncubateeLayout: React.FC = () => {
         </Menu>
       </Sider>
 
-      {/* ✅ Main Content With Header */}
       <Layout>
         <Header
           style={{
+            height: 64,
             background: '#fff',
             padding: '0 24px',
             display: 'flex',
@@ -134,22 +182,26 @@ const IncubateeLayout: React.FC = () => {
             borderBottom: '1px solid #f0f0f0'
           }}
         >
-          <Title level={4} style={{ margin: 0 }}>
-            Smart Incubation Platform
-          </Title>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <Button
-              type='primary'
-              danger
-              onClick={() => {
-                auth.signOut()
-                navigate('/')
-              }}
-            >
-              Logout
-            </Button>
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+            />
+            <Title level={4} style={{ margin: 0 }}>
+              Smart Incubation Platform
+            </Title>
           </div>
+
+          <Button
+            type='primary'
+            danger
+            onClick={() => {
+              auth.signOut()
+              navigate('/')
+            }}
+          >
+            Logout
+          </Button>
         </Header>
 
         <Content style={{ padding: 24 }}>
