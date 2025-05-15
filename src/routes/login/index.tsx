@@ -22,6 +22,7 @@ import {
   where
 } from 'firebase/firestore'
 import { auth, db } from '@/firebase'
+import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
 
@@ -206,6 +207,14 @@ export const LoginPage: React.FC = () => {
 
   return (
     <Spin spinning={loading || googleLoading || redirecting} size='large'>
+      <Helmet>
+        <title>Login | Smart Incubation Platform</title>
+        <meta
+          name='description'
+          content='Log in to your Smart Incubation account to access tailored tools and resources for entrepreneurs, consultants, and administrators.'
+        />
+      </Helmet>
+
       <div
         style={{
           minHeight: '100vh',
@@ -335,22 +344,22 @@ export const LoginPage: React.FC = () => {
 
       <style>
         {`
-                    @keyframes fadeIn {
-                      from { opacity: 0; }
-                      to { opacity: 1; }
-                    }
+                      @keyframes fadeIn {
+                        from { opacity: 0; }
+                        to { opacity: 1; }
+                      }
 
-                    @keyframes fadeInUp {
-                      from {
-                        opacity: 0;
-                        transform: translateY(20px);
+                      @keyframes fadeInUp {
+                        from {
+                          opacity: 0;
+                          transform: translateY(20px);
+                        }
+                        to {
+                          opacity: 1;
+                          transform: translateY(0);
+                        }
                       }
-                      to {
-                        opacity: 1;
-                        transform: translateY(0);
-                      }
-                    }
-                  `}
+                    `}
       </style>
     </Spin>
   )

@@ -51,6 +51,8 @@ import { Helmet } from 'react-helmet'
 import { onAuthStateChanged } from 'firebase/auth'
 import { useSearchParams } from 'react-router-dom'
 import dayjs from 'dayjs'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '@/firebase' // adjust path as needed
 
 const { Title } = Typography
 const { Step } = Steps
@@ -219,6 +221,16 @@ const ParticipantRegistrationStepForm = () => {
     }))
     setComplianceScore(calculateCompliance(uploadedLikeDocs))
   }, [documentFields])
+
+  const sendApplicationEmail = async (email: string, name: string) => {
+    try {
+      const sendEmail = httpsCallable(functions, 'sendApplicationReceivedEmail')
+      await sendEmail({ email, name })
+      console.log('📧 Application email sent successfully')
+    } catch (err) {
+      console.error('❌ Failed to send application email', err)
+    }
+  }
 
   const idNumber = Form.useWatch('idNumber', form)
 
@@ -884,6 +896,8 @@ const ParticipantRegistrationStepForm = () => {
           growthPlanDocUrl: participant.growthPlanDocUrl
         })
       )
+
+      await sendApplicationEmail(values.email, values.participantName)
 
       message.success('Participant successfully applied!')
 

@@ -32,18 +32,17 @@ export interface Participant {
 }
 
 export const documentTypes = [
-  { value: 'beeCertificate', label: 'BEE Certificate' },
-  { value: 'taxClearance', label: 'Tax Clearance Certificate' },
-  { value: 'letterOfGoodStanding', label: 'Letter of Good Standing' },
-  { value: 'companyRegistration', label: 'Company Registration Document' },
-  { value: 'directorIdCopies', label: 'Director ID Copies' },
-  { value: 'proofOfBanking', label: 'Proof of Banking' },
-  { value: 'industryLicense', label: 'Industry-Specific License' },
-  { value: 'uifCompliance', label: 'UIF Compliance Certificate' },
+  { value: 'B-BBEE Certificate', label: 'B-BBEE Certificate' },
+  { value: 'Tax Pin', label: 'Tax Pin Certificate' },
+  { value: 'Proof of Address', label: 'Proof Of Address' },
+  { value: 'Management Accounts', label: 'Management Accounts' },
+  { value: 'Certified ID Copy', label: 'Certified ID Copy' },
+  { value: 'Three Months Bank Statements', label: 'Three Months Bank Statements' },
   { value: 'edAgreement', label: 'Enterprise Development Agreement' },
-  { value: 'contract', label: 'Contract' },
+  { value: 'CIPC', label: 'CIPC' },
   { value: 'other', label: 'Other Document' },
 ];
+
 
 export const documentStatuses = [
   { value: 'valid', label: 'Valid', color: 'green' },

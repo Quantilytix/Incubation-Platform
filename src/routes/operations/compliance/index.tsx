@@ -61,6 +61,9 @@ import { ComplianceDocument, documentTypes, documentStatuses } from './types'
 import EDAgreementModal from './EDAgreementModal'
 import { Helmet } from 'react-helmet'
 
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '@/firebase' // ⬅️ make sure this exports Firebase functions
+
 const { Title, Text } = Typography
 const { TabPane } = Tabs
 const { Option } = Select
@@ -172,6 +175,42 @@ const OperationsCompliance: React.FC = () => {
 
     fetchDocuments()
   }, [])
+
+  const handleSendReminders = async () => {
+    const remindersByUser: Record<string, ComplianceDocument[]> = {}
+
+    documents.forEach(doc => {
+      const isProblematic = ['missing', 'expired', 'pending'].includes(
+        doc.status
+      )
+      const email = contactInfoMap[doc.participantId]?.email
+      if (isProblematic && email) {
+        if (!remindersByUser[email]) remindersByUser[email] = []
+        remindersByUser[email].push(doc)
+      }
+    })
+
+    const sendReminder = httpsCallable(functions, 'sendComplianceReminderEmail')
+
+    const promises = Object.entries(remindersByUser).map(
+      async ([email, docs]) => {
+        const contact = Object.values(contactInfoMap).find(
+          c => c.email === email
+        )
+        const issues = docs.map(d => `${d.type} (${d.status})`)
+
+        try {
+          await sendReminder({ email, name: contact.name, issues })
+          message.success(`📧 Reminder sent to ${contact.name}`)
+        } catch (err) {
+          console.error('❌ Email failed:', err)
+          message.error(`Failed to send to ${contact.name}`)
+        }
+      }
+    )
+
+    await Promise.all(promises)
+  }
 
   // Show add/edit document modal
   const showModal = (document?: ComplianceDocument) => {
@@ -616,11 +655,20 @@ const OperationsCompliance: React.FC = () => {
             >
               Add New Document
             </Button>
+
             <Button
               icon={<FileAddOutlined />}
               onClick={() => setIsEDAgreementModalVisible(true)}
             >
               Generate ED Agreement
+            </Button>
+
+            <Button
+              type='default'
+              icon={<UserOutlined />}
+              onClick={handleSendReminders}
+            >
+              Send Email Reminders
             </Button>
           </Space>
         </div>
