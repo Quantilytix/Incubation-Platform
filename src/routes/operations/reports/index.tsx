@@ -466,6 +466,15 @@ const OperationsReports: React.FC = () => {
               options={{
                 chart: { type: 'funnel' },
                 title: { text: 'Participant Journey Funnel' },
+                plotOptions: {
+                  funnel: {
+                    dataLabels: {
+                      enabled: true,
+                      format: '<b>{point.name}</b>: {point.y}',
+                      softConnector: true
+                    }
+                  }
+                },
                 series: [
                   {
                     name: 'Participants',
@@ -480,6 +489,7 @@ const OperationsReports: React.FC = () => {
                 ]
               }}
             />
+
             <Divider />
 
             <HighchartsReact
@@ -584,7 +594,13 @@ const OperationsReports: React.FC = () => {
                     // Primary yAxis
                     labels: {
                       formatter: function () {
-                        return formatRevenue(this.value)
+                        const v = this.value
+                        return (
+                          'R' +
+                          (v >= 1000000
+                            ? (v / 1000000).toFixed(1) + 'M'
+                            : (v / 1000).toFixed(0) + 'K')
+                        )
                       },
                       style: { color: Highcharts.getOptions().colors[1] }
                     },

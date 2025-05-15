@@ -124,6 +124,12 @@ const GrowthPlanPage: React.FC = () => {
     fetchInterventions()
   }, [])
 
+  useEffect(() => {
+    if (applicationData?.growthPlanConfirmed) {
+      setInterventionsConfirmed(true)
+    }
+  }, [applicationData])
+
   const totalSelected = manualInterventions.length + selectedAi.length
   const canAddMore = totalSelected < 8
 
@@ -210,10 +216,6 @@ const GrowthPlanPage: React.FC = () => {
       .substring(0, 16)
   }
 
-  const signature = getDigitalSignature()
-  setDigitalSignature(signature)
-  setSignatureModalVisible(true)
-
   const handleConfirmGrowthPlan = async () => {
     try {
       const required = manualInterventions
@@ -258,7 +260,8 @@ const GrowthPlanPage: React.FC = () => {
       await updateDoc(doc(db, 'applications', appDocId), {
         'interventions.required': required,
         'interventions.completed': completed,
-        growthPlanConfirmed: true
+        growthPlanConfirmed: true,
+        digitalSignature: getDigitalSignature()
       })
 
       // Add to interventionsDatabase
@@ -301,6 +304,10 @@ const GrowthPlanPage: React.FC = () => {
           'Your selections and completed diagnostic needs plan have been saved.'
       })
 
+      // After successful updates and notifications
+      const signature = getDigitalSignature()
+      setDigitalSignature(signature)
+      setSignatureModalVisible(true)
       setInterventionsConfirmed(true)
     } catch (err) {
       console.error('Confirmation failed', err)
@@ -586,10 +593,10 @@ const GrowthPlanPage: React.FC = () => {
       <Paragraph>
         This document was generated based on your information.
       </Paragraph>
-      {interventionsConfirmed && digitalSignature && (
+      {interventionsConfirmed && (
         <Paragraph>
-          <Text strong>Signature:</Text>{' '}
-          <Text copyable>{digitalSignature}</Text>
+          <Text strong>Cryptographic Signature: </Text>
+          <Text copyable>{applicationData.digitalSignature}</Text>
         </Paragraph>
       )}
 
