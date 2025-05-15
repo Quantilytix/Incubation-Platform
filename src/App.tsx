@@ -155,7 +155,11 @@ const App = () => {
                   syncWithLocation: true,
                   warnWhenUnsavedChanges: true,
                   liveMode: 'auto',
-                  useNewQueryKeys: true
+                  useNewQueryKeys: true,
+                  title: {
+                    text: 'Smart Incubation Platform',
+                    icon: null // or <YourIconComponent /> if needed
+                  }
                 }}
               >
                 <Routes>
