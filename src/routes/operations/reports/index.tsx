@@ -801,7 +801,13 @@ const OperationsReports: React.FC = () => {
                 chart: { type: 'heatmap' },
                 title: { text: 'Compliance Risk Heatmap' },
                 xAxis: {
-                  categories: ['BEE Cert', 'Tax', 'UIF', 'CIPC', 'ID Copies'],
+                  categories: [
+                    'B-BBEE Cert',
+                    'Tax',
+                    'UIF',
+                    'CIPC',
+                    'ID Copies'
+                  ],
                   title: { text: 'Document Types' }
                 },
                 yAxis: {
