@@ -37,6 +37,7 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { db, auth } from '@/firebase'
 import dayjs from 'dayjs'
 import { v4 as uuidv4 } from 'uuid'
+import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
 const { Option } = Select
@@ -662,6 +663,10 @@ export const IncubateeDashboard: React.FC = () => {
   return (
     <Spin spinning={loading} tip='Loading...'>
       <div style={{ padding: 24 }}>
+        <Helmet>
+          <title>Smart Incubation | Incubatee Dashboard</title>
+        </Helmet>
+
         <Title level={3}>Incubatee Dashboard</Title>
 
         <Row gutter={[16, 16]}>

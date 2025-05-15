@@ -9,6 +9,7 @@ import {
   Row,
   Col
 } from 'antd'
+import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
 
@@ -27,6 +28,10 @@ export const MonthlyPerformanceForm: React.FC = () => {
       style={{ maxWidth: 800, margin: '0 auto' }}
       bodyStyle={{ padding: 24 }}
     >
+      <Helmet>
+        <title>Metrics Tracking</title>
+      </Helmet>
+
       <Title level={5}>Enter your SME’s monthly performance data</Title>
 
       <Form

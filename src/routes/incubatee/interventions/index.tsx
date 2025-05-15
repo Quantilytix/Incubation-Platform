@@ -16,16 +16,18 @@ import {
   Tooltip,
   Row,
   Col,
-  Alert
+  Alert,
+  Progress
 } from 'antd'
 import {
   PlusOutlined,
   EditOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
-  ClockCircleOutlined,
   ExclamationCircleOutlined,
-  FileSearchOutlined
+  FileSearchOutlined,
+  ClockCircleOutlined,
+  LineChartOutlined
 } from '@ant-design/icons'
 import {
   collection,
@@ -34,8 +36,10 @@ import {
   doc,
   addDoc,
   query,
-  where
+  where,
+  getDoc
 } from 'firebase/firestore'
+import { Helmet } from 'react-helmet'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { db } from '@/firebase'
 import { v4 as uuidv4 } from 'uuid'
@@ -133,33 +137,54 @@ const InterventionsTrackingView: React.FC = () => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
-      if (user) {
-        console.log('User logged in:', user.email)
-        const participantSnapshot = await getDocs(
+      if (!user) return
+
+      try {
+        const appSnap = await getDocs(
           query(
-            collection(db, 'participants'),
+            collection(db, 'applications'),
             where('email', '==', user.email)
           )
         )
-        if (!participantSnapshot.empty) {
-          const participantDoc = participantSnapshot.docs[0]
-          const participantData = participantDoc.data()
-          setParticipantId(participantDoc.id) // Use Firestore document ID
-          setRequiredInterventions(participantData.interventions.required || [])
+
+        if (!appSnap.empty) {
+          const appDoc = appSnap.docs[0]
+          const appData = appDoc.data()
+
+          console.log('📥 Full App Data:', appData)
+
+          const pid = appData.participantId
+          const required = appData?.interventions?.required || []
+
+          setParticipantId(pid)
+          setRequiredInterventions(required)
+
+          console.log('✅ Set Participant ID:', pid)
+          console.log('✅ Set Required Interventions:', required)
         } else {
-          console.error('No participant found for the logged-in user.')
+          console.warn('❌ No application found for this user.')
         }
-      } else {
-        console.log('No user is logged in.')
+      } catch (err) {
+        console.error('🔥 Failed to load application data:', err)
       }
     })
+
     return () => unsubscribe()
   }, [])
 
+  useEffect(() => {
+    if (requiredInterventions.length > 0) {
+      console.log('📦 Required Interventions:', requiredInterventions)
+    }
+  }, [requiredInterventions])
+
   // Fetch assigned interventions
   useEffect(() => {
+    if (!participantId) return
+
     const fetchAssignedInterventions = async () => {
-      if (!participantId) return
+      console.log('👀 Running fetchAssignedInterventions with:', participantId)
+
       try {
         const q = query(
           collection(db, 'assignedInterventions'),
@@ -170,6 +195,18 @@ const InterventionsTrackingView: React.FC = () => {
         const data = await Promise.all(
           snapshot.docs.map(async docSnap => {
             const data = docSnap.data()
+            console.log('🧾 Raw assigned intervention:', data)
+
+            let interventionData = {}
+            if (data.interventionId) {
+              const interventionSnap = await getDoc(
+                doc(db, 'interventions', data.interventionId)
+              )
+              interventionData = interventionSnap.exists()
+                ? interventionSnap.data()
+                : {}
+            }
+
             const consultantSnap = await getDocs(
               query(
                 collection(db, 'consultants'),
@@ -183,6 +220,8 @@ const InterventionsTrackingView: React.FC = () => {
             return {
               id: docSnap.id,
               ...data,
+              areaOfSupport: interventionData.areaOfSupport || '',
+              type: interventionData.interventionType || 'singular',
               consultant
             }
           })
@@ -194,34 +233,8 @@ const InterventionsTrackingView: React.FC = () => {
       }
     }
 
-    const fetchRequests = async () => {
-      if (!participantId) {
-        return <Text>Loading participant data...</Text>
-      }
-
-      try {
-        const q = query(
-          collection(db, 'interventionRequests'),
-          where('participantId', '==', participantId) // Use the dynamic participant ID
-        )
-        const snapshot = await getDocs(q)
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as InterventionRequest[]
-        setRequests(data)
-      } catch (error) {
-        console.error('Error fetching intervention requests:', error)
-        notification.error({
-          message: 'Error',
-          description: 'Failed to fetch intervention requests.'
-        })
-      }
-    }
-
     fetchAssignedInterventions()
-    fetchRequests()
-  }, [participantId])
+  }, [participantId]) // ✅ Will only run once participantId is set
 
   const deriveDisplayStatus = (intervention: AssignedIntervention): string => {
     if (!intervention.consultantId && !intervention.interventionId)
@@ -556,12 +569,25 @@ const InterventionsTrackingView: React.FC = () => {
       title: 'Intervention',
       dataIndex: 'interventionTitle',
       key: 'interventionTitle',
-      render: (text: string, record: any) => (
-        <Space direction='vertical' size={0}>
-          <Text strong>{text}</Text>
-          <Text type='secondary'>{record.area || record.areaOfSupport}</Text>
-        </Space>
-      )
+      render: (text: string, record: any) => {
+        console.log('💬 Row Record:', record) // TEMP LOG
+        return (
+          <Space direction='vertical' size={0}>
+            <Text strong>{text}</Text>
+            <Text type='secondary'>
+              {typeof record.area === 'string'
+                ? record.area
+                : typeof record.areaOfSupport === 'string'
+                ? record.areaOfSupport
+                : Array.isArray(record.areaOfSupport)
+                ? record.areaOfSupport.join(', ')
+                : typeof record.areaOfSupport === 'object'
+                ? Object.keys(record.areaOfSupport).join(', ')
+                : 'N/A'}
+            </Text>
+          </Space>
+        )
+      }
     },
     {
       title: 'Consultant',
@@ -735,14 +761,93 @@ const InterventionsTrackingView: React.FC = () => {
       }
     }
   ]
+  const totalRequired = requiredInterventions.length
+
+  const completedCount = assignedInterventions.filter(
+    i => i.userCompletionStatus === 'confirmed'
+  ).length
+
+  const ongoingCount = assignedInterventions.filter(
+    i =>
+      i.consultantStatus === 'accepted' &&
+      i.userStatus === 'accepted' &&
+      i.userCompletionStatus !== 'confirmed'
+  ).length
+
+  const completionRate = totalRequired
+    ? Math.round((completedCount / totalRequired) * 100)
+    : 0
 
   return (
     <div style={{ padding: '20px' }}>
+      <Helmet>
+        <title>Interventions Tracking</title>
+      </Helmet>
+
       <Title level={3}>Interventions Tracking</Title>
       <Text type='secondary'>
         Track and manage your assigned interventions.
       </Text>
       <Divider />
+
+      <Row gutter={16} style={{ marginBottom: 24 }}>
+  <Col span={6}>
+    <Card>
+      <Row align='middle' gutter={8}>
+        <Col>
+          <FileSearchOutlined style={{ fontSize: 24 }} />
+        </Col>
+        <Col>
+          <Text>Total Required</Text>
+          <Title level={4} style={{ margin: 0 }}>{totalRequired}</Title>
+        </Col>
+      </Row>
+    </Card>
+  </Col>
+
+  <Col span={6}>
+    <Card>
+      <Row align='middle' gutter={8}>
+        <Col>
+          <ClockCircleOutlined style={{ fontSize: 24 }} />
+        </Col>
+        <Col>
+          <Text>Ongoing</Text>
+          <Title level={4} style={{ margin: 0 }}>{ongoingCount}</Title>
+        </Col>
+      </Row>
+    </Card>
+  </Col>
+
+  <Col span={6}>
+    <Card>
+      <Row align='middle' gutter={8}>
+        <Col>
+          <CheckCircleOutlined style={{ fontSize: 24 }} />
+        </Col>
+        <Col>
+          <Text>Completed</Text>
+          <Title level={4} style={{ margin: 0 }}>{completedCount}</Title>
+        </Col>
+      </Row>
+    </Card>
+  </Col>
+
+  <Col span={6}>
+    <Card>
+      <Row align='middle' gutter={8}>
+        <Col span={24}>
+          <LineChartOutlined style={{ fontSize: 24 }} />
+          <Text style={{ marginLeft: 8 }}>Completion Rate</Text>
+        </Col>
+        <Col span={24}>
+          <Progress percent={completionRate} />
+        </Col>
+      </Row>
+    </Card>
+  </Col>
+</Row>
+
 
       {/* Filters */}
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>

@@ -25,6 +25,7 @@ import {
 import { auth, db } from '@/firebase'
 import { SHA256 } from 'crypto-js'
 import dayjs from 'dayjs'
+import { Helmet } from 'react-helmet'
 
 const { Title, Paragraph, Text } = Typography
 const { Panel } = Collapse
@@ -348,6 +349,10 @@ const GrowthPlanPage: React.FC = () => {
 
   return (
     <Card style={{ padding: 24 }}>
+      <Helmet>
+        <title>Smart Incubation | Diagnostic Plan</title>
+      </Helmet>
+
       <Title level={3}>
         {participantData.beneficiaryName || 'Participant'} Diagnostic Needs
         Assessment

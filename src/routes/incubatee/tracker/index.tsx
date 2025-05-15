@@ -135,6 +135,8 @@ const ApplicationTracker = () => {
     }
   ]
 
+
+
   return (
     <>
       <Helmet>
@@ -144,6 +146,7 @@ const ApplicationTracker = () => {
           content='Track your submitted applications and their status.'
         />
       </Helmet>
+
       <Layout style={{ padding: '24px', background: '#fff' }}>
         <Content>
           <Card bordered={false} style={{ padding: '24px' }}>
