@@ -83,23 +83,30 @@ export const RegisterPage: React.FC = () => {
       const result = await signInWithPopup(auth, provider)
       const user = result.user
 
-      // Add/merge into Firestore
+      const assignedRole = role === 'sme' ? 'incubatee' : role
+
       await setDoc(
         doc(db, 'users', user.uid),
         {
           uid: user.uid,
           name: user.displayName || '',
           email: user.email,
-          createdAt: new Date().toISOString()
+          role: assignedRole || 'guest',
+          createdAt: new Date().toISOString(),
+          companyCode: code || ''
         },
-        { merge: true } // don't overwrite existing data
+        { merge: true }
       )
 
       message.success('✅ Google sign-up successful! Redirecting...', 2)
       setRedirecting(true)
 
       setTimeout(() => {
-        navigate('/dashboard')
+        if (assignedRole === 'incubatee') {
+          navigate('/incubatee/tracker')
+        } else {
+          navigate(`/${assignedRole || 'dashboard'}`)
+        }
       }, 2000)
     } catch (error: any) {
       console.error(error)
@@ -250,22 +257,22 @@ export const RegisterPage: React.FC = () => {
       {/* Animations */}
       <style>
         {`
-                  @keyframes fadeIn {
-                    from { opacity: 0; }
-                    to { opacity: 1; }
-                  }
+                    @keyframes fadeIn {
+                      from { opacity: 0; }
+                      to { opacity: 1; }
+                    }
 
-                  @keyframes fadeInUp {
-                    from {
-                      opacity: 0;
-                      transform: translateY(20px);
+                    @keyframes fadeInUp {
+                      from {
+                        opacity: 0;
+                        transform: translateY(20px);
+                      }
+                      to {
+                        opacity: 1;
+                        transform: translateY(0);
+                      }
                     }
-                    to {
-                      opacity: 1;
-                      transform: translateY(0);
-                    }
-                  }
-                `}
+                  `}
       </style>
     </Spin>
   )

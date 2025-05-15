@@ -22,17 +22,13 @@ import {
   Layout
 } from 'antd'
 import { useForm } from 'antd/lib/form/Form'
-import {
-  FileTextOutlined,
-  StarOutlined,
-  StarFilled,
-  UserOutlined
-} from '@ant-design/icons'
+import { FileTextOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { db } from '@/firebase'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import { auth } from 'firebase'
+import { Helmet } from 'react-helmet'
 
 const { Title, Paragraph } = Typography
 const { Header, Content } = Layout
@@ -222,50 +218,64 @@ const SMEDashboard = () => {
   )
 
   return (
-    <Layout>
-      <Content style={{ padding: '16px 32px' }}>
-        <Tabs defaultActiveKey='recommended'>
-          <TabPane tab='Recommended for You' key='recommended'>
-            {loading ? (
-              <Spin />
-            ) : recommended.length > 0 ? (
-              <Row gutter={[16, 16]}>{recommended.map(renderProgramCard)}</Row>
-            ) : (
-              <Paragraph>No recommended programs at this time.</Paragraph>
-            )}
-          </TabPane>
+    <>
+      <Helmet>
+        <title>Programs Dashboard | Smart Incubation Platform</title>
+        <meta
+          name='description'
+          content='Explore recommended and active programs available to your SME.'
+        />
+      </Helmet>
 
-          <TabPane tab='All Programs' key='all'>
-            {loading ? (
-              <Spin />
-            ) : allPrograms.length > 0 ? (
-              <Row gutter={[16, 16]}>{allPrograms.map(renderProgramCard)}</Row>
-            ) : (
-              <Paragraph>No programs found.</Paragraph>
-            )}
-          </TabPane>
-        </Tabs>
-      </Content>
+      <Layout>
+        <Content style={{ padding: '16px 32px' }}>
+          <Tabs defaultActiveKey='recommended'>
+            <TabPane tab='Recommended for You' key='recommended'>
+              {loading ? (
+                <Spin />
+              ) : recommended.length > 0 ? (
+                <Row gutter={[16, 16]}>
+                  {recommended.map(renderProgramCard)}
+                </Row>
+              ) : (
+                <Paragraph>No recommended programs at this time.</Paragraph>
+              )}
+            </TabPane>
 
-      <Modal
-        open={programModalVisible}
-        title={activeProgram?.name}
-        onCancel={() => setProgramModalVisible(false)}
-        onOk={submitApplication}
-        okText='Submit Application'
-        destroyOnClose
-      >
-        <Paragraph>{activeProgram?.description}</Paragraph>
+            <TabPane tab='All Programs' key='all'>
+              {loading ? (
+                <Spin />
+              ) : allPrograms.length > 0 ? (
+                <Row gutter={[16, 16]}>
+                  {allPrograms.map(renderProgramCard)}
+                </Row>
+              ) : (
+                <Paragraph>No programs found.</Paragraph>
+              )}
+            </TabPane>
+          </Tabs>
+        </Content>
 
-        <Divider orientation='left'>Eligibility Criteria</Divider>
-        <ul>
-          <li>Minimum BEEE level: 2 or better</li>
-          <li>Black-owned ≥ 51%</li>
-          <li>Startup must be operational</li>
-          {/* These could be dynamic from program definition later */}
-        </ul>
-      </Modal>
-    </Layout>
+        <Modal
+          open={programModalVisible}
+          title={activeProgram?.name}
+          onCancel={() => setProgramModalVisible(false)}
+          onOk={submitApplication}
+          okText='Submit Application'
+          destroyOnClose
+        >
+          <Paragraph>{activeProgram?.description}</Paragraph>
+
+          <Divider orientation='left'>Eligibility Criteria</Divider>
+          <ul>
+            <li>Minimum BEEE level: 2 or better</li>
+            <li>Black-owned ≥ 51%</li>
+            <li>Startup must be operational</li>
+            {/* These could be dynamic from program definition later */}
+          </ul>
+        </Modal>
+      </Layout>
+    </>
   )
 }
 

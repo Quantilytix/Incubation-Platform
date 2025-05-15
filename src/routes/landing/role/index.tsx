@@ -9,6 +9,7 @@ import {
   LoginOutlined,
   ArrowLeftOutlined
 } from '@ant-design/icons'
+import { Helmet } from 'react-helmet' // ✅ Helmet imported
 import './RoleDetailPage.css'
 
 const { Title, Paragraph, Text } = Typography
@@ -126,6 +127,15 @@ const RoleDetailPage = () => {
         position: 'relative'
       }}
     >
+      {/* ✅ Helmet with dynamic title/description */}
+      <Helmet>
+        <title>{role.title} | Smart Incubation Platform</title>
+        <meta
+          name='description'
+          content={`Explore features and tools tailored for ${role.title}.`}
+        />
+      </Helmet>
+
       <Card
         style={{
           maxWidth: 1100,
@@ -137,7 +147,6 @@ const RoleDetailPage = () => {
         }}
         bodyStyle={{ padding: 32 }}
       >
-        {/* Back Button */}
         <Button
           type='link'
           icon={<ArrowLeftOutlined />}
@@ -155,7 +164,6 @@ const RoleDetailPage = () => {
           <Paragraph style={{ color: '#000' }}>{role.highlight}</Paragraph>
         </div>
 
-        {/* Feature Cards */}
         <Row gutter={[16, 16]} justify='center'>
           {role.features.map((feature, index) => (
             <Col xs={24} sm={12} md={8} key={index}>
@@ -190,7 +198,6 @@ const RoleDetailPage = () => {
           ))}
         </Row>
 
-        {/* CTA Buttons */}
         <div style={{ marginTop: 50, textAlign: 'center' }}>
           <Button
             type='primary'
@@ -211,7 +218,6 @@ const RoleDetailPage = () => {
         </div>
       </Card>
 
-      {/* Logo Bottom Right */}
       <img
         src='/assets/images/QuantilytixO.png'
         alt='Quantilytix'

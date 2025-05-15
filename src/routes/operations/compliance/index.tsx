@@ -19,7 +19,8 @@ import {
   Row,
   Col,
   Statistic,
-  Progress
+  Progress,
+  Layout
 } from 'antd'
 import {
   SearchOutlined,
@@ -33,7 +34,8 @@ import {
   PlusOutlined,
   DownloadOutlined,
   FileAddOutlined,
-  FileProtectOutlined
+  FileProtectOutlined,
+  UserOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import moment from 'dayjs'
@@ -91,6 +93,39 @@ const OperationsCompliance: React.FC = () => {
   const [uploadingFile, setUploadingFile] = useState<File | null>(null)
   const [uploadPercent, setUploadPercent] = useState<number>(0)
   const [isUploading, setIsUploading] = useState<boolean>(false)
+  const [contactInfoMap, setContactInfoMap] = useState<Record<string, any>>({})
+
+  useEffect(() => {
+    const fetchContactInfo = async () => {
+      const appsSnap = await getDocs(collection(db, 'applications'))
+      const participantsSnap = await getDocs(collection(db, 'participants'))
+
+      const participantMap = participantsSnap.docs.reduce((acc, doc) => {
+        acc[doc.id] = doc.data()
+        return acc
+      }, {} as Record<string, any>)
+
+      const contactMap = appsSnap.docs.reduce((acc, doc) => {
+        const data = doc.data()
+        const pId = data.participantId
+        if (participantMap[pId]) {
+          acc[pId] = {
+            name: participantMap[pId].beneficiaryName,
+            email: participantMap[pId].email,
+            phone:
+              participantMap[pId].phone || participantMap[pId].contactNumber
+          }
+        }
+        return acc
+      }, {} as Record<string, any>)
+
+      console.log('ContactInfoMap', contactInfoMap)
+
+      setContactInfoMap(contactMap)
+    }
+
+    fetchContactInfo()
+  }, [])
 
   const uploadProps: UploadProps = {
     beforeUpload: file => {
@@ -105,33 +140,20 @@ const OperationsCompliance: React.FC = () => {
     const fetchDocuments = async () => {
       setLoading(true)
       try {
-        const snapshot = await getDocs(collection(db, 'participants'))
-
+        const snapshot = await getDocs(collection(db, 'applications'))
         const fetchedDocuments: ComplianceDocument[] = []
 
-        snapshot.forEach(participantDoc => {
-          const participantData = participantDoc.data()
-          const participantId = participantDoc.id
-          const participantName = participantData.beneficiaryName || 'Unknown'
+        snapshot.forEach(applicationDoc => {
+          const appData = applicationDoc.data()
+          const applicantEmail = appData.email
+          const complianceDocs = appData.complianceDocuments || []
 
-          const docs = participantData.complianceDocuments || []
-
-          docs.forEach((doc: any, index: number) => {
+          complianceDocs.forEach((doc, index) => {
             fetchedDocuments.push({
-              id: `${participantId}-${index}`,
-              participantId,
-              participantName,
-              documentType: doc.type,
-              documentName: doc.fileName,
-              status: doc.status,
-              issueDate: doc.issueDate,
-              expiryDate: doc.expiryDate,
-              fileUrl: doc.url,
-              notes: doc.notes || '',
-              uploadedBy: doc.uploadedBy || 'N/A',
-              uploadedAt: doc.uploadedAt || 'N/A',
-              lastVerifiedBy: doc.lastVerifiedBy || '',
-              lastVerifiedAt: doc.lastVerifiedAt || ''
+              id: `${applicationDoc.id}-${index}`,
+              participantName: applicantEmail,
+              participantId: appData.participantId, // ✅ Add this
+              ...doc
             })
           })
         })
@@ -157,7 +179,7 @@ const OperationsCompliance: React.FC = () => {
       setSelectedDocument(document)
       form.setFieldsValue({
         participantId: document.participantId,
-        documentType: document.documentType,
+        type: document.type,
         status: document.status,
         issueDate: document.issueDate ? moment(document.issueDate) : null,
         expiryDate: document.expiryDate ? moment(document.expiryDate) : null,
@@ -170,7 +192,7 @@ const OperationsCompliance: React.FC = () => {
     setIsModalVisible(true)
   }
 
-  const continueSaving = async (fileUrl: string) => {
+  const continueSaving = async (url: string) => {
     try {
       const newDocument: ComplianceDocument = {
         id: selectedDocument?.id || `d${Date.now()}`,
@@ -179,7 +201,7 @@ const OperationsCompliance: React.FC = () => {
           mockParticipants.find(
             p => p.id === form.getFieldValue('participantId')
           )?.name || '',
-        documentType: form.getFieldValue('documentType'),
+        type: form.getFieldValue('type'),
         documentName: form.getFieldValue('documentName'),
         status: form.getFieldValue('status'),
         issueDate: form.getFieldValue('issueDate')
@@ -189,7 +211,7 @@ const OperationsCompliance: React.FC = () => {
           ? form.getFieldValue('expiryDate').format('YYYY-MM-DD')
           : '',
         notes: form.getFieldValue('notes'),
-        fileUrl,
+        url,
         uploadedBy: 'Current User',
         uploadedAt: new Date().toISOString().split('T')[0],
         lastVerifiedBy: selectedDocument?.lastVerifiedBy,
@@ -230,7 +252,7 @@ const OperationsCompliance: React.FC = () => {
   // Handle form submission
   const handleSubmit = async (values: any) => {
     try {
-      let fileUrl = selectedDocument?.fileUrl || ''
+      let url = selectedDocument?.url || ''
 
       // If a new file was selected for upload
       if (uploadingFile) {
@@ -258,14 +280,14 @@ const OperationsCompliance: React.FC = () => {
           async () => {
             // Upload completed successfully
             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref)
-            fileUrl = downloadURL
+            url = downloadURL
             setIsUploading(false)
             setUploadPercent(0)
-            continueSaving(fileUrl) // ➡ continue with saving the document
+            continueSaving(url) // ➡ continue with saving the document
           }
         )
       } else {
-        continueSaving(fileUrl) // ➡ no file upload, just save
+        continueSaving(url) // ➡ no file upload, just save
       }
 
       const newDocument: ComplianceDocument = {
@@ -273,7 +295,7 @@ const OperationsCompliance: React.FC = () => {
         participantId: values.participantId,
         participantName:
           mockParticipants.find(p => p.id === values.participantId)?.name || '',
-        documentType: values.documentType,
+        type: values.type,
         documentName: values.documentName,
         status: values.status,
         issueDate: values.issueDate
@@ -283,7 +305,7 @@ const OperationsCompliance: React.FC = () => {
           ? values.expiryDate.format('YYYY-MM-DD')
           : '',
         notes: values.notes,
-        fileUrl, // use uploaded file URL
+        url, // use uploaded file URL
         uploadedBy: 'Current User',
         uploadedAt: new Date().toISOString().split('T')[0],
         lastVerifiedBy: selectedDocument?.lastVerifiedBy,
@@ -368,15 +390,14 @@ const OperationsCompliance: React.FC = () => {
   const filteredDocuments = searchText
     ? documents.filter(doc => {
         const docTypeLabel =
-          documentTypes.find(
-            t => t.value === doc.documentType || t.label === doc.documentType
-          )?.label || ''
+          documentTypes.find(t => t.value === doc.type || t.label === doc.type)
+            ?.label || ''
 
         return (
           doc.participantName
             .toLowerCase()
             .includes(searchText.toLowerCase()) ||
-          doc.documentType.toLowerCase().includes(searchText.toLowerCase()) ||
+          doc.type.toLowerCase().includes(searchText.toLowerCase()) ||
           docTypeLabel.toLowerCase().includes(searchText.toLowerCase())
         )
       })
@@ -403,8 +424,8 @@ const OperationsCompliance: React.FC = () => {
     },
     {
       title: 'Document Type',
-      dataIndex: 'documentType',
-      key: 'documentType',
+      dataIndex: 'type',
+      key: 'type',
       render: (value: string) =>
         documentTypes.find(t => t.value === value || t.label === value)
           ?.label || value,
@@ -413,7 +434,7 @@ const OperationsCompliance: React.FC = () => {
         value: type.value
       })),
       onFilter: (value: any, record: ComplianceDocument) =>
-        record.documentType === value
+        record.type === value
     },
     {
       title: 'Status',
@@ -438,48 +459,66 @@ const OperationsCompliance: React.FC = () => {
       title: 'Expiry Date',
       dataIndex: 'expiryDate',
       key: 'expiryDate',
-      render: (date: string) => moment(date).format('DD MMM YYYY'),
+      render: (date: any) =>
+        date?.toDate
+          ? moment(date.toDate()).format('DD MMM YYYY')
+          : moment(date).format('DD MMM YYYY'),
       sorter: (a: ComplianceDocument, b: ComplianceDocument) =>
         moment(a.expiryDate).unix() - moment(b.expiryDate).unix()
     },
     {
       title: 'Actions',
       key: 'actions',
-      render: (_, record: ComplianceDocument) => (
-        <Space size='middle'>
-          <Tooltip title='View Document'>
-            <Button
-              icon={<EyeOutlined />}
-              onClick={() => window.open(record.fileUrl, '_blank')}
-              type='text'
-              disabled={!record.fileUrl}
-            />
-          </Tooltip>
-          {record.status === 'pending' && (
-            <Tooltip title='Verify Document'>
-              <Button
-                type='text'
-                icon={<CheckCircleOutlined style={{ color: 'green' }} />}
-                onClick={() => handleVerifyDocument(record.id)}
-              />
-            </Tooltip>
-          )}
-          {record.documentType !== 'edAgreement' && (
-            <Tooltip title='Generate ED Agreement'>
-              <Button
-                type='text'
-                icon={<FileProtectOutlined style={{ color: 'blue' }} />}
-                onClick={() => showEDAgreementModal(record.participantId)}
-              />
-            </Tooltip>
-          )}
-        </Space>
-      )
+      render: (_: any, record: ComplianceDocument) => {
+        const contact = contactInfoMap[record.participantId]
+        console.log('record.participantId', record.participantId)
+
+        return (
+          <Space size='middle'>
+            {record.url && (
+              <Tooltip title='View Document'>
+                <Button
+                  icon={<EyeOutlined />}
+                  onClick={() => window.open(record.url, '_blank')}
+                  type='text'
+                />
+              </Tooltip>
+            )}
+            {['missing', 'expired', 'pending'].includes(
+              record.status.toLowerCase()
+            ) &&
+              contact && (
+                <Tooltip title='Contact Participant'>
+                  <Button
+                    icon={<UserOutlined />}
+                    type='text'
+                    onClick={() => {
+                      Modal.info({
+                        title: `Contact ${contact.name}`,
+                        content: (
+                          <div>
+                            <p>
+                              <strong>Email:</strong> {contact.email}
+                            </p>
+                            <p>
+                              <strong>Phone:</strong> {contact.phone || 'N/A'}
+                            </p>
+                          </div>
+                        ),
+                        okText: 'Close'
+                      })
+                    }}
+                  />
+                </Tooltip>
+              )}
+          </Space>
+        )
+      }
     }
   ] as const
 
   return (
-    <div style={{ padding: '20px' }}>
+    <Layout style={{ minHeight: '100vh', background: '#fff' }}>
       <Helmet>
         <title>Compliance Management | Smart Incubation</title>
       </Helmet>
@@ -642,7 +681,7 @@ const OperationsCompliance: React.FC = () => {
           </Form.Item>
 
           <Form.Item
-            name='documentType'
+            name='type'
             label='Document Type'
             rules={[
               { required: true, message: 'Please select a document type' }
@@ -702,15 +741,13 @@ const OperationsCompliance: React.FC = () => {
             <Upload {...uploadProps}>
               <Button icon={<UploadOutlined />}>Upload Document</Button>
             </Upload>
-            {selectedDocument?.fileUrl && (
+            {selectedDocument?.url && (
               <div style={{ marginTop: '10px' }}>
                 <Text>Current file: </Text>
                 <Button
                   type='link'
                   icon={<DownloadOutlined />}
-                  onClick={() =>
-                    window.open(selectedDocument.fileUrl, '_blank')
-                  }
+                  onClick={() => window.open(selectedDocument.url, '_blank')}
                 >
                   View Document
                 </Button>
@@ -746,7 +783,7 @@ const OperationsCompliance: React.FC = () => {
         participant={selectedParticipant}
         onSave={handleSaveEDAgreement}
       />
-    </div>
+    </Layout>
   )
 }
 

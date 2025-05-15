@@ -21,7 +21,8 @@ import {
   Input,
   DatePicker,
   message,
-  TimePicker
+  TimePicker,
+  Layout
 } from 'antd'
 import {
   CalendarOutlined,
@@ -637,7 +638,7 @@ export const OperationsDashboard: React.FC = () => {
   ]
 
   return (
-    <div>
+    <Layout style={{ minHeight: '100vh', background: '#fff' }}>
       <Helmet>
         <title>Operations Dashboard</title>
         <meta
@@ -771,65 +772,6 @@ export const OperationsDashboard: React.FC = () => {
                 </List.Item>
               )}
             />
-          </Card>
-
-          {/* Compliance Tracking */}
-
-          <Card
-            title={
-              <Space>
-                <FileSearchOutlined />
-                <span>Compliance Tracking</span>
-              </Space>
-            }
-            style={{ marginBottom: '24px' }}
-          >
-            {/* ➡️ First line - Horizontal Compliance Metrics */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-              <Col span={8}>
-                <Statistic
-                  title='Up-to-date'
-                  value={upToDate}
-                  suffix={`/ ${total}`}
-                  valueStyle={{ color: '#52c41a' }} // ✅ green
-                />
-              </Col>
-              <Col span={8}>
-                <Statistic
-                  title='Needs Review'
-                  value={needsReview}
-                  suffix={`/ ${total}`}
-                  valueStyle={{ color: '#faad14' }} // ✅ orange
-                />
-              </Col>
-              <Col span={8}>
-                <Statistic
-                  title='Overdue'
-                  value={overdue}
-                  suffix={`/ ${total}`}
-                  valueStyle={{ color: '#ff4d4f' }} // ✅ red
-                />
-              </Col>
-            </Row>
-
-            {/* ➡️ Second line - Progress Bar */}
-            <Paragraph>
-              <Text strong>Overall Compliance Status</Text>
-            </Paragraph>
-            <Progress
-              percent={Math.round((upToDate / total) * 100)}
-              success={{
-                percent: Math.round((upToDate / total) * 100)
-              }}
-              format={percent => `${percent}% Compliant`}
-            />
-
-            <Divider style={{ margin: '12px 0' }} />
-
-            {/* Optional: Generate report button */}
-            <Button type='primary' block>
-              Generate Compliance Report
-            </Button>
           </Card>
         </Col>
 
@@ -1317,7 +1259,7 @@ export const OperationsDashboard: React.FC = () => {
           placeholder='Please provide a reason for declining this intervention...'
         />
       </Modal>
-    </div>
+    </Layout>
   )
 }
 

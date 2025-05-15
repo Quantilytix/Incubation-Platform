@@ -23,6 +23,7 @@ import {
 } from 'firebase/firestore'
 import { auth, db } from '@/firebase'
 import { useNavigate } from 'react-router-dom'
+import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
 const { Content } = Layout
@@ -33,8 +34,6 @@ const ApplicationTracker = () => {
   const [companyCode, setCompanyCode] = useState('')
   const [loading, setLoading] = useState(true)
   const [availablePrograms, setAvailablePrograms] = useState<any[]>([])
-  const [beneficiaryName, setBeneficiaryName] = useState('')
-  const [interventionGroups, setInterventionGroups] = useState<any[]>([])
 
   const navigate = useNavigate()
 
@@ -51,7 +50,6 @@ const ApplicationTracker = () => {
         const userData = userSnap.data()
         const code = userData.companyCode || ''
         setCompanyCode(code)
-        setBeneficiaryName(userData.beneficiaryName || '')
 
         // 🟢 Step 1: Load all programs
         const programsSnap = await getDocs(
@@ -73,17 +71,11 @@ const ApplicationTracker = () => {
 
         const apps = appsSnap.docs.map(doc => {
           const data = doc.data()
-          const matchedProgram = allPrograms.find(p => p.id === data.programId)
-
-          console.log('📎 Matching Program:', matchedProgram)
 
           return {
             id: doc.id,
             ...data,
-            programName:
-              matchedProgram?.programName ||
-              matchedProgram?.name ||
-              'Unnamed Program'
+            programName: data?.programName
           }
         })
 
@@ -138,67 +130,76 @@ const ApplicationTracker = () => {
     },
     {
       title: 'Compliance',
-      dataIndex: 'complianceRate',
+      dataIndex: 'complianceScore',
       render: (rate: number) => <strong>{rate || 0}%</strong>
     }
   ]
 
   return (
-    <Layout style={{ padding: '24px', background: '#fff' }}>
-      <Content>
-        <Card bordered={false} style={{ padding: '24px' }}>
-          <Space direction='vertical' size='large' style={{ width: '100%' }}>
-            <Title level={3}>🎯 My Application Tracker</Title>
+    <>
+      <Helmet>
+        <title>My Applications | Smart Incubation Platform</title>
+        <meta
+          name='description'
+          content='Track your submitted applications and their status.'
+        />
+      </Helmet>
+      <Layout style={{ padding: '24px', background: '#fff' }}>
+        <Content>
+          <Card bordered={false} style={{ padding: '24px' }}>
+            <Space direction='vertical' size='large' style={{ width: '100%' }}>
+              <Title level={3}>🎯 My Application Tracker</Title>
 
-            <Card bordered style={{ background: '#fafafa' }}>
-              <Row gutter={[24, 24]}>
-                <Col xs={24} sm={12} md={6}>
-                  <Statistic
-                    title='Total Applications'
-                    value={statusCounts.Total}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <Statistic
-                    title='Accepted'
-                    value={statusCounts.Accepted}
-                    valueStyle={{ color: 'green' }}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <Statistic
-                    title='Pending'
-                    value={statusCounts.Pending}
-                    valueStyle={{ color: 'orange' }}
-                  />
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                  <Statistic
-                    title='Declined'
-                    value={statusCounts.Declined}
-                    valueStyle={{ color: 'red' }}
-                  />
-                </Col>
-              </Row>
-            </Card>
+              <Card bordered style={{ background: '#fafafa' }}>
+                <Row gutter={[24, 24]}>
+                  <Col xs={24} sm={12} md={6}>
+                    <Statistic
+                      title='Total Applications'
+                      value={statusCounts.Total}
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <Statistic
+                      title='Accepted'
+                      value={statusCounts.Accepted}
+                      valueStyle={{ color: 'green' }}
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <Statistic
+                      title='Pending'
+                      value={statusCounts.Pending}
+                      valueStyle={{ color: 'orange' }}
+                    />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <Statistic
+                      title='Declined'
+                      value={statusCounts.Declined}
+                      valueStyle={{ color: 'red' }}
+                    />
+                  </Col>
+                </Row>
+              </Card>
 
-            <Divider />
+              <Divider />
 
-            <Card title='📋 My Applications' bodyStyle={{ padding: 0 }}>
-              <Table
-                rowKey='id'
-                columns={applicationColumns}
-                dataSource={applications}
-                loading={loading}
-                pagination={{ pageSize: 5 }}
-                scroll={{ x: true }}
-                style={{ padding: '16px' }}
-              />
-            </Card>
-          </Space>
-        </Card>
-      </Content>
-    </Layout>
+              <Card title='📋 My Applications' bodyStyle={{ padding: 0 }}>
+                <Table
+                  rowKey='id'
+                  columns={applicationColumns}
+                  dataSource={applications}
+                  loading={loading}
+                  pagination={{ pageSize: 5 }}
+                  scroll={{ x: true }}
+                  style={{ padding: '16px' }}
+                />
+              </Card>
+            </Space>
+          </Card>
+        </Content>
+      </Layout>
+    </>
   )
 }
 

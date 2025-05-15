@@ -96,10 +96,11 @@ const ParticipantRegistrationStepForm = () => {
   >({})
   const [participantData, setParticipantData] = useState<any>({})
   const [searchParams] = useSearchParams()
-  const companyCode = searchParams.get('id')
-  const programId = searchParams.get('program')
+  const companyCode = searchParams.get('code')
+  const programId = searchParams.get('id')
   const programName = searchParams.get('program')
   const [participantId, setParticipantId] = useState<string | null>(null)
+  const [complianceScore, setComplianceScore] = useState(0)
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -197,11 +198,29 @@ const ParticipantRegistrationStepForm = () => {
           email: data.email,
           ...data // optional if you're displaying anything else
         })
+
+        // 🔁 Derive & inject age and stage
+        if (data.idNumber) {
+          const age = getAgeFromID(data.idNumber)
+          const stage = deriveStageFromRevenue(data)
+          form.setFieldsValue({ age, stage })
+        }
       }
     }
 
     fetchParticipant()
   }, [])
+
+  useEffect(() => {
+    const uploadedLikeDocs = documentFields.map(doc => ({
+      ...doc,
+      status: doc.file ? 'valid' : 'missing',
+      expiryDate: doc.expiryDate?.format?.('YYYY-MM-DD') || null
+    }))
+    setComplianceScore(calculateCompliance(uploadedLikeDocs))
+  }, [documentFields])
+
+  const idNumber = Form.useWatch('idNumber', form)
 
   const generateGrowthPlanDocBlob = async (data: any) => {
     const safeText = (text: any) =>
@@ -340,7 +359,7 @@ const ParticipantRegistrationStepForm = () => {
               text: '4. Compliance Summary',
               heading: HeadingLevel.HEADING_1
             }),
-            safeText(`Compliance Score: ${data.complianceRate ?? 0}%`),
+            safeText(`Compliance Score: ${data.complianceScore ?? 0}%`),
 
             new Paragraph({
               text: '5. Selected Interventions',
@@ -398,6 +417,7 @@ const ParticipantRegistrationStepForm = () => {
     })
     return await Packer.toBlob(doc)
   }
+
   const uploadGrowthPlanDoc = async (blob: Blob, participantName: string) => {
     const fileName = `${Date.now()}_${participantName}_growth_plan.docx`
     const fileRef = ref(storage, `growth_plans/${fileName}`)
@@ -410,6 +430,50 @@ const ParticipantRegistrationStepForm = () => {
 
   const evaluateWithAI = async (participantData: any) => {
     try {
+      const {
+        participantName,
+        beneficiaryName,
+        sector,
+        city,
+        province,
+        yearsOfTrading,
+        motivation,
+        natureOfBusiness,
+        challenges,
+        stage,
+        ageGroup,
+        developmentType,
+        facebook,
+        instagram,
+        linkedIn,
+        complianceDocuments = []
+      } = participantData
+
+      const structuredInfo = {
+        name: participantName,
+        business_name: beneficiaryName,
+        sector,
+        location: `${city}, ${province}`,
+        years_operating: yearsOfTrading,
+        description: motivation,
+        business_model: natureOfBusiness, // ✅ added field
+        challenges,
+        stage,
+        ageGroup,
+        developmentType,
+        onlinePresence: {
+          facebook,
+          instagram,
+          linkedIn
+        },
+        complianceSummary: complianceDocuments.map(doc => ({
+          type: doc.type,
+          status: doc.status,
+          expiryDate: doc.expiryDate || 'N/A',
+          hasUrl: !!doc.url
+        }))
+      }
+
       const response = await fetch(
         'https://rairo-incu-api.hf.space/api/evaluate',
         {
@@ -419,33 +483,18 @@ const ParticipantRegistrationStepForm = () => {
           },
           body: JSON.stringify({
             participantId: `applicant-${Date.now()}`,
-            participantInfo: {
-              name: participantData.participantName,
-              business_name: participantData.beneficiaryName,
-              sector: participantData.sector,
-              location: `${participantData.city}, ${participantData.province}`,
-              years_operating: participantData.yearsOfTrading,
-              description: participantData.motivation
-            }
+            participantInfo: structuredInfo
           })
         }
       )
 
-      if (!response.ok) throw new Error('API call failed.')
+      if (!response.ok) throw new Error('AI API call failed.')
 
       const data = await response.json()
-      console.log('✅ AI response:', data)
-
       const evaluation = data.raw_response ?? data.evaluation
-      if (!evaluation) {
-        throw new Error('AI response missing expected fields')
-      }
-      return evaluation
-
-      // ✅ Extract just raw_response (defensive fallback in case structure changes)
-      return data.raw_response ?? data.evaluation ?? null
+      return evaluation || null
     } catch (err) {
-      console.error('AI evaluation failed:', err)
+      console.error('❌ AI evaluation failed:', err)
       return null
     }
   }
@@ -457,6 +506,7 @@ const ParticipantRegistrationStepForm = () => {
     if (age <= 59) return 'Adult'
     return 'Senior'
   }
+
   const getAgeFromID = (id: string): number => {
     const birthYear = parseInt(id.substring(0, 2), 10)
     const birthMonth = parseInt(id.substring(2, 4), 10) - 1
@@ -522,7 +572,9 @@ const ParticipantRegistrationStepForm = () => {
         </p>
         <strong>Date of Registration:</strong>{' '}
         {values.dateOfRegistration
-          ? dayjs(values.dateOfRegistration).format('YYYY-MM-DD')
+          ? dayjs(
+              values.dateOfRegistration?.toDate?.() || values.dateOfRegistration
+            ).format('YYYY-MM-DD')
           : 'N/A'}
         <p>
           <strong>Registration Number:</strong> {values.registrationNumber}
@@ -591,18 +643,6 @@ const ParticipantRegistrationStepForm = () => {
   const getMissingDocuments = () => documentFields.filter(doc => !doc.file)
 
   const next = async () => {
-    const values = await form.validateFields()
-
-    // 👉 derive and set age
-    if (values.idNumber) {
-      const derivedAge = getAgeFromID(values.idNumber)
-      form.setFieldsValue({ age: derivedAge })
-    }
-
-    // 👉 derive and set stage
-    const stage = deriveStageFromRevenue(values)
-    form.setFieldsValue({ stage })
-
     setCurrent(current + 1)
   }
 
@@ -670,7 +710,7 @@ const ParticipantRegistrationStepForm = () => {
     return uploadedDocs
   }
 
-  const calculateCompliance = (docs: any[]) => {
+  const calculateCompliance = (docs: any[] = []) => {
     const totalRequired = docs.length
     const oneWeekFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
@@ -681,7 +721,9 @@ const ParticipantRegistrationStepForm = () => {
       return true
     })
 
-    return Math.round((validDocs.length / totalRequired) * 100)
+    return totalRequired === 0
+      ? 0
+      : Math.round((validDocs.length / totalRequired) * 100)
   }
 
   const deriveStageFromRevenue = (values: any): string => {
@@ -714,9 +756,9 @@ const ParticipantRegistrationStepForm = () => {
     const values = form.getFieldsValue(true) // true = get all values, even unmounted
 
     const uploadedDocs = await uploadAllDocuments()
-    const complianceRate = calculateCompliance(uploadedDocs)
+    setComplianceScore(calculateCompliance(uploadedDocs))
 
-    if (complianceRate < 10) {
+    if (complianceScore < 10) {
       message.error(
         'Compliance must be 10% or higher to approve this application.'
       )
@@ -731,12 +773,16 @@ const ParticipantRegistrationStepForm = () => {
 
       const participant = {
         ...values,
-        dateOfRegistration: values.dateOfRegistration?.toDate(), // Make sure it's a JS Date
+        dateOfRegistration: values.dateOfRegistration
+          ? dayjs(
+              values.dateOfRegistration.toDate?.() || values.dateOfRegistration
+            )
+          : null,
         rating: 0,
         developmentType: '',
         ageGroup: getAgeGroup(derivedAge),
         applicationStatus: 'pending',
-        complianceRate,
+        complianceScore,
         complianceDocuments: uploadedDocs,
         interventions: {
           required: Object.values(interventionSelections)
@@ -814,8 +860,9 @@ const ParticipantRegistrationStepForm = () => {
         collection(db, 'applications'),
         removeUndefinedDeep({
           participantId,
-          programName,
-          companyCode,
+          programName: programName,
+          programId: programId,
+          companyCode: companyCode,
           applicationStatus: 'pending',
           submittedAt: new Date().toISOString(),
           beneficiaryName: values.beneficiaryName,
@@ -830,7 +877,7 @@ const ParticipantRegistrationStepForm = () => {
           facebook: values.facebook,
           instagram: values.instagram,
           linkedIn: values.linkedIn,
-          complianceRate,
+          complianceScore,
           complianceDocuments: uploadedDocs,
           interventions: participant.interventions,
           aiEvaluation,
@@ -882,6 +929,13 @@ const ParticipantRegistrationStepForm = () => {
       title: 'Motivation',
       content: (
         <Card style={{ backgroundColor: '#fff7e6' }}>
+          <Form.Item name='stage' hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item name='age' hidden>
+            <Input />
+          </Form.Item>
+
           <Form.Item
             name='motivation'
             label='Motivation (min 100 words)'
@@ -994,7 +1048,7 @@ const ParticipantRegistrationStepForm = () => {
           <Title level={4}>Review Your Details</Title>
           {formatReviewData(form.getFieldsValue(true))}
           <p>
-            Compliance Score: <strong>{calculateCompliance()}%</strong>
+            Compliance Score: <strong>{complianceScore}%</strong>
           </p>
 
           {getExpiredDocuments().length > 0 && (

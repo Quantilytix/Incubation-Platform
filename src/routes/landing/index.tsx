@@ -1,6 +1,7 @@
 import React from 'react'
 import { Layout, Row, Col, Card, Typography } from 'antd'
 import { useNavigate } from 'react-router-dom'
+import { Helmet } from 'react-helmet' // ✅ Import Helmet
 import './LandingPage.css'
 
 const { Content } = Layout
@@ -38,6 +39,15 @@ const LandingPage = () => {
 
   return (
     <Layout style={{ minHeight: '100vh', position: 'relative' }}>
+      {/* ✅ Helmet added here */}
+      <Helmet>
+        <title>Landing | Smart Incubation Platform</title>
+        <meta
+          name='description'
+          content='Choose your role to access tailored tools, programs, and resources on the Smart Incubation Platform.'
+        />
+      </Helmet>
+
       <Content
         style={{
           padding: '40px 20px 80px',
@@ -54,7 +64,6 @@ const LandingPage = () => {
           tailored for you.
         </Paragraph>
 
-        {/* Flex container for cards */}
         <div
           style={{
             display: 'flex',
@@ -68,8 +77,6 @@ const LandingPage = () => {
           <Row gutter={[24, 24]} justify='center' style={{ width: '100%' }}>
             {cardData.map((card, index) => (
               <Col xs={24} sm={12} md={6} key={index}>
-                {' '}
-                {/* Try md={12} for 2-per-row */}
                 <div className='hover-card'>
                   <Card
                     hoverable
@@ -95,7 +102,7 @@ const LandingPage = () => {
         </div>
       </Content>
 
-      {/* ✅ Logo in bottom-right */}
+      {/* ✅ Bottom-right logo */}
       <img
         src='/assets/images/QuantilytixO.png'
         alt='Quantilytix Logo'
