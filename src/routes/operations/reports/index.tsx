@@ -32,11 +32,31 @@ import {
 import dayjs from 'dayjs'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
+import HighchartsFunnel from 'highcharts/modules/funnel'
+import HighchartsTreemap from 'highcharts/modules/treemap'
+import HighchartsMore from 'highcharts/highcharts-more'
+
+// Initialize Highcharts modules
+if (typeof HighchartsFunnel === 'function') HighchartsFunnel(Highcharts)
+if (typeof HighchartsTreemap === 'function') HighchartsTreemap(Highcharts)
+if (typeof HighchartsMore === 'function') HighchartsMore(Highcharts)
+import('highcharts/modules/heatmap').then(HeatmapModule => {
+  HeatmapModule.default(Highcharts)
+})
 
 const { Title, Text, Paragraph } = Typography
 const { RangePicker } = DatePicker
 const { Option } = Select
 const { TabPane } = Tabs
+
+const fullBubbleData = [
+  { name: 'FinTech Revolution', x: 85, y: 100, z: 35 },
+  { name: 'BrightTech', x: 75, y: 88, z: 32 },
+  { name: 'TechSolutions Inc.', x: 65, y: 50, z: 30 },
+  { name: 'AgriSmart', x: 55, y: 70, z: 28 },
+  { name: 'UrbanMakers', x: 60, y: 66, z: 26 }
+  // ... more participants
+]
 
 // Define report types
 const reportTypes = [
@@ -99,6 +119,7 @@ const OperationsReports: React.FC = () => {
   const [resourceAiInsight, setResourceAiInsight] = useState<string | null>(
     null
   )
+
   const [resourceInsightLoading, setResourceInsightLoading] = useState(false)
   const [complianceInsightVisible, setComplianceInsightVisible] =
     useState(false)
@@ -107,6 +128,57 @@ const OperationsReports: React.FC = () => {
   )
   const [complianceInsightLoading, setComplianceInsightLoading] =
     useState(false)
+  const [topN, setTopN] = useState(5)
+  const topParticipants = fullBubbleData
+    .sort((a, b) => b.z - a.z)
+    .slice(0, topN)
+
+  const consultantData = [
+    { name: 'John', x: 4.1, y: 4, z: 30 },
+    { name: 'Amanda', x: 4.7, y: 10, z: 40 },
+    { name: 'Kabelo', x: 4.8, y: 3, z: 25 },
+    { name: 'Naledi', x: 3.7, y: 2, z: 20 },
+    { name: 'Thabo', x: 4.9, y: 2, z: 35 }
+  ]
+
+  const [topNConsultants, setTopNConsultants] = useState(5)
+
+  const topConsultants = consultantData
+    .sort((a, b) => b.z - a.z)
+    .slice(0, topNConsultants)
+
+  const consultantSeries = topConsultants.map(consultant => ({
+    name: consultant.name,
+    type: 'bubble',
+    data: [{ x: consultant.x, y: consultant.y, z: consultant.z }],
+    color: Highcharts.getOptions().colors[topConsultants.indexOf(consultant)],
+    marker: { symbol: 'circle' },
+    dataLabels: {
+      enabled: true,
+      format: '{point.z}',
+      allowOverlap: true
+    }
+  }))
+  const participantData = [
+    { name: 'FinTech Revolution', x: 85, y: 100, z: 35 },
+    { name: 'BrightTech', x: 75, y: 88, z: 32 },
+    { name: 'TechSolutions Inc.', x: 65, y: 50, z: 30 },
+    { name: 'AgriSmart', x: 55, y: 70, z: 28 },
+    { name: 'UrbanMakers', x: 60, y: 66, z: 26 }
+  ]
+
+  const participantSeries = participantData.map(participant => ({
+    name: participant.name,
+    type: 'bubble',
+    data: [{ x: participant.x, y: participant.y, z: participant.z }],
+    color: Highcharts.getOptions().colors[participantData.indexOf(participant)],
+    marker: { symbol: 'circle' },
+    dataLabels: {
+      enabled: true,
+      format: '{point.z}',
+      allowOverlap: true
+    }
+  }))
 
   const handleGenerateInsight = () => {
     setInsightLoading(true)
@@ -150,6 +222,13 @@ const OperationsReports: React.FC = () => {
     tooltip: {
       shared: true,
       valueSuffix: ' participants'
+    },
+    plotOptions: {
+      column: {
+        dataLabels: {
+          enabled: true
+        }
+      }
     },
     series: [
       {
@@ -195,6 +274,12 @@ const OperationsReports: React.FC = () => {
     } else {
       setCustomDateRange(null)
     }
+  }
+
+  const formatRevenue = (value: number) => {
+    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+    return value.toString()
   }
 
   // Generate report
@@ -376,7 +461,67 @@ const OperationsReports: React.FC = () => {
 
             <HighchartsReact highcharts={Highcharts} options={chartOptions} />
 
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={{
+                chart: { type: 'funnel' },
+                title: { text: 'Participant Journey Funnel' },
+                series: [
+                  {
+                    name: 'Participants',
+                    data: [
+                      ['Applications Submitted', 2],
+                      ['Applications Approved', 1],
+                      ['Interventions Assigned', 3],
+                      ['Interventions Completed', 2],
+                      ['Feedback Provided', 3]
+                    ]
+                  }
+                ]
+              }}
+            />
             <Divider />
+
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={{
+                chart: {
+                  type: 'bubble',
+                  plotBorderWidth: 1,
+                  zoomType: 'xy'
+                },
+                title: {
+                  text: 'Top Participants by Engagement'
+                },
+                xAxis: {
+                  title: { text: 'Activity Score' }
+                },
+                yAxis: {
+                  title: { text: 'Compliance Rate (%)' }
+                },
+                legend: {
+                  enabled: true
+                },
+                tooltip: {
+                  useHTML: true,
+                  headerFormat: '<table>',
+                  pointFormat:
+                    '<tr><th>Participant:</th><td>{series.name}</td></tr>' +
+                    '<tr><th>Activity:</th><td>{point.x}</td></tr>' +
+                    '<tr><th>Compliance:</th><td>{point.y}%</td></tr>' +
+                    '<tr><th>Impact Score:</th><td>{point.z}</td></tr>',
+                  footerFormat: '</table>',
+                  followPointer: true
+                },
+                plotOptions: {
+                  bubble: {
+                    minSize: 10,
+                    maxSize: 60
+                  }
+                },
+                series: participantSeries
+              }}
+            />
 
             <Button type='primary' onClick={() => setInsightsVisible(true)}>
               View AI Insights
@@ -417,6 +562,105 @@ const OperationsReports: React.FC = () => {
               Tracks the usage of different resources across the incubation
               program.
             </Paragraph>
+
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={{
+                chart: { zoomType: 'xy' },
+                title: { text: 'Program Budget & Capacity Overview' },
+                xAxis: [
+                  {
+                    categories: [
+                      'Startup Boost',
+                      'ScaleUp Ventures',
+                      'Green Innovators',
+                      'Digital Pioneers',
+                      'Women in Business'
+                    ]
+                  }
+                ],
+                yAxis: [
+                  {
+                    // Primary yAxis
+                    labels: {
+                      formatter: function () {
+                        return formatRevenue(this.value)
+                      },
+                      style: { color: Highcharts.getOptions().colors[1] }
+                    },
+                    title: {
+                      text: 'Budget/Spent',
+                      style: { color: Highcharts.getOptions().colors[1] }
+                    }
+                  },
+                  {
+                    // Secondary yAxis
+                    title: {
+                      text: 'Capacity Utilization (%)',
+                      style: { color: Highcharts.getOptions().colors[0] }
+                    },
+                    labels: {
+                      format: '{value}%',
+                      style: { color: Highcharts.getOptions().colors[0] }
+                    },
+                    opposite: true
+                  }
+                ],
+                tooltip: {
+                  shared: true,
+                  formatter: function () {
+                    const points = this.points || []
+                    return (
+                      `<b>${this.x}</b><br/>` +
+                      points
+                        .map(p => {
+                          let value = p.y
+                          if (
+                            p.series.name === 'Budget' ||
+                            p.series.name === 'Spent'
+                          ) {
+                            value =
+                              value >= 1000000
+                                ? `R${(value / 1000000).toFixed(1)}M`
+                                : `R${(value / 1000).toFixed(1)}K`
+                          } else {
+                            value = `${value}%`
+                          }
+                          return `<span style="color:${p.color}">\u25CF</span> ${p.series.name}: <b>${value}</b><br/>`
+                        })
+                        .join('')
+                    )
+                  }
+                },
+                plotOptions: {
+                  column: {
+                    dataLabels: { enabled: true }
+                  },
+                  spline: {
+                    dataLabels: { enabled: true, format: '{point.y}%' }
+                  }
+                },
+                series: [
+                  {
+                    name: 'Budget',
+                    type: 'column',
+                    data: [500000, 750000, 300000, 600000, 400000]
+                  },
+                  {
+                    name: 'Spent',
+                    type: 'column',
+                    data: [320000, 415000, 295000, 0, 385000]
+                  },
+                  {
+                    name: 'Utilization',
+                    type: 'spline',
+                    yAxis: 1,
+                    data: [64, 55.3, 98.3, 0, 96.3],
+                    tooltip: { valueSuffix: '%' }
+                  }
+                ]
+              }}
+            />
 
             <HighchartsReact
               highcharts={Highcharts}
@@ -535,6 +779,71 @@ const OperationsReports: React.FC = () => {
               }}
             />
 
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={{
+                chart: { type: 'heatmap' },
+                title: { text: 'Compliance Risk Heatmap' },
+                xAxis: {
+                  categories: ['BEE Cert', 'Tax', 'UIF', 'CIPC', 'ID Copies'],
+                  title: { text: 'Document Types' }
+                },
+                yAxis: {
+                  categories: [
+                    'TechSolutions Inc.',
+                    'GreenEnergy Startup',
+                    'HealthTech Innovations',
+                    'EdTech Solutions',
+                    'FinTech Revolution'
+                  ],
+                  title: null,
+                  reversed: true
+                },
+                colorAxis: {
+                  dataClasses: [
+                    { from: 0, to: 0, color: '#faad14', name: 'Pending' },
+                    { from: 1, to: 1, color: '#f5222d', name: 'Expired' },
+                    { from: 2, to: 2, color: '#d9d9d9', name: 'Missing' },
+                    { from: 3, to: 3, color: '#52c41a', name: 'Valid' }
+                  ]
+                },
+                series: [
+                  {
+                    name: 'Compliance Status',
+                    borderWidth: 1,
+                    data: [
+                      [0, 0, 0],
+                      [1, 0, 1],
+                      [2, 0, 2],
+                      [3, 0, 3],
+                      [4, 0, 0],
+                      [0, 1, 1],
+                      [1, 1, 2],
+                      [2, 1, 3],
+                      [3, 1, 0],
+                      [4, 1, 1],
+                      [0, 2, 2],
+                      [1, 2, 3],
+                      [2, 2, 0],
+                      [3, 2, 1],
+                      [4, 2, 2],
+                      [0, 3, 3],
+                      [1, 3, 0],
+                      [2, 3, 1],
+                      [3, 3, 2],
+                      [4, 3, 3],
+                      [0, 4, 0],
+                      [1, 4, 1],
+                      [2, 4, 2],
+                      [3, 4, 3],
+                      [4, 4, 0]
+                    ],
+                    dataLabels: { enabled: true, color: '#000000' }
+                  }
+                ]
+              }}
+            />
+
             <Divider />
 
             <Button
@@ -646,6 +955,42 @@ const OperationsReports: React.FC = () => {
                 ]
               }}
             />
+
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={{
+                chart: { type: 'treemap' },
+                title: { text: 'Intervention Delivery Overview' },
+                series: [
+                  {
+                    type: 'treemap',
+                    layoutAlgorithm: 'squarified',
+                    data: [
+                      {
+                        name: 'Marketing - Email Signature',
+                        value: 3,
+                        group: 'Marketing'
+                      },
+                      {
+                        name: 'Compliance - Food Safety',
+                        value: 12,
+                        group: 'Compliance'
+                      },
+                      {
+                        name: 'Marketing - CRM Setup',
+                        value: 10,
+                        group: 'Marketing'
+                      },
+                      {
+                        name: 'Marketing - Social Media',
+                        value: 4,
+                        group: 'Marketing'
+                      }
+                    ]
+                  }
+                ]
+              }}
+            />
           </TabPane>
 
           <TabPane
@@ -714,6 +1059,54 @@ const OperationsReports: React.FC = () => {
                 ]
               }}
             />
+            <Select
+              value={topNConsultants}
+              onChange={value => setTopNConsultants(value)}
+              style={{ width: 120 }}
+            >
+              {[5, 10, 15, 20].map(n => (
+                <Option key={n} value={n}>{`Top ${n}`}</Option>
+              ))}
+            </Select>
+
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={{
+                chart: { type: 'bubble', plotBorderWidth: 1, zoomType: 'xy' },
+                title: { text: 'Consultant Performance Matrix' },
+                xAxis: {
+                  title: { text: 'Rating' },
+                  startOnTick: true,
+                  endOnTick: true,
+                  showLastLabel: true
+                },
+                yAxis: { title: { text: 'Assignments' } },
+                legend: { enabled: true },
+                tooltip: {
+                  useHTML: true,
+                  headerFormat: '<table>',
+                  pointFormat:
+                    '<tr><th>Consultant:</th><td>{series.name}</td></tr>' +
+                    '<tr><th>Rating:</th><td>{point.x}</td></tr>' +
+                    '<tr><th>Assignments:</th><td>{point.y}</td></tr>' +
+                    '<tr><th>Impact Score:</th><td>{point.z}</td></tr>',
+                  footerFormat: '</table>',
+                  followPointer: true
+                },
+                plotOptions: { bubble: { minSize: 10, maxSize: 60 } },
+                series: consultantSeries
+              }}
+            />
+
+            <Select
+              value={topN}
+              onChange={value => setTopN(value)}
+              style={{ width: 120 }}
+            >
+              {[5, 10, 15, 20].map(n => (
+                <Option key={n} value={n}>{`Top ${n}`}</Option>
+              ))}
+            </Select>
           </TabPane>
         </Tabs>
       </Card>

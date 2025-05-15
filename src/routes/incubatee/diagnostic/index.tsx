@@ -41,6 +41,7 @@ const GrowthPlanPage: React.FC = () => {
   const [selectedInModal, setSelectedInModal] = useState<any[]>([])
   const [interventionsConfirmed, setInterventionsConfirmed] = useState(false)
   const [digitalSignature, setDigitalSignature] = useState<string | null>(null)
+  const [signatureModalVisible, setSignatureModalVisible] = useState(false)
 
   function parseAiRawResponse (raw: string): any {
     try {
@@ -211,17 +212,7 @@ const GrowthPlanPage: React.FC = () => {
 
   const signature = getDigitalSignature()
   setDigitalSignature(signature)
-  Modal.success({
-    title: 'Digital Signature Generated',
-    content: (
-      <div>
-        <Paragraph>
-          This is your digital signature. Please copy and keep it safe:
-        </Paragraph>
-        <Paragraph copyable>{signature}</Paragraph>
-      </div>
-    )
-  })
+  setSignatureModalVisible(true)
 
   const handleConfirmGrowthPlan = async () => {
     try {
@@ -623,6 +614,17 @@ const GrowthPlanPage: React.FC = () => {
           )}
         </div>
       )}
+      <Modal
+        open={signatureModalVisible}
+        title='Digital Signature Generated'
+        onOk={() => setSignatureModalVisible(false)}
+        onCancel={() => setSignatureModalVisible(false)}
+      >
+        <Paragraph>
+          This is your digital signature. Please copy and keep it safe:
+        </Paragraph>
+        <Paragraph copyable>{digitalSignature}</Paragraph>
+      </Modal>
     </Card>
   )
 }
