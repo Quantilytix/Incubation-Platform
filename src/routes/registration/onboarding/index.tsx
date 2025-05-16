@@ -769,9 +769,9 @@ const ParticipantRegistrationStepForm = () => {
   }
 
   const handleSubmit = async () => {
+    setUploading(true)
     await form.validateFields()
     const values = form.getFieldsValue(true) // true = get all values, even unmounted
-
     const uploadedDocs = await uploadAllDocuments()
     setComplianceScore(calculateCompliance(uploadedDocs))
 
@@ -785,7 +785,6 @@ const ParticipantRegistrationStepForm = () => {
     const derivedAge = getAgeFromID(values.idNumber)
 
     try {
-      setUploading(true)
       const uploadedDocs = await uploadAllDocuments()
 
       const participant = {
@@ -956,17 +955,28 @@ const ParticipantRegistrationStepForm = () => {
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item name='facebook' label='Facebook'>
-                <Input />
+                <Select placeholder='Do you have a Facebook account?'>
+                  <Select.Option value='Yes'>Yes</Select.Option>
+                  <Select.Option value='No'>No</Select.Option>
+                </Select>
               </Form.Item>
             </Col>
+
             <Col span={8}>
               <Form.Item name='instagram' label='Instagram'>
-                <Input />
+                <Select placeholder='Do you have an Instagram account?'>
+                  <Select.Option value='Yes'>Yes</Select.Option>
+                  <Select.Option value='No'>No</Select.Option>
+                </Select>
               </Form.Item>
             </Col>
+
             <Col span={8}>
               <Form.Item name='linkedIn' label='LinkedIn'>
-                <Input />
+                <Select placeholder='Do you have a LinkedIn account?'>
+                  <Select.Option value='Yes'>Yes</Select.Option>
+                  <Select.Option value='No'>No</Select.Option>
+                </Select>
               </Form.Item>
             </Col>
           </Row>
