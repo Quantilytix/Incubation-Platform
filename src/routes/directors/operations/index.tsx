@@ -13,7 +13,8 @@ import {
   Form,
   Select,
   Modal,
-  message
+  message,
+  Layout
 } from 'antd'
 import {
   collection,
@@ -194,7 +195,7 @@ export const OperationsOnboardingDashboard: React.FC = () => {
   const totalUsers = operationsStaff.length
 
   return (
-    <div style={{ padding: 24 }}>
+    <Layout style={{ minHeight: '100vh', backgroundColor: 'white' }}>
       <Helmet>
         <title>Operations Staff | Smart Incubation</title>
       </Helmet>
@@ -318,7 +319,7 @@ export const OperationsOnboardingDashboard: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </Layout>
   )
 }
 

@@ -1591,7 +1591,7 @@ export const DirectorDashboard: React.FC = () => {
       <Helmet>
         <title>Director Dashboard | Incubation Platform</title>
       </Helmet>
-      <div style={{ padding: '20px' }}>
+      <div style={{ padding: '20px', minHeight: '100vh' }}>
         <Tabs activeKey={activeTab} onChange={setActiveTab}>
           <TabPane
             tab={

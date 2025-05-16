@@ -616,8 +616,13 @@ const ParticipantRegistrationStepForm = () => {
           <strong>Motivation:</strong> {values.motivation}
         </p>
         <p>
-          <strong>Challenges:</strong> {values.challenges}
+          <strong>Challenges:</strong>
         </p>
+        <ul>
+          {values.challenges?.split('\n').map((line: string, i: number) => (
+            <li key={i}>{line}</li>
+          ))}
+        </ul>
         <p>
           <strong>Facebook:</strong> {values.facebook}
         </p>
@@ -1023,9 +1028,25 @@ const ParticipantRegistrationStepForm = () => {
                 <Checkbox.Group
                   value={interventionSelections[group.area] || []}
                   onChange={val => {
+                    const currentSelection = val as string[]
+
+                    const totalSelected = Object.entries(
+                      interventionSelections
+                    ).reduce((acc, [area, selections]) => {
+                      if (area === group.area) return acc // skip current group for now
+                      return acc + selections.length
+                    }, currentSelection.length)
+
+                    if (totalSelected > 8) {
+                      message.warning(
+                        'You can select up to 8 interventions only.'
+                      )
+                      return
+                    }
+
                     setInterventionSelections(prev => ({
                       ...prev,
-                      [group.area]: val as string[]
+                      [group.area]: currentSelection
                     }))
                   }}
                 >

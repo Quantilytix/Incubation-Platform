@@ -7,10 +7,12 @@ import {
   Select,
   Typography,
   message,
-  Divider
+  Divider,
+  Card
 } from 'antd'
 import { collection, addDoc } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
 const { Option } = Select
@@ -56,13 +58,17 @@ const SystemSetupForm: React.FC = () => {
       style={{
         minHeight: '100vh',
         padding: '40px 24px',
-        background: '#f9f9f9',
+        background: '#fff',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'flex-start'
       }}
     >
-      <div style={{ width: '100%', maxWidth: 800 }}>
+      <Card style={{ width: '100%', maxWidth: 800 }}>
+        <Helmet>
+          <title>Category Configuration</title>
+        </Helmet>
+
         <Title level={3}>System Setup</Title>
         <Form layout='vertical' form={form} onFinish={onFinish}>
           <Form.Item label='Setup Category' required>
@@ -123,7 +129,7 @@ const SystemSetupForm: React.FC = () => {
             </Button>
           </Form.Item>
         </Form>
-      </div>
+      </Card>
     </div>
   )
 }

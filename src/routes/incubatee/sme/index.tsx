@@ -106,36 +106,47 @@ const SMEDashboard = () => {
     try {
       const user = auth.currentUser
 
-      // 🔐 Ensure user is authenticated
       if (!user?.email) {
         message.error('You must be logged in to apply.')
         return
       }
 
-      // 📥 Query participant record by email
       const q = query(
         collection(db, 'participants'),
         where('email', '==', user.email)
       )
       const snapshot = await getDocs(q)
 
-      // 🚫 No participant record found
       if (snapshot.empty) {
         message.warning('Please complete your profile before applying.')
         navigate('/incubatee/profile')
         return
       }
 
-      const participant = snapshot.docs[0].data()
+      const participantDoc = snapshot.docs[0]
+      const participant = participantDoc.data()
+      const participantId = participantDoc.id
 
-      // 🚧 Profile found but not setup
       if (!participant.setup) {
         message.warning('Please finish your profile setup before registering.')
         navigate('/incubatee/profile')
         return
       }
 
-      // ✅ Setup is complete — proceed to application modal
+      // ✅ Check for existing application
+      const existingAppSnap = await getDocs(
+        query(
+          collection(db, 'applications'),
+          where('participantId', '==', participantId),
+          where('programId', '==', program.id)
+        )
+      )
+
+      if (!existingAppSnap.empty) {
+        message.info('You’ve already applied to this program.')
+        return
+      }
+
       applicationForm.setFieldsValue({
         ownerName: participant.ownerName || '',
         companyName: participant.companyName || '',
@@ -145,8 +156,8 @@ const SMEDashboard = () => {
       setActiveProgram(program)
       setProgramModalVisible(true)
     } catch (error) {
-      console.error('❌ Failed to verify profile setup:', error)
-      message.error('Could not verify your profile status.')
+      console.error('❌ Failed to verify profile/setup/application:', error)
+      message.error('Could not verify your eligibility.')
     }
   }
 

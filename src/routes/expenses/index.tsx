@@ -7,12 +7,14 @@ import {
   Select,
   Typography,
   Upload,
-  message
+  message,
+  Card
 } from 'antd'
 import { UploadOutlined } from '@ant-design/icons'
 import { collection, addDoc, getDocs } from 'firebase/firestore'
 import { db, storage } from '@/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
 const { Option } = Select
@@ -69,56 +71,73 @@ const GenericProgramExpenseForm: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: 24, height: '100vh', background: '#f9f9f9' }}>
-      <Title level={3}>Program Expense Submission</Title>
-      <Form
-        layout='vertical'
-        form={form}
-        onFinish={onFinish}
-        style={{ maxWidth: 600 }}
-      >
-        <Form.Item name='programId' label='Program (optional)'>
-          <Select placeholder='Select a program' allowClear>
-            {programs.map(program => (
-              <Option key={program.id} value={program.id}>
-                {program.name}
-              </Option>
-            ))}
-          </Select>
-        </Form.Item>
+    <div
+      style={{
+        minHeight: '100vh',
+        padding: '40px 24px',
+        background: '#fff',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'flex-start'
+      }}
+    >
+      <Card style={{ width: '100%', maxWidth: 800 }}>
+        <Helmet>
+          <title>Program Expense Submission</title>
+        </Helmet>
 
-        <Form.Item
-          name='expenseType'
-          label='Expense Type'
-          rules={[{ required: true, message: 'Please enter the expense type' }]}
+        <Title level={3}>Program Expense Submission</Title>
+        <Form
+          layout='vertical'
+          form={form}
+          onFinish={onFinish}
+          style={{ maxWidth: 600 }}
         >
-          <Input placeholder='e.g. Travel, Marketing, Equipment' />
-        </Form.Item>
+          <Form.Item name='programId' label='Program (optional)'>
+            <Select placeholder='Select a program' allowClear>
+              {programs.map(program => (
+                <Option key={program.id} value={program.id}>
+                  {program.name}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
 
-        <Form.Item
-          name='amount'
-          label='Amount (ZAR)'
-          rules={[{ required: true, message: 'Please enter the amount' }]}
-        >
-          <InputNumber min={0} style={{ width: '100%' }} />
-        </Form.Item>
-
-        <Form.Item label='Supporting Document (optional)'>
-          <Upload
-            beforeUpload={() => false}
-            fileList={fileList}
-            onChange={({ fileList }) => setFileList(fileList)}
+          <Form.Item
+            name='expenseType'
+            label='Expense Type'
+            rules={[
+              { required: true, message: 'Please enter the expense type' }
+            ]}
           >
-            <Button icon={<UploadOutlined />}>Upload File</Button>
-          </Upload>
-        </Form.Item>
+            <Input placeholder='e.g. Travel, Marketing, Equipment' />
+          </Form.Item>
 
-        <Form.Item>
-          <Button type='primary' htmlType='submit' loading={uploading}>
-            Submit Expense
-          </Button>
-        </Form.Item>
-      </Form>
+          <Form.Item
+            name='amount'
+            label='Amount (ZAR)'
+            rules={[{ required: true, message: 'Please enter the amount' }]}
+          >
+            <InputNumber min={0} style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item label='Supporting Document (optional)'>
+            <Upload
+              beforeUpload={() => false}
+              fileList={fileList}
+              onChange={({ fileList }) => setFileList(fileList)}
+            >
+              <Button icon={<UploadOutlined />}>Upload File</Button>
+            </Upload>
+          </Form.Item>
+
+          <Form.Item>
+            <Button type='primary' htmlType='submit' loading={uploading}>
+              Submit Expense
+            </Button>
+          </Form.Item>
+        </Form>
+      </Card>
     </div>
   )
 }

@@ -70,9 +70,26 @@ const ProfileForm: React.FC = () => {
         const data = docRef.data()
         setParticipantDocId(docRef.id)
 
+        const injectedDefaults: any = {}
+        const months = last3Months
+        const years = last2Years
+
+        months.forEach(month => {
+          if (!data[`permHeadcount_${month}`]) {
+            injectedDefaults[`permHeadcount_${month}`] = 1
+          }
+        })
+
+        years.forEach(year => {
+          if (!data[`permHeadcount_${year}`]) {
+            injectedDefaults[`permHeadcount_${year}`] = 1
+          }
+        })
+
         form.setFieldsValue({
           ...defaultValues,
           ...data,
+          ...injectedDefaults,
           dateOfRegistration: data.dateOfRegistration
             ? dayjs(
                 data.dateOfRegistration.toDate?.() || data.dateOfRegistration
@@ -314,13 +331,16 @@ const ProfileForm: React.FC = () => {
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name='beeLevel' label='BEEE Level'>
+              <Form.Item name='beeLevel' label='B-BBEE Level'>
                 <Select>
-                  {[1, 2, 3, 4, 5, 6, 7, 8].map(level => (
+                  {[1, 2, 3, 4].map(level => (
                     <Select.Option key={level} value={level}>
                       Level {level}
                     </Select.Option>
                   ))}
+                  <Select.Option key='5plus' value='5+'>
+                    Level 5 and above
+                  </Select.Option>
                 </Select>
               </Form.Item>
             </Col>
@@ -447,6 +467,7 @@ const ProfileForm: React.FC = () => {
                 <Form.Item
                   name={`permHeadcount_${month}`}
                   label='Permanent Staff'
+                  initialValue={1}
                 >
                   <InputNumber min={0} style={{ width: '100%' }} />
                 </Form.Item>
@@ -477,12 +498,19 @@ const ProfileForm: React.FC = () => {
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item name={`permHeadcount_${year}`} label='Perm. Staff'>
+                <Form.Item
+                  name={`permHeadcount_${year}`}
+                  label='Permanent Staff'
+                  initialValue={1}
+                >
                   <InputNumber min={0} style={{ width: '100%' }} />
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item name={`tempHeadcount_${year}`} label='Temp. Staff'>
+                <Form.Item
+                  name={`tempHeadcount_${year}`}
+                  label='Temporary Staff'
+                >
                   <InputNumber min={0} style={{ width: '100%' }} />
                 </Form.Item>
               </Col>

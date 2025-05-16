@@ -58,7 +58,7 @@ const Chat = () => {
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
-
+  const [userActualId, setUserActualId] = useState<string>('unknown')
   const [recording, setRecording] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -66,15 +66,57 @@ const Chat = () => {
   const [transcript, setTranscript] = useState('')
 
   useEffect(() => {
-    if (identity?.id) {
-      const fetchRole = async () => {
-        const ref = doc(db, 'users', identity.id)
-        const snap = await getDoc(ref)
-        const role = snap.data()?.role?.toLowerCase?.()
+    const fetchRoleAndParticipantId = async () => {
+      if (!identity?.email) return
+
+      try {
+        const userDoc = await getDoc(doc(db, 'users', identity.id))
+        const role = userDoc.data()?.role?.toLowerCase?.()
         setUserRole(role || null)
+
+        let actualId = 'unknown'
+
+        if (role === 'incubatee') {
+          const snap = await getDocs(
+            query(
+              collection(db, 'participants'),
+              where('email', '==', identity.email)
+            )
+          )
+          if (!snap.empty) {
+            actualId = snap.docs[0].data().participantId || 'unknown'
+          }
+        } else if (role === 'operations') {
+          const snap = await getDocs(
+            query(
+              collection(db, 'operationStaff'),
+              where('email', '==', identity.email)
+            )
+          )
+          if (!snap.empty) {
+            actualId = snap.docs[0].id
+          }
+        } else if (role === 'consultant') {
+          const snap = await getDocs(
+            query(
+              collection(db, 'consultants'),
+              where('email', '==', identity.email)
+            )
+          )
+          if (!snap.empty) {
+            actualId = snap.docs[0].data().id || 'unknown'
+          }
+        } else if (role === 'director') {
+          actualId = identity.id
+        }
+
+        setUserActualId(actualId) // 👈 Add this state
+      } catch (err) {
+        console.error('Error fetching role-specific ID:', err)
       }
-      fetchRole()
     }
+
+    fetchRoleAndParticipantId()
   }, [identity])
 
   useEffect(() => {
@@ -87,7 +129,7 @@ const Chat = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: identity?.id || 'unknown',
+          user_id: userActualId,
           role: userRole || 'guest',
           user_query: query,
           context: messages.map(m => ({

@@ -220,15 +220,8 @@ const RoleDetailPage = () => {
 
       <img
         src='/assets/images/QuantilytixO.png'
-        alt='Quantilytix'
-        style={{
-          position: 'fixed',
-          bottom: 20,
-          right: 20,
-          height: 40,
-          zIndex: 999,
-          backgroundColor: 'rgba(0, 0, 0, 0.65)'
-        }}
+        alt='Quantilytix Logo'
+        className='role-logo'
       />
     </Content>
   )
