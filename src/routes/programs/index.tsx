@@ -73,6 +73,7 @@ const ProgramManager: React.FC = () => {
         const userSnap = await getDoc(userRef)
         if (userSnap.exists()) {
           const userData = userSnap.data()
+          console.log(userData)
           setCompanyCode(userData.companyCode || '')
           setUserRole(userData.role || '')
           fetchConsultants(userData.companyCode)
@@ -502,7 +503,12 @@ const ProgramManager: React.FC = () => {
                 <Input />
               </Form.Item>
               <Form.Item name='status' label='Status'>
-                <Input placeholder='e.g., Active, Completed, Upcoming' />
+                <Select>
+                  <Select.Option value='Active'>Active</Select.Option>
+                  <Select.Option value='Inactive'>Inactive</Select.Option>
+                  <Select.Option value='Completed'>Completed</Select.Option>
+                  <Select.Option value='Upcoming'>Upcoming</Select.Option>
+                </Select>
               </Form.Item>
               <Form.Item
                 name='cohortYear'
