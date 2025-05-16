@@ -121,7 +121,10 @@ const GrowthPlanPage: React.FC = () => {
           )
         )
         if (!partSnap.empty) {
-          setParticipantData(partSnap.docs[0].data())
+          const docRef = partSnap.docs[0]
+          const data = docRef.data()
+          data.participantDocId = docRef.id // ✅ Attach document ID
+          setParticipantData(data)
         } else {
           message.warning('Participant record not found.')
         }
@@ -293,7 +296,7 @@ const GrowthPlanPage: React.FC = () => {
         interventionId: 'diagnostic-plan',
         interventionTitle: 'Diagnostic Needs Assessment Plan Development',
         areaOfSupport: 'Planning',
-        participantId: participantData.participantId,
+        participantId: participantData.participantDocId,
         beneficiaryName: participantData.beneficiaryName,
         hub: participantData.hub,
         province: participantData.province,
@@ -574,19 +577,24 @@ const GrowthPlanPage: React.FC = () => {
           {
             title: 'Action',
             render: (_, record) =>
-              !interventionsConfirmed && (
+              !interventionsConfirmed &&
+              (selectedAi.some(r => r.id === record.id) ? (
+                <Button
+                  danger
+                  onClick={() =>
+                    setSelectedAi(prev => prev.filter(i => i.id !== record.id))
+                  }
+                >
+                  Remove
+                </Button>
+              ) : (
                 <Button
                   type='primary'
-                  onClick={() => {
-                    if (!selectedAi.some(r => r.id === record.id)) {
-                      setSelectedAi(prev => [...prev, record])
-                    }
-                  }}
-                  disabled={selectedAi.some(r => r.id === record.id)}
+                  onClick={() => setSelectedAi(prev => [...prev, record])}
                 >
                   Confirm
                 </Button>
-              )
+              ))
           }
         ]}
         rowKey='id'

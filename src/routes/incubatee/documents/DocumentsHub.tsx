@@ -210,7 +210,7 @@ export const DocumentHub: React.FC = () => {
             <ExclamationCircleOutlined style={{ fontSize: 24, color: 'red' }} />
             <div>
               <Title level={4} style={{ margin: 0 }}>
-                {missingDocsList.length}
+                {missingCount ? missingCount : missingDocsList.length}
               </Title>
               <Text>Unsubmitted</Text>
             </div>
