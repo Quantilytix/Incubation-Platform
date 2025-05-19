@@ -14,8 +14,10 @@ import {
   Form,
   Input,
   Divider,
+  Modal,
   Drawer
 } from 'antd'
+import type { StatisticProps } from 'antd'
 import {
   BarChartOutlined,
   LineChartOutlined,
@@ -35,7 +37,13 @@ import HighchartsReact from 'highcharts-react-official'
 import HighchartsFunnel from 'highcharts/modules/funnel'
 import HighchartsTreemap from 'highcharts/modules/treemap'
 import HighchartsMore from 'highcharts/highcharts-more'
+import CountUp from 'react-countup'
+import { fetchGeminiInsight } from '@/utilities/api'
+import ReactJson from 'react-json-view'
 
+const formatter: StatisticProps['formatter'] = value => (
+  <CountUp end={value as number} separator=',' />
+)
 // Initialize Highcharts modules
 if (typeof HighchartsFunnel === 'function') HighchartsFunnel(Highcharts)
 if (typeof HighchartsTreemap === 'function') HighchartsTreemap(Highcharts)
@@ -43,6 +51,60 @@ if (typeof HighchartsMore === 'function') HighchartsMore(Highcharts)
 import('highcharts/modules/heatmap').then(HeatmapModule => {
   HeatmapModule.default(Highcharts)
 })
+
+const renderInsight = (raw: string): any | null => {
+  try {
+    // Remove code block wrapping if it exists
+    const cleaned = raw
+      .trim()
+      .replace(/^```json/, '')
+      .replace(/```$/, '')
+      .trim()
+
+    return JSON.parse(cleaned)
+  } catch (err) {
+    console.warn('⚠️ Failed to parse AI insight as JSON.', err)
+    return null
+  }
+}
+
+const ChartCard = ({
+  title,
+  children
+}: {
+  title: string
+  children: React.ReactNode
+}) => {
+  const [modalVisible, setModalVisible] = useState(false)
+
+  return (
+    <>
+      <Card
+        title={title}
+        extra={
+          <Button type='link' onClick={() => setModalVisible(true)}>
+            Expand
+          </Button>
+        }
+        style={{ height: '100%' }}
+        bodyStyle={{ minHeight: 280 }}
+      >
+        {children}
+      </Card>
+
+      <Modal
+        open={modalVisible}
+        onCancel={() => setModalVisible(false)}
+        footer={null}
+        width='80%'
+        style={{ top: 40 }}
+      >
+        <Title level={4}>{title}</Title>
+        {children}
+      </Modal>
+    </>
+  )
+}
 
 const { Title, Text, Paragraph } = Typography
 const { RangePicker } = DatePicker
@@ -104,6 +166,13 @@ const resourceUtilization = [
   { resource: 'Funding', utilization: 45 }
 ]
 
+const consultantData = [
+  { name: 'John', x: 4.1, y: 4, z: 30 },
+  { name: 'Amanda', x: 4.7, y: 10, z: 40 },
+  { name: 'Kabelo', x: 4.8, y: 3, z: 25 },
+  { name: 'Naledi', x: 3.7, y: 2, z: 20 },
+  { name: 'Thabo', x: 4.9, y: 2, z: 35 }
+]
 const OperationsReports: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [reportType, setReportType] = useState('participant')
@@ -133,13 +202,38 @@ const OperationsReports: React.FC = () => {
     .sort((a, b) => b.z - a.z)
     .slice(0, topN)
 
-  const consultantData = [
-    { name: 'John', x: 4.1, y: 4, z: 30 },
-    { name: 'Amanda', x: 4.7, y: 10, z: 40 },
-    { name: 'Kabelo', x: 4.8, y: 3, z: 25 },
-    { name: 'Naledi', x: 3.7, y: 2, z: 20 },
-    { name: 'Thabo', x: 4.9, y: 2, z: 35 }
-  ]
+  const [drawer, setDrawer] = useState<{
+    visible: boolean
+    loading: boolean
+    title: string
+    data: any
+    insightType: string
+    content: string | null
+  }>({
+    visible: false,
+    loading: false,
+    title: '',
+    data: null,
+    insightType: '',
+    content: null
+  })
+
+  const openInsightDrawer = (title: string, insightType: string, data: any) => {
+    setDrawer({
+      visible: true,
+      loading: false,
+      title,
+      insightType,
+      data,
+      content: null
+    })
+  }
+
+  const generateInsight = async (type: string) => {
+    setDrawer(prev => ({ ...prev, loading: true }))
+    const insight = await fetchAIInsight(type, drawer.data)
+    setDrawer(prev => ({ ...prev, content: insight, loading: false }))
+  }
 
   const [topNConsultants, setTopNConsultants] = useState(5)
 
@@ -180,32 +274,56 @@ const OperationsReports: React.FC = () => {
     }
   }))
 
-  const handleGenerateInsight = () => {
-    setInsightLoading(true)
-    setTimeout(() => {
-      setAiInsight(
-        `AI Insight: Notable increase in new participants in ${participantMetrics[3]?.month}. Graduation rate stable, suggesting effective retention strategies.`
-      )
-      setInsightLoading(false)
-    }, 1200)
-  }
-  const handleGenerateResourceInsight = () => {
+  const handleGenerateResourceInsight = async () => {
     setResourceInsightLoading(true)
-    setTimeout(() => {
-      setResourceAiInsight(
-        'AI Insight: Mentorship Hours are nearing capacity. Workshop Space usage may benefit from better scheduling.'
+    try {
+      const text = await fetchGeminiInsight(
+        'Evaluate resource utilization efficiency and point out under/overused assets.',
+        resourceUtilization
       )
-      setResourceInsightLoading(false)
-    }, 1200)
+      setResourceAiInsight(text)
+    } catch (err) {
+      setResourceAiInsight('⚠️ Failed to fetch AI insight.')
+      console.error(err)
+    }
+    setResourceInsightLoading(false)
   }
-  const handleGenerateComplianceInsight = () => {
+
+  const handleGenerateComplianceInsight = async () => {
     setComplianceInsightLoading(true)
-    setTimeout(() => {
-      setComplianceAiInsight(
-        'AI Insight: High number of documents are pending review or missing. Recommend prioritizing follow-ups to maintain compliance rate.'
+    try {
+      const text = await fetchGeminiInsight(
+        'Assess compliance document status and highlight risks or actions needed.',
+        complianceStatus
       )
-      setComplianceInsightLoading(false)
-    }, 1200)
+      setComplianceAiInsight(text)
+    } catch (err) {
+      setComplianceAiInsight('⚠️ Failed to fetch AI insight.')
+      console.error(err)
+    }
+    setComplianceInsightLoading(false)
+  }
+
+  const fetchAIInsight = async (type: string, data: any): Promise<string> => {
+    try {
+      const response = await fetch(
+        'https://yoursdvniel-smart-inc.hf.space/api/ai-insight',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ type, data })
+        }
+      )
+
+      const result = await response.json()
+      console.log(result)
+      return result.insight || 'No insight returned.'
+    } catch (error) {
+      console.error('AI insight error:', error)
+      return '⚠️ Failed to fetch AI insight.'
+    }
   }
 
   const chartOptions: Highcharts.Options = {
@@ -300,7 +418,7 @@ const OperationsReports: React.FC = () => {
       <Text>Generate and analyze reports for operations management.</Text>
 
       {/* Report Filters */}
-      <Card style={{ marginTop: '20px', marginBottom: '20px' }}>
+      <Card style={{ marginTop: 20, marginBottom: 20 }}>
         <Form
           form={form}
           layout='vertical'
@@ -310,8 +428,8 @@ const OperationsReports: React.FC = () => {
             timePeriod: 'month'
           }}
         >
-          <Row gutter={16}>
-            <Col span={8}>
+          <Row gutter={16} align='bottom'>
+            <Col flex='1'>
               <Form.Item
                 name='reportType'
                 label='Report Type'
@@ -331,7 +449,8 @@ const OperationsReports: React.FC = () => {
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={8}>
+
+            <Col flex='1'>
               <Form.Item
                 name='timePeriod'
                 label='Time Period'
@@ -351,8 +470,9 @@ const OperationsReports: React.FC = () => {
                 </Select>
               </Form.Item>
             </Col>
-            <Col span={8}>
-              {timePeriod === 'custom' && (
+
+            {timePeriod === 'custom' && (
+              <Col flex='1'>
                 <Form.Item
                   name='dateRange'
                   label='Date Range'
@@ -365,32 +485,33 @@ const OperationsReports: React.FC = () => {
                     onChange={handleDateRangeChange}
                   />
                 </Form.Item>
-              )}
-            </Col>
-          </Row>
-          <Row>
-            <Col span={24} style={{ textAlign: 'right' }}>
-              <Space>
-                <Button
-                  icon={<FilterOutlined />}
-                  type='primary'
-                  htmlType='submit'
-                >
-                  Generate Report
-                </Button>
-                <Button
-                  icon={<FileExcelOutlined />}
-                  onClick={() => handleExport('excel')}
-                >
-                  Export Excel
-                </Button>
-                <Button
-                  icon={<FilePdfOutlined />}
-                  onClick={() => handleExport('pdf')}
-                >
-                  Export PDF
-                </Button>
-              </Space>
+              </Col>
+            )}
+
+            <Col>
+              <Form.Item label=' ' colon={false}>
+                <Space>
+                  <Button
+                    icon={<FilterOutlined />}
+                    type='primary'
+                    htmlType='submit'
+                  >
+                    Generate Report
+                  </Button>
+                  <Button
+                    icon={<FileExcelOutlined />}
+                    onClick={() => handleExport('excel')}
+                  >
+                    Export Excel
+                  </Button>
+                  <Button
+                    icon={<FilePdfOutlined />}
+                    onClick={() => handleExport('pdf')}
+                  >
+                    Export PDF
+                  </Button>
+                </Space>
+              </Form.Item>
             </Col>
           </Row>
         </Form>
@@ -399,7 +520,7 @@ const OperationsReports: React.FC = () => {
       {/* Dashboard Stats */}
       <Row gutter={[16, 16]} style={{ marginBottom: '20px' }}>
         <Col span={6}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Total Participants'
               value={85}
@@ -409,7 +530,7 @@ const OperationsReports: React.FC = () => {
           </Card>
         </Col>
         <Col span={6}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Resources Allocated'
               value={68}
@@ -420,17 +541,18 @@ const OperationsReports: React.FC = () => {
           </Card>
         </Col>
         <Col span={6}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Funding Utilized'
               value={2450000}
               prefix={<DollarOutlined />}
               valueStyle={{ color: '#faad14' }}
+              formatter={formatter}
             />
           </Card>
         </Col>
         <Col span={6}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Compliance Rate'
               value={92}
@@ -459,103 +581,109 @@ const OperationsReports: React.FC = () => {
               Tracks active, new, and graduated participants over time.
             </Paragraph>
 
-            <HighchartsReact highcharts={Highcharts} options={chartOptions} />
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={12}>
+                <ChartCard title='Participant Growth Over Time'>
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={chartOptions}
+                  />
+                </ChartCard>
+              </Col>
 
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={{
-                chart: { type: 'funnel' },
-                title: { text: 'Participant Journey Funnel' },
-                plotOptions: {
-                  funnel: {
-                    dataLabels: {
-                      enabled: true,
-                      format: '<b>{point.name}</b>: {point.y}',
-                      softConnector: true
-                    }
-                  }
-                },
-                series: [
-                  {
-                    name: 'Participants',
-                    data: [
-                      ['Applications Submitted', 2],
-                      ['Applications Approved', 1],
-                      ['Interventions Assigned', 3],
-                      ['Interventions Completed', 2],
-                      ['Feedback Provided', 3]
-                    ]
-                  }
-                ]
-              }}
-            />
+              <Col xs={24} md={12}>
+                <ChartCard title='Participant Funnel'>
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={{
+                      chart: { type: 'funnel' },
+                      title: { text: 'Participant Journey Funnel' },
+                      plotOptions: {
+                        funnel: {
+                          dataLabels: {
+                            enabled: true,
+                            format: '<b>{point.name}</b>: {point.y}',
+                            softConnector: true
+                          }
+                        }
+                      },
+                      series: [
+                        {
+                          name: 'Participants',
+                          data: [
+                            ['Applications Submitted', 2],
+                            ['Applications Approved', 1],
+                            ['Interventions Assigned', 3],
+                            ['Interventions Completed', 2],
+                            ['Feedback Provided', 3]
+                          ]
+                        }
+                      ]
+                    }}
+                  />
+                </ChartCard>
+              </Col>
+
+              <Col xs={24}>
+                <ChartCard title='Top Participants by Engagement'>
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={{
+                      chart: {
+                        type: 'bubble',
+                        plotBorderWidth: 1,
+                        zoomType: 'xy'
+                      },
+                      title: {
+                        text: 'Top Participants by Engagement'
+                      },
+                      xAxis: {
+                        title: { text: 'Activity Score' }
+                      },
+                      yAxis: {
+                        title: { text: 'Compliance Rate (%)' }
+                      },
+                      legend: {
+                        enabled: true
+                      },
+                      tooltip: {
+                        useHTML: true,
+                        headerFormat: '<table>',
+                        pointFormat:
+                          '<tr><th>Participant:</th><td>{series.name}</td></tr>' +
+                          '<tr><th>Activity:</th><td>{point.x}</td></tr>' +
+                          '<tr><th>Compliance:</th><td>{point.y}%</td></tr>' +
+                          '<tr><th>Impact Score:</th><td>{point.z}</td></tr>',
+                        footerFormat: '</table>',
+                        followPointer: true
+                      },
+                      plotOptions: {
+                        bubble: {
+                          minSize: 10,
+                          maxSize: 60
+                        }
+                      },
+                      series: participantSeries
+                    }}
+                  />
+                </ChartCard>
+              </Col>
+            </Row>
 
             <Divider />
 
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={{
-                chart: {
-                  type: 'bubble',
-                  plotBorderWidth: 1,
-                  zoomType: 'xy'
-                },
-                title: {
-                  text: 'Top Participants by Engagement'
-                },
-                xAxis: {
-                  title: { text: 'Activity Score' }
-                },
-                yAxis: {
-                  title: { text: 'Compliance Rate (%)' }
-                },
-                legend: {
-                  enabled: true
-                },
-                tooltip: {
-                  useHTML: true,
-                  headerFormat: '<table>',
-                  pointFormat:
-                    '<tr><th>Participant:</th><td>{series.name}</td></tr>' +
-                    '<tr><th>Activity:</th><td>{point.x}</td></tr>' +
-                    '<tr><th>Compliance:</th><td>{point.y}%</td></tr>' +
-                    '<tr><th>Impact Score:</th><td>{point.z}</td></tr>',
-                  footerFormat: '</table>',
-                  followPointer: true
-                },
-                plotOptions: {
-                  bubble: {
-                    minSize: 10,
-                    maxSize: 60
-                  }
-                },
-                series: participantSeries
-              }}
-            />
-
-            <Button type='primary' onClick={() => setInsightsVisible(true)}>
+            <Button
+              type='primary'
+              onClick={() =>
+                openInsightDrawer(
+                  'AI Insights on Participant Metrics',
+                  'participant',
+                  participantMetrics
+                )
+              }
+            >
               View AI Insights
             </Button>
-
-            <Drawer
-              title='AI Insights on Participant Metrics'
-              placement='bottom'
-              height={220}
-              onClose={() => setInsightsVisible(false)}
-              open={insightsVisible}
-            >
-              <Button
-                loading={insightLoading}
-                onClick={handleGenerateInsight}
-                type='dashed'
-              >
-                Generate Insight
-              </Button>
-              <Divider />
-              <Text>
-                {aiInsight || 'Click generate to analyze this chart.'}
-              </Text>
-            </Drawer>
           </TabPane>
 
           <TabPane
@@ -573,178 +701,173 @@ const OperationsReports: React.FC = () => {
               program.
             </Paragraph>
 
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={{
-                chart: { zoomType: 'xy' },
-                title: { text: 'Program Budget & Capacity Overview' },
-                xAxis: [
-                  {
-                    categories: [
-                      'Startup Boost',
-                      'ScaleUp Ventures',
-                      'Green Innovators',
-                      'Digital Pioneers',
-                      'Women in Business'
-                    ]
-                  }
-                ],
-                yAxis: [
-                  {
-                    // Primary yAxis
-                    labels: {
-                      formatter: function () {
-                        const v = this.value
-                        return (
-                          'R' +
-                          (v >= 1000000
-                            ? (v / 1000000).toFixed(1) + 'M'
-                            : (v / 1000).toFixed(0) + 'K')
-                        )
-                      },
-                      style: { color: Highcharts.getOptions().colors[1] }
-                    },
-                    title: {
-                      text: 'Budget/Spent',
-                      style: { color: Highcharts.getOptions().colors[1] }
-                    }
-                  },
-                  {
-                    // Secondary yAxis
-                    title: {
-                      text: 'Capacity Utilization (%)',
-                      style: { color: Highcharts.getOptions().colors[0] }
-                    },
-                    labels: {
-                      format: '{value}%',
-                      style: { color: Highcharts.getOptions().colors[0] }
-                    },
-                    opposite: true
-                  }
-                ],
-                tooltip: {
-                  shared: true,
-                  formatter: function () {
-                    const points = this.points || []
-                    return (
-                      `<b>${this.x}</b><br/>` +
-                      points
-                        .map(p => {
-                          let value = p.y
-                          if (
-                            p.series.name === 'Budget' ||
-                            p.series.name === 'Spent'
-                          ) {
-                            value =
-                              value >= 1000000
-                                ? `R${(value / 1000000).toFixed(1)}M`
-                                : `R${(value / 1000).toFixed(1)}K`
-                          } else {
-                            value = `${value}%`
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={12}>
+                <ChartCard title='Program Budget & Capacity Overview'>
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={{
+                      chart: { zoomType: 'xy' },
+                      title: { text: '' },
+                      xAxis: [
+                        {
+                          categories: [
+                            'Startup Boost',
+                            'ScaleUp Ventures',
+                            'Green Innovators',
+                            'Digital Pioneers',
+                            'Women in Business'
+                          ]
+                        }
+                      ],
+                      yAxis: [
+                        {
+                          // Primary yAxis
+                          labels: {
+                            formatter: function () {
+                              const v = this.value
+                              return (
+                                'R' +
+                                (v >= 1000000
+                                  ? (v / 1000000).toFixed(1) + 'M'
+                                  : (v / 1000).toFixed(0) + 'K')
+                              )
+                            },
+                            style: { color: Highcharts.getOptions().colors[1] }
+                          },
+                          title: {
+                            text: 'Budget/Spent',
+                            style: { color: Highcharts.getOptions().colors[1] }
                           }
-                          return `<span style="color:${p.color}">\u25CF</span> ${p.series.name}: <b>${value}</b><br/>`
-                        })
-                        .join('')
-                    )
-                  }
-                },
-                plotOptions: {
-                  column: {
-                    dataLabels: { enabled: true }
-                  },
-                  spline: {
-                    dataLabels: { enabled: true, format: '{point.y}%' }
-                  }
-                },
-                series: [
-                  {
-                    name: 'Budget',
-                    type: 'column',
-                    data: [500000, 750000, 300000, 600000, 400000]
-                  },
-                  {
-                    name: 'Spent',
-                    type: 'column',
-                    data: [320000, 415000, 295000, 0, 385000]
-                  },
-                  {
-                    name: 'Utilization',
-                    type: 'spline',
-                    yAxis: 1,
-                    data: [64, 55.3, 98.3, 0, 96.3],
-                    tooltip: { valueSuffix: '%' }
-                  }
-                ]
-              }}
-            />
+                        },
+                        {
+                          // Secondary yAxis
+                          title: {
+                            text: 'Capacity Utilization (%)',
+                            style: { color: Highcharts.getOptions().colors[0] }
+                          },
+                          labels: {
+                            format: '{value}%',
+                            style: { color: Highcharts.getOptions().colors[0] }
+                          },
+                          opposite: true
+                        }
+                      ],
+                      tooltip: {
+                        shared: true,
+                        formatter: function () {
+                          const points = this.points || []
+                          return (
+                            `<b>${this.x}</b><br/>` +
+                            points
+                              .map(p => {
+                                let value = p.y
+                                if (
+                                  p.series.name === 'Budget' ||
+                                  p.series.name === 'Spent'
+                                ) {
+                                  value =
+                                    value >= 1000000
+                                      ? `R${(value / 1000000).toFixed(1)}M`
+                                      : `R${(value / 1000).toFixed(1)}K`
+                                } else {
+                                  value = `${value}%`
+                                }
+                                return `<span style="color:${p.color}">\u25CF</span> ${p.series.name}: <b>${value}</b><br/>`
+                              })
+                              .join('')
+                          )
+                        }
+                      },
+                      plotOptions: {
+                        column: {
+                          dataLabels: { enabled: true }
+                        },
+                        spline: {
+                          dataLabels: { enabled: true, format: '{point.y}%' }
+                        }
+                      },
+                      series: [
+                        {
+                          name: 'Budget',
+                          type: 'column',
+                          data: [500000, 750000, 300000, 600000, 400000]
+                        },
+                        {
+                          name: 'Spent',
+                          type: 'column',
+                          data: [320000, 415000, 295000, 0, 385000]
+                        },
+                        {
+                          name: 'Utilization',
+                          type: 'spline',
+                          yAxis: 1,
+                          data: [64, 55.3, 98.3, 0, 96.3],
+                          tooltip: { valueSuffix: '%' }
+                        }
+                      ]
+                    }}
+                  />
+                </ChartCard>
+              </Col>
 
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={{
-                chart: { type: 'bar' },
-                title: { text: 'Utilization by Resource' },
-                xAxis: {
-                  categories: resourceUtilization.map(r => r.resource),
-                  title: { text: null }
-                },
-                yAxis: {
-                  min: 0,
-                  max: 100,
-                  title: { text: 'Utilization (%)' }
-                },
-                tooltip: { valueSuffix: '%' },
-                plotOptions: {
-                  bar: {
-                    dataLabels: { enabled: true },
-                    colorByPoint: true,
-                    colors: resourceUtilization.map(r =>
-                      r.utilization > 90
-                        ? '#ff4d4f'
-                        : r.utilization > 70
-                        ? '#faad14'
-                        : '#52c41a'
-                    )
-                  }
-                },
-                series: [
-                  {
-                    name: 'Utilization %',
-                    type: 'bar',
-                    data: resourceUtilization.map(r => r.utilization)
-                  }
-                ]
-              }}
-            />
+              <Col xs={24} md={12}>
+                <ChartCard title='Utilization by Resource'>
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={{
+                      chart: { type: 'bar' },
+                      title: '',
+                      xAxis: {
+                        categories: resourceUtilization.map(r => r.resource),
+                        title: { text: null }
+                      },
+                      yAxis: {
+                        min: 0,
+                        max: 100,
+                        title: { text: 'Utilization (%)' }
+                      },
+                      tooltip: { valueSuffix: '%' },
+                      plotOptions: {
+                        bar: {
+                          dataLabels: { enabled: true },
+                          colorByPoint: true,
+                          colors: resourceUtilization.map(r =>
+                            r.utilization > 90
+                              ? '#ff4d4f'
+                              : r.utilization > 70
+                              ? '#faad14'
+                              : '#52c41a'
+                          )
+                        }
+                      },
+                      series: [
+                        {
+                          name: 'Utilization %',
+                          type: 'bar',
+                          data: resourceUtilization.map(r => r.utilization)
+                        }
+                      ]
+                    }}
+                  />
+                </ChartCard>
+              </Col>
+            </Row>
 
             <Divider />
 
             <Button
               type='primary'
-              onClick={() => setResourceInsightVisible(true)}
+              onClick={() =>
+                openInsightDrawer(
+                  'AI Insights on Resource Utilization',
+                  'resource',
+                  resourceUtilization
+                )
+              }
             >
               View AI Insights
             </Button>
-
-            <Drawer
-              title='AI Insights on Resource Usage'
-              placement='bottom'
-              height={220}
-              onClose={() => setResourceInsightVisible(false)}
-              open={resourceInsightVisible}
-            >
-              <Button
-                type='dashed'
-                loading={resourceInsightLoading}
-                onClick={handleGenerateResourceInsight}
-              >
-                Generate Insight
-              </Button>
-              <Divider />
-              <Text>
-                {resourceAiInsight ||
-                  'Click generate to analyze resource data.'}
-              </Text>
-            </Drawer>
           </TabPane>
 
           <TabPane
@@ -867,34 +990,18 @@ const OperationsReports: React.FC = () => {
             />
 
             <Divider />
-
             <Button
               type='primary'
-              onClick={() => setComplianceInsightVisible(true)}
+              onClick={() =>
+                openInsightDrawer(
+                  'AI Insights on Compliance Status',
+                  'compliance',
+                  complianceStatus
+                )
+              }
             >
               View AI Insights
             </Button>
-
-            <Drawer
-              title='AI Insights on Document Compliance'
-              placement='bottom'
-              height={220}
-              onClose={() => setComplianceInsightVisible(false)}
-              open={complianceInsightVisible}
-            >
-              <Button
-                type='dashed'
-                loading={complianceInsightLoading}
-                onClick={handleGenerateComplianceInsight}
-              >
-                Generate Insight
-              </Button>
-              <Divider />
-              <Text>
-                {complianceAiInsight ||
-                  'Click generate to analyze compliance status.'}
-              </Text>
-            </Drawer>
           </TabPane>
 
           <TabPane
@@ -906,113 +1013,320 @@ const OperationsReports: React.FC = () => {
             }
             key='4'
           >
-            <Title level={4}>Interventions by Area Of Support</Title>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={{
-                chart: { type: 'column' },
-                title: { text: null },
-                xAxis: { categories: ['Marketing', 'Financial', 'Compliance'] },
-                yAxis: { min: 0, title: { text: 'Count' } },
-                tooltip: { shared: true },
-                plotOptions: {
-                  column: { stacking: 'normal' },
-                  series: {
-                    dataLabels: {
-                      enabled: true,
-                      format: '{point.y}'
+            <Title level={4}></Title>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={12}>
+                <ChartCard title='Interventions by Area Of Support'>
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={{
+                      chart: { type: 'column' },
+                      title: { text: null },
+                      xAxis: {
+                        categories: ['Marketing', 'Financial', 'Compliance']
+                      },
+                      yAxis: { min: 0, title: { text: 'Count' } },
+                      tooltip: { shared: true },
+                      plotOptions: {
+                        column: { stacking: 'normal' },
+                        series: {
+                          dataLabels: {
+                            enabled: true,
+                            format: '{point.y}'
+                          }
+                        }
+                      },
+                      series: [
+                        {
+                          name: 'Assigned',
+                          data: [18, 10, 12],
+                          type: 'column'
+                        },
+                        {
+                          name: 'Completed',
+                          data: [15, 7, 10],
+                          type: 'column'
+                        }
+                      ]
+                    }}
+                  />
+                </ChartCard>
+              </Col>
+
+              <Col xs={24} md={12}>
+                <ChartCard title='Top 5 Interventions by Frequency'>
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={{
+                      chart: { type: 'bar' },
+                      title: { text: null },
+                      xAxis: {
+                        categories: [
+                          'Website Dev',
+                          'Social Media',
+                          'Food Safety',
+                          'CRM Setup',
+                          'Marketing Plan'
+                        ]
+                      },
+                      yAxis: {
+                        min: 0,
+                        title: { text: 'Intervention Count' }
+                      },
+                      plotOptions: {
+                        series: {
+                          dataLabels: {
+                            enabled: true,
+                            format: '{point.y}'
+                          }
+                        }
+                      },
+                      series: [
+                        {
+                          name: 'Delivered',
+                          data: [12, 9, 8, 7, 6],
+                          type: 'bar'
+                        }
+                      ]
+                    }}
+                  />
+                </ChartCard>
+              </Col>
+
+              <Col xs={24}>
+                <ChartCard title='Intervention Delivery Overview'>
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={{
+                      chart: {
+                        type: 'treemap'
+                      },
+                      title: {
+                        text: 'Interventions by Area of Support',
+                        align: 'left'
+                      },
+                      tooltip: {
+                        useHTML: true,
+                        pointFormat:
+                          'Intervention: <b>{point.name}</b><br/>Count: <b>{point.value}</b>'
+                      },
+                      series: [
+                        {
+                          type: 'treemap',
+                          name: 'Areas Of Support',
+                          allowTraversingTree: true,
+                          alternateStartingDirection: true,
+                          layoutAlgorithm: 'squarified',
+                          nodeSizeBy: 'leaf',
+                          borderColor: '#ffffff',
+                          borderRadius: 3,
+                          levels: [
+                            {
+                              level: 1,
+                              layoutAlgorithm: 'sliceAndDice',
+                              groupPadding: 3,
+                              dataLabels: {
+                                headers: true,
+                                enabled: true,
+                                style: {
+                                  fontSize: '0.6em',
+                                  fontWeight: 'normal',
+                                  textTransform: 'uppercase'
+                                }
+                              },
+                              borderRadius: 3,
+                              borderWidth: 1,
+                              colorByPoint: true // 🎨 Use color per parent
+                            },
+                            {
+                              level: 2,
+                              dataLabels: {
+                                enabled: true,
+                                inside: false
+                              }
+                            }
+                          ],
+                          data: [
+                            // Parents
+                            {
+                              id: 'marketing',
+                              name: 'Marketing',
+                              color: '#50FFB1'
+                            },
+                            {
+                              id: 'compliance',
+                              name: 'Compliance',
+                              color: '#F5FBEF'
+                            },
+                            {
+                              id: 'finance',
+                              name: 'Finance',
+                              color: '#A09FA8'
+                            },
+                            {
+                              id: 'operations',
+                              name: 'Operations',
+                              color: '#E7ECEF'
+                            },
+                            {
+                              id: 'technology',
+                              name: 'Technology',
+                              color: '#A9B4C2'
+                            },
+                            { id: 'legal', name: 'Legal', color: '#FF5630' },
+
+                            // Children (interventions)
+                            {
+                              name: 'CRM Setup',
+                              parent: 'marketing',
+                              value: 10
+                            },
+                            {
+                              name: 'Email Campaign',
+                              parent: 'marketing',
+                              value: 5
+                            },
+                            {
+                              name: 'Social Media Strategy',
+                              parent: 'marketing',
+                              value: 6
+                            },
+                            {
+                              name: 'Brand Guidelines',
+                              parent: 'marketing',
+                              value: 4
+                            },
+
+                            {
+                              name: 'Food Safety Audit',
+                              parent: 'compliance',
+                              value: 12
+                            },
+                            {
+                              name: 'Tax Clearance',
+                              parent: 'compliance',
+                              value: 7
+                            },
+                            {
+                              name: 'B-BBEE Verification',
+                              parent: 'compliance',
+                              value: 6
+                            },
+                            {
+                              name: 'Health Certificate',
+                              parent: 'compliance',
+                              value: 5
+                            },
+
+                            {
+                              name: 'Budget Forecasting',
+                              parent: 'finance',
+                              value: 8
+                            },
+                            {
+                              name: 'Investment Readiness',
+                              parent: 'finance',
+                              value: 6
+                            },
+                            {
+                              name: 'Funding Access',
+                              parent: 'finance',
+                              value: 5
+                            },
+                            {
+                              name: 'Cash Flow Management',
+                              parent: 'finance',
+                              value: 4
+                            },
+
+                            {
+                              name: 'Workflow Automation',
+                              parent: 'operations',
+                              value: 9
+                            },
+                            {
+                              name: 'Inventory Setup',
+                              parent: 'operations',
+                              value: 7
+                            },
+                            {
+                              name: 'Supplier Engagement',
+                              parent: 'operations',
+                              value: 3
+                            },
+
+                            {
+                              name: 'Website Development',
+                              parent: 'technology',
+                              value: 11
+                            },
+                            {
+                              name: 'Mobile App Planning',
+                              parent: 'technology',
+                              value: 6
+                            },
+                            {
+                              name: 'Cloud Tools',
+                              parent: 'technology',
+                              value: 5
+                            },
+
+                            {
+                              name: 'Company Registration',
+                              parent: 'legal',
+                              value: 8
+                            },
+                            {
+                              name: 'Contract Templates',
+                              parent: 'legal',
+                              value: 5
+                            },
+                            {
+                              name: 'IP Protection Advice',
+                              parent: 'legal',
+                              value: 4
+                            }
+                          ]
+                        }
+                      ]
+                    }}
+                  />
+                </ChartCard>
+              </Col>
+            </Row>
+
+            <Button
+              type='primary'
+              onClick={() =>
+                openInsightDrawer(
+                  'AI Insights on Interventions',
+                  'intervention',
+                  [
+                    { category: 'Assigned', data: [18, 10, 12] },
+                    { category: 'Completed', data: [15, 7, 10] },
+                    {
+                      top5: [
+                        'Website Dev',
+                        'Social Media',
+                        'Food Safety',
+                        'CRM Setup',
+                        'Marketing Plan'
+                      ]
+                    },
+                    {
+                      treemap: [
+                        { name: 'Marketing - Email Signature', value: 3 },
+                        { name: 'Compliance - Food Safety', value: 12 },
+                        { name: 'Marketing - CRM Setup', value: 10 },
+                        { name: 'Marketing - Social Media', value: 4 }
+                      ]
                     }
-                  }
-                },
-                series: [
-                  {
-                    name: 'Assigned',
-                    data: [18, 10, 12],
-                    type: 'column'
-                  },
-                  {
-                    name: 'Completed',
-                    data: [15, 7, 10],
-                    type: 'column'
-                  }
-                ]
-              }}
-            />
-
-            <Divider />
-
-            <Title level={4}>Top 5 Interventions by Frequency</Title>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={{
-                chart: { type: 'bar' },
-                title: { text: null },
-                xAxis: {
-                  categories: [
-                    'Website Dev',
-                    'Social Media',
-                    'Food Safety',
-                    'CRM Setup',
-                    'Marketing Plan'
                   ]
-                },
-                yAxis: {
-                  min: 0,
-                  title: { text: 'Intervention Count' }
-                },
-                plotOptions: {
-                  series: {
-                    dataLabels: {
-                      enabled: true,
-                      format: '{point.y}'
-                    }
-                  }
-                },
-                series: [
-                  {
-                    name: 'Delivered',
-                    data: [12, 9, 8, 7, 6],
-                    type: 'bar'
-                  }
-                ]
-              }}
-            />
-
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={{
-                chart: { type: 'treemap' },
-                title: { text: 'Intervention Delivery Overview' },
-                series: [
-                  {
-                    type: 'treemap',
-                    layoutAlgorithm: 'squarified',
-                    data: [
-                      {
-                        name: 'Marketing - Email Signature',
-                        value: 3,
-                        group: 'Marketing'
-                      },
-                      {
-                        name: 'Compliance - Food Safety',
-                        value: 12,
-                        group: 'Compliance'
-                      },
-                      {
-                        name: 'Marketing - CRM Setup',
-                        value: 10,
-                        group: 'Marketing'
-                      },
-                      {
-                        name: 'Marketing - Social Media',
-                        value: 4,
-                        group: 'Marketing'
-                      }
-                    ]
-                  }
-                ]
-              }}
-            />
+                )
+              }
+            >
+              View AI Insights
+            </Button>
           </TabPane>
 
           <TabPane
@@ -1024,113 +1338,203 @@ const OperationsReports: React.FC = () => {
             }
             key='5'
           >
-            <Title level={4}>Top Consultants by Intervention Count</Title>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={{
-                chart: { type: 'bar' },
-                title: { text: null },
-                xAxis: {
-                  categories: ['John', 'Amanda', 'Kabelo', 'Naledi', 'Thabo']
-                },
-                yAxis: { title: { text: 'Interventions' } },
-                plotOptions: {
-                  series: {
-                    dataLabels: {
-                      enabled: true,
-                      format: '{point.y}'
-                    }
-                  }
-                },
-                series: [
-                  {
-                    name: 'Interventions',
-                    data: [9, 8, 7, 6, 5],
-                    type: 'bar'
-                  }
-                ]
-              }}
-            />
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={12}>
+                <ChartCard title='Top Consultants by Intervention Count'>
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={{
+                      chart: { type: 'bar' },
+                      title: { text: null },
+                      xAxis: {
+                        categories: [
+                          'John',
+                          'Amanda',
+                          'Kabelo',
+                          'Naledi',
+                          'Thabo'
+                        ]
+                      },
+                      yAxis: { title: { text: 'Interventions' } },
+                      plotOptions: {
+                        series: {
+                          dataLabels: {
+                            enabled: true,
+                            format: '{point.y}'
+                          }
+                        }
+                      },
+                      series: [
+                        {
+                          name: 'Interventions',
+                          data: [9, 8, 7, 6, 5],
+                          type: 'bar'
+                        }
+                      ]
+                    }}
+                  />
+                </ChartCard>
+              </Col>
 
-            <Divider />
+              <Col xs={24} md={12}>
+                <ChartCard title='Top Consultants by Hours'>
+                  <Select
+                    value={topN}
+                    onChange={value => setTopN(value)}
+                    style={{ width: 150, marginBottom: 10 }}
+                  >
+                    {[5, 10, 15, 20].map(n => (
+                      <Option key={n} value={n}>{`Top ${n}`}</Option>
+                    ))}
+                  </Select>
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={{
+                      chart: { type: 'column' },
+                      title: { text: null },
+                      xAxis: {
+                        categories: [
+                          'John',
+                          'Amanda',
+                          'Kabelo',
+                          'Naledi',
+                          'Thabo'
+                        ]
+                      },
+                      yAxis: { title: { text: 'Hours' } },
+                      plotOptions: {
+                        series: {
+                          dataLabels: {
+                            enabled: true,
+                            format: '{point.y}'
+                          }
+                        }
+                      },
+                      series: [
+                        {
+                          name: 'Hours',
+                          data: [42, 36, 30, 28, 24],
+                          type: 'column'
+                        }
+                      ]
+                    }}
+                  />
+                </ChartCard>
+              </Col>
 
-            <Title level={4}>Top Consultants by Hours</Title>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={{
-                chart: { type: 'column' },
-                title: { text: null },
-                xAxis: {
-                  categories: ['John', 'Amanda', 'Kabelo', 'Naledi', 'Thabo']
-                },
-                yAxis: { title: { text: 'Hours' } },
-                plotOptions: {
-                  series: {
-                    dataLabels: {
-                      enabled: true,
-                      format: '{point.y}'
-                    }
-                  }
-                },
-                series: [
-                  {
-                    name: 'Hours',
-                    data: [42, 36, 30, 28, 24],
-                    type: 'column'
-                  }
-                ]
-              }}
-            />
-            <Select
-              value={topNConsultants}
-              onChange={value => setTopNConsultants(value)}
-              style={{ width: 120 }}
+              <Col xs={24}>
+                <ChartCard title='Consultant Performance Matrix'>
+                  <Select
+                    value={topNConsultants}
+                    onChange={value => setTopNConsultants(value)}
+                    style={{ width: 150, marginBottom: 10 }}
+                  >
+                    {[5, 10, 15, 20].map(n => (
+                      <Option key={n} value={n}>{`Top ${n}`}</Option>
+                    ))}
+                  </Select>
+                  <HighchartsReact
+                    highcharts={Highcharts}
+                    options={{
+                      chart: {
+                        type: 'bubble',
+                        plotBorderWidth: 1,
+                        zoomType: 'xy'
+                      },
+                      title: { text: '' },
+                      xAxis: {
+                        title: { text: 'Rating' },
+                        startOnTick: true,
+                        endOnTick: true,
+                        showLastLabel: true
+                      },
+                      yAxis: { title: { text: 'Assignments' } },
+                      legend: { enabled: true },
+                      tooltip: {
+                        useHTML: true,
+                        headerFormat: '<table>',
+                        pointFormat:
+                          '<tr><th>Consultant:</th><td>{series.name}</td></tr>' +
+                          '<tr><th>Rating:</th><td>{point.x}</td></tr>' +
+                          '<tr><th>Assignments:</th><td>{point.y}</td></tr>' +
+                          '<tr><th>Impact Score:</th><td>{point.z}</td></tr>',
+                        footerFormat: '</table>',
+                        followPointer: true
+                      },
+                      plotOptions: { bubble: { minSize: 10, maxSize: 60 } },
+                      series: consultantSeries
+                    }}
+                  />
+                </ChartCard>
+              </Col>
+            </Row>
+
+            <Button
+              type='primary'
+              onClick={() =>
+                openInsightDrawer(
+                  'AI Insights on Consultant Performance',
+                  'consultant',
+                  consultantData
+                )
+              }
             >
-              {[5, 10, 15, 20].map(n => (
-                <Option key={n} value={n}>{`Top ${n}`}</Option>
-              ))}
-            </Select>
-
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={{
-                chart: { type: 'bubble', plotBorderWidth: 1, zoomType: 'xy' },
-                title: { text: 'Consultant Performance Matrix' },
-                xAxis: {
-                  title: { text: 'Rating' },
-                  startOnTick: true,
-                  endOnTick: true,
-                  showLastLabel: true
-                },
-                yAxis: { title: { text: 'Assignments' } },
-                legend: { enabled: true },
-                tooltip: {
-                  useHTML: true,
-                  headerFormat: '<table>',
-                  pointFormat:
-                    '<tr><th>Consultant:</th><td>{series.name}</td></tr>' +
-                    '<tr><th>Rating:</th><td>{point.x}</td></tr>' +
-                    '<tr><th>Assignments:</th><td>{point.y}</td></tr>' +
-                    '<tr><th>Impact Score:</th><td>{point.z}</td></tr>',
-                  footerFormat: '</table>',
-                  followPointer: true
-                },
-                plotOptions: { bubble: { minSize: 10, maxSize: 60 } },
-                series: consultantSeries
-              }}
-            />
-
-            <Select
-              value={topN}
-              onChange={value => setTopN(value)}
-              style={{ width: 120 }}
-            >
-              {[5, 10, 15, 20].map(n => (
-                <Option key={n} value={n}>{`Top ${n}`}</Option>
-              ))}
-            </Select>
+              View AI Insights
+            </Button>
           </TabPane>
         </Tabs>
+        <Drawer
+          title={drawer.title}
+          placement='right'
+          width={480}
+          onClose={() => setDrawer(prev => ({ ...prev, visible: false }))}
+          open={drawer.visible}
+        >
+          <Button
+            type='dashed'
+            loading={drawer.loading}
+            onClick={() => generateInsight(drawer.insightType)}
+            block
+          >
+            Generate Insight
+          </Button>
+
+          <Divider />
+
+          {/* {renderInsight()} */}
+
+          {drawer.content ? (
+            (() => {
+              const parsed = renderInsight(drawer.content)
+              if (!parsed)
+                return (
+                  <Text type='danger'>
+                    ⚠️ Failed to generate insight. Kindly retry.
+                  </Text>
+                )
+
+              return (
+                <>
+                  <Paragraph strong>{parsed.summary}</Paragraph>
+                  <Title level={5}>Details</Title>
+                  <ul>
+                    {parsed.details?.map((d: string, i: number) => (
+                      <li key={i}>{d}</li>
+                    ))}
+                  </ul>
+                  <Title level={5}>Recommendations</Title>
+                  <ul>
+                    {parsed.recommendations?.map((r: string, i: number) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                </>
+              )
+            })()
+          ) : (
+            <Text type='secondary'>Click generate to analyze the data.</Text>
+          )}
+        </Drawer>
       </Card>
     </div>
   )

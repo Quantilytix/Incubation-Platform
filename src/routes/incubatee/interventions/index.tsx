@@ -791,63 +791,68 @@ const InterventionsTrackingView: React.FC = () => {
       <Divider />
 
       <Row gutter={16} style={{ marginBottom: 24 }}>
-  <Col span={6}>
-    <Card>
-      <Row align='middle' gutter={8}>
-        <Col>
-          <FileSearchOutlined style={{ fontSize: 24 }} />
+        <Col span={6}>
+          <Card>
+            <Row align='middle' gutter={8}>
+              <Col>
+                <FileSearchOutlined style={{ fontSize: 24 }} />
+              </Col>
+              <Col>
+                <Text>Total Required</Text>
+                <Title level={4} style={{ margin: 0 }}>
+                  {totalRequired}
+                </Title>
+              </Col>
+            </Row>
+          </Card>
         </Col>
-        <Col>
-          <Text>Total Required</Text>
-          <Title level={4} style={{ margin: 0 }}>{totalRequired}</Title>
+
+        <Col span={6}>
+          <Card>
+            <Row align='middle' gutter={8}>
+              <Col>
+                <ClockCircleOutlined style={{ fontSize: 24 }} />
+              </Col>
+              <Col>
+                <Text>Ongoing</Text>
+                <Title level={4} style={{ margin: 0 }}>
+                  {ongoingCount}
+                </Title>
+              </Col>
+            </Row>
+          </Card>
+        </Col>
+
+        <Col span={6}>
+          <Card>
+            <Row align='middle' gutter={8}>
+              <Col>
+                <CheckCircleOutlined style={{ fontSize: 24 }} />
+              </Col>
+              <Col>
+                <Text>Completed</Text>
+                <Title level={4} style={{ margin: 0 }}>
+                  {completedCount}
+                </Title>
+              </Col>
+            </Row>
+          </Card>
+        </Col>
+
+        <Col span={6}>
+          <Card>
+            <Row align='middle' gutter={8}>
+              <Col span={24}>
+                <LineChartOutlined style={{ fontSize: 24 }} />
+                <Text style={{ marginLeft: 8 }}>Completion Rate</Text>
+              </Col>
+              <Col span={24}>
+                <Progress percent={completionRate} />
+              </Col>
+            </Row>
+          </Card>
         </Col>
       </Row>
-    </Card>
-  </Col>
-
-  <Col span={6}>
-    <Card>
-      <Row align='middle' gutter={8}>
-        <Col>
-          <ClockCircleOutlined style={{ fontSize: 24 }} />
-        </Col>
-        <Col>
-          <Text>Ongoing</Text>
-          <Title level={4} style={{ margin: 0 }}>{ongoingCount}</Title>
-        </Col>
-      </Row>
-    </Card>
-  </Col>
-
-  <Col span={6}>
-    <Card>
-      <Row align='middle' gutter={8}>
-        <Col>
-          <CheckCircleOutlined style={{ fontSize: 24 }} />
-        </Col>
-        <Col>
-          <Text>Completed</Text>
-          <Title level={4} style={{ margin: 0 }}>{completedCount}</Title>
-        </Col>
-      </Row>
-    </Card>
-  </Col>
-
-  <Col span={6}>
-    <Card>
-      <Row align='middle' gutter={8}>
-        <Col span={24}>
-          <LineChartOutlined style={{ fontSize: 24 }} />
-          <Text style={{ marginLeft: 8 }}>Completion Rate</Text>
-        </Col>
-        <Col span={24}>
-          <Progress percent={completionRate} />
-        </Col>
-      </Row>
-    </Card>
-  </Col>
-</Row>
-
 
       {/* Filters */}
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>

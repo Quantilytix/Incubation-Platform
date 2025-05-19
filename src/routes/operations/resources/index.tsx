@@ -47,6 +47,7 @@ import { db } from '@/firebase'
 import dayjs from 'dayjs'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
+import { Helmet } from 'react-helmet'
 
 const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
@@ -623,6 +624,9 @@ const OperationsResourceManagement: React.FC = () => {
 
   return (
     <div style={{ padding: '20px' }}>
+      <Helmet>
+        <title>Resources Overview</title>
+      </Helmet>
       <Title level={2}>
         <ApartmentOutlined /> Resource Management
       </Title>
@@ -635,7 +639,7 @@ const OperationsResourceManagement: React.FC = () => {
       {/* Resource Overview Stats */}
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Resource Types'
               value={
@@ -650,7 +654,7 @@ const OperationsResourceManagement: React.FC = () => {
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Overall Utilization'
               value={getUtilizationPercentage()}
@@ -663,7 +667,7 @@ const OperationsResourceManagement: React.FC = () => {
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Active Allocations'
               value={allocations.filter(a => a.status === 'active').length}
@@ -673,7 +677,7 @@ const OperationsResourceManagement: React.FC = () => {
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Upcoming Allocations'
               value={getUpcomingAllocations()}

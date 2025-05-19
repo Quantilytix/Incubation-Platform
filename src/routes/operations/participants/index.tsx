@@ -11,7 +11,7 @@ import {
   Select,
   Form,
   Input,
-  Space,
+  Rate,
   message
 } from 'antd'
 import {
@@ -348,14 +348,7 @@ const OperationsParticipantsManagement: React.FC = () => {
           </Card>
         </Col>
       </Row>
-      <Row justify='end' style={{ marginBottom: 16 }}>
-        <Button
-          type='primary'
-          onClick={() => navigate('/consultant/participants/new')}
-        >
-          + Add New Participant
-        </Button>
-      </Row>
+
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
           <Select
@@ -385,6 +378,14 @@ const OperationsParticipantsManagement: React.FC = () => {
             }}
             allowClear
           />
+        </Col>
+        <Col span={8} style={{ alignItems: 'flex-end' }}>
+          <Button
+            type='primary'
+            onClick={() => navigate('/consultant/participants/new')}
+          >
+            + Add New Participant
+          </Button>
         </Col>
       </Row>
 

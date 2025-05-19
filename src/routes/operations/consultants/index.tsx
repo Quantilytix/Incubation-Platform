@@ -9,12 +9,13 @@ import {
   Tag,
   Space,
   Typography,
-  Spin,
+  Rate,
   Modal,
   Form,
   Input,
   Select,
-  message
+  message,
+  Skeleton
 } from 'antd'
 import { db } from '@/firebase'
 import {
@@ -29,7 +30,10 @@ import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
-  DownloadOutlined
+  DownloadOutlined,
+  UserOutlined,
+  CheckCircleOutlined,
+  StarOutlined
 } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import { CSVLink } from 'react-csv'
@@ -103,10 +107,14 @@ export const ConsultantPage: React.FC = () => {
 
   const handleAddConsultant = async (values: any) => {
     try {
-      const { email, name, expertise, ratePerHour } = values
+      const { email, name, expertise, rate } = values
 
       // ✅ 1. Create Firebase Auth account
-      const userCred = await createUserWithEmailAndPassword(auth, email, '0000')
+      const userCred = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        'Password@1'
+      )
       const uid = userCred.user.uid
 
       // ✅ 2. Save consultant details
@@ -114,7 +122,7 @@ export const ConsultantPage: React.FC = () => {
         name,
         email,
         expertise,
-        ratePerHour,
+        rate,
         assignmentsCount: 0,
         rating: 0,
         active: true,
@@ -213,8 +221,8 @@ export const ConsultantPage: React.FC = () => {
     },
     {
       title: 'Rate/hr',
-      dataIndex: 'ratePerHour',
-      key: 'ratePerHour',
+      dataIndex: 'rate',
+      key: 'rate',
       render: val => `R ${val}`
     },
     {
@@ -297,83 +305,95 @@ export const ConsultantPage: React.FC = () => {
         <title>Consultants | Smart Incubation</title>
       </Helmet>
 
-      {loading ? (
-        <div
-          style={{
-            display: 'flex',
-            height: '100vh',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          <Spin tip='Loading Consultants' size='large' />
-        </div>
-      ) : (
-        <>
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-            <Col xs={24} sm={8}>
-              <Card>
-                <Statistic title='Total Consultants' value={totalConsultants} />
-              </Card>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Card>
-                <Statistic
-                  title='Active Consultants'
-                  value={activeCount}
-                  valueStyle={{ color: '#52c41a' }}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Card>
-                <Statistic
-                  title='Average Rating'
-                  value={averageRating}
-                  suffix='/ 5'
-                />
-              </Card>
-            </Col>
-          </Row>
-          <Col style={{ marginBottom: 10 }}>
-            <Space>
-              <Input.Search
-                placeholder='Search by name or email'
-                onSearch={value => setSearchText(value)}
-                allowClear
-                style={{ width: 250 }}
-              />
-              <Button
-                type='primary'
-                icon={<PlusOutlined />}
-                onClick={() => setAddModalVisible(true)}
-              >
-                Add Consultant
-              </Button>
-              <Button icon={<DownloadOutlined />} type='default'>
-                <CSVLink
-                  filename='consultants.csv'
-                  data={consultants}
-                  style={{ color: 'inherit' }}
-                >
-                  Export
-                </CSVLink>
-              </Button>
-            </Space>
-          </Col>
-          <Card>
-            <Table
-              columns={columns}
-              dataSource={filteredConsultants}
-              rowKey='id'
-              pagination={{ pageSize: 8 }}
-              rowClassName={record =>
-                record.id === newConsultantId ? 'highlighted-row' : ''
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={8}>
+          <Card loading={loading}>
+            <Statistic
+              title={
+                <Space>
+                  <UserOutlined />
+                  Total Consultants
+                </Space>
               }
+              value={totalConsultants}
             />
           </Card>
-        </>
-      )}
+        </Col>
+
+        <Col xs={24} sm={8}>
+          <Card loading={loading}>
+            <Statistic
+              title={
+                <Space>
+                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                  Active Consultants
+                </Space>
+              }
+              value={activeCount}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+
+        <Col xs={24} sm={8}>
+          <Card loading={loading}>
+            <Statistic
+              title={
+                <Space>
+                  <StarOutlined style={{ color: '#fadb14' }} />
+                  Average Rating
+                </Space>
+              }
+              valueRender={() => (
+                <Rate
+                  disabled
+                  allowHalf
+                  value={parseFloat(averageRating.toString())}
+                />
+              )}
+            />
+          </Card>
+        </Col>
+      </Row>
+      <Col style={{ marginBottom: 10 }}>
+        <Space>
+          <Input.Search
+            placeholder='Search by name or email'
+            onSearch={value => setSearchText(value)}
+            allowClear
+            style={{ width: 250 }}
+          />
+          <Button
+            type='primary'
+            icon={<PlusOutlined />}
+            onClick={() => setAddModalVisible(true)}
+          >
+            Add Consultant
+          </Button>
+          <Button icon={<DownloadOutlined />} type='default'>
+            <CSVLink
+              filename='consultants.csv'
+              data={consultants}
+              style={{ color: 'inherit' }}
+            >
+              Export
+            </CSVLink>
+          </Button>
+        </Space>
+      </Col>
+      <Card>
+        <Skeleton active loading={loading}>
+          <Table
+            columns={columns}
+            dataSource={filteredConsultants}
+            rowKey='id'
+            pagination={{ pageSize: 8 }}
+            rowClassName={record =>
+              record.id === newConsultantId ? 'highlighted-row' : ''
+            }
+          />
+        </Skeleton>
+      </Card>
 
       {/* Add Consultant Modal */}
       <Modal
@@ -422,11 +442,12 @@ export const ConsultantPage: React.FC = () => {
             </Select>
           </Form.Item>
           <Form.Item
-            name='ratePerHour'
+            name='rate'
             label='Rate per Hour (ZAR)'
             rules={[{ required: true, message: 'Please enter a rate' }]}
-          />
-          <Input type='number' min={0} />
+          >
+            <Input type='number' min={0} />
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -473,6 +494,18 @@ export const ConsultantPage: React.FC = () => {
                 </Option>
               ))}
             </Select>
+          </Form.Item>
+          <Form.Item
+            name='rate'
+            label='Rate per Hour (ZAR)'
+            rules={[
+              {
+                required: true,
+                message: 'Please enter consultant rate per hour'
+              }
+            ]}
+          >
+            <Input type='number' min={0} />
           </Form.Item>
         </Form>
       </Modal>

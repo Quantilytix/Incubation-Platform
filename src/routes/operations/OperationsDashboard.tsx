@@ -60,6 +60,7 @@ const { TabPane } = Tabs
 import dayjs from 'dayjs'
 import { useGetIdentity } from '@refinedev/core'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
+import { assign } from 'nodemailer/lib/shared'
 
 export const OperationsDashboard: React.FC = () => {
   const navigate = useNavigate()
@@ -294,20 +295,20 @@ export const OperationsDashboard: React.FC = () => {
   ).length
   const total = complianceDocuments.length
 
+  const fetchTasks = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'tasks'))
+      const taskList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      setTasks(taskList)
+    } catch (error) {
+      console.error('Error fetching tasks:', error)
+    }
+  }
   // Fetch Tasks
   useEffect(() => {
-    const fetchTasks = async () => {
-      try {
-        const snapshot = await getDocs(collection(db, 'tasks'))
-        const taskList = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        setTasks(taskList)
-      } catch (error) {
-        console.error('Error fetching tasks:', error)
-      }
-    }
     const fetchAllOtherData = async () => {
       try {
         // Participants
@@ -337,7 +338,6 @@ export const OperationsDashboard: React.FC = () => {
     }
 
     fetchComplianceDocuments()
-
     fetchTasks()
     fetchAllOtherData()
   }, [])
@@ -372,7 +372,7 @@ export const OperationsDashboard: React.FC = () => {
         id: newId,
         title: values.title,
         date: values.date.format('YYYY-MM-DD'), // ✅ format DatePicker value
-        time: values.time || '',
+        time: values.time.toDate?.() || new Date(values.time),
         type: values.type,
         createdAt: Timestamp.now()
       }
@@ -396,6 +396,8 @@ export const OperationsDashboard: React.FC = () => {
 
     if (!assignedId) {
       message.error('Assigned user not found in collections')
+      console.log(assignedEmail)
+      console.log('Op Ids: ', operationsDocIds)
       return
     }
 
@@ -411,6 +413,9 @@ export const OperationsDashboard: React.FC = () => {
 
     await setDoc(doc(db, 'tasks', `task-${Date.now()}`), newTask)
     message.success('Task assigned successfully.')
+    fetchTasks()
+    setTaskModalOpen(false)
+    taskForm.resetFields()
   }
 
   const handleCompleteTask = async (taskId: string) => {
@@ -803,7 +808,10 @@ export const OperationsDashboard: React.FC = () => {
                   </Text>
                   <br />
                   <Space>
-                    <Text type='secondary'>Time: {event.time}</Text>
+                    <Text type='secondary'>
+                      Time: {dayjs(event.time).format('HH:mm')}
+                    </Text>
+
                     <Tag
                       color={
                         event.type === 'meeting'
@@ -875,7 +883,7 @@ export const OperationsDashboard: React.FC = () => {
                 ? operationsUsers
                 : []
               ).map(user => (
-                <Select.Option key={user.nam} value={user.name}>
+                <Select.Option key={user.email} value={user.email}>
                   {user.name}
                 </Select.Option>
               ))}

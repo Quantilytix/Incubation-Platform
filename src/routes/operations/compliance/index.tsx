@@ -571,7 +571,7 @@ const OperationsCompliance: React.FC = () => {
         style={{ marginTop: '20px', marginBottom: '20px' }}
       >
         <Col span={4}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Total Documents'
               value={complianceStats.total}
@@ -581,7 +581,7 @@ const OperationsCompliance: React.FC = () => {
           </Card>
         </Col>
         <Col span={4}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Valid'
               value={complianceStats.valid}
@@ -591,7 +591,7 @@ const OperationsCompliance: React.FC = () => {
           </Card>
         </Col>
         <Col span={4}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Expiring Soon'
               value={complianceStats.expiring}
@@ -601,7 +601,7 @@ const OperationsCompliance: React.FC = () => {
           </Card>
         </Col>
         <Col span={4}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Expired'
               value={complianceStats.expired}
@@ -611,7 +611,7 @@ const OperationsCompliance: React.FC = () => {
           </Card>
         </Col>
         <Col span={4}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Missing'
               value={complianceStats.missing}
@@ -621,7 +621,7 @@ const OperationsCompliance: React.FC = () => {
           </Card>
         </Col>
         <Col span={4}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
               title='Pending Review'
               value={complianceStats.pending}
@@ -632,47 +632,47 @@ const OperationsCompliance: React.FC = () => {
         </Col>
       </Row>
 
-      <Card>
-        <div
-          style={{
-            marginBottom: '20px',
-            display: 'flex',
-            justifyContent: 'space-between'
-          }}
-        >
-          <Input
-            placeholder='Search documents or participants'
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            style={{ width: '300px' }}
-            prefix={<SearchOutlined />}
-          />
-          <Space>
-            <Button
-              type='primary'
-              icon={<PlusOutlined />}
-              onClick={() => showModal()}
-            >
-              Add New Document
-            </Button>
+      <div
+        style={{
+          marginBottom: '20px',
+          display: 'flex',
+          justifyContent: 'space-between'
+        }}
+      >
+        <Input
+          placeholder='Search documents or participants'
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+          style={{ width: '300px' }}
+          prefix={<SearchOutlined />}
+        />
+        <Space>
+          <Button
+            type='primary'
+            icon={<PlusOutlined />}
+            onClick={() => showModal()}
+          >
+            Add New Document
+          </Button>
 
-            <Button
-              icon={<FileAddOutlined />}
-              onClick={() => setIsEDAgreementModalVisible(true)}
-            >
-              Generate ED Agreement
-            </Button>
+          <Button
+            icon={<FileAddOutlined />}
+            onClick={() => setIsEDAgreementModalVisible(true)}
+          >
+            Generate ED Agreement
+          </Button>
 
-            <Button
-              type='default'
-              icon={<UserOutlined />}
-              onClick={handleSendReminders}
-            >
-              Send Email Reminders
-            </Button>
-          </Space>
-        </div>
+          <Button
+            type='default'
+            icon={<UserOutlined />}
+            onClick={handleSendReminders}
+          >
+            Send Email Reminders
+          </Button>
+        </Space>
+      </div>
 
+      <Card loading={loading}>
         <Table
           columns={columns}
           dataSource={filteredDocuments}

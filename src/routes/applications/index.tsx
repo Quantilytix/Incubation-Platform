@@ -12,11 +12,18 @@ import {
   Typography,
   Divider,
   Select,
-  message
+  message,
+  Skeleton
 } from 'antd'
 import { db } from '@/firebase'
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore'
-import { EyeOutlined, FileOutlined } from '@ant-design/icons'
+import {
+  FileTextOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  FileOutlined
+} from '@ant-design/icons'
+
 import { Helmet } from 'react-helmet'
 import HighchartsReact from 'highcharts-react-official'
 import Highcharts from 'highcharts'
@@ -25,6 +32,7 @@ const { Title, Text } = Typography
 const { Option } = Select
 
 const ApplicationsPage: React.FC = () => {
+  const [loading, setLoading] = useState(false)
   const [applications, setApplications] = useState<any[]>([])
   const [filteredApplications, setFilteredApplications] = useState<any[]>([])
   const [selectedApplication, setSelectedApplication] = useState<any>(null)
@@ -34,6 +42,7 @@ const ApplicationsPage: React.FC = () => {
   const [ageGroupFilter, setAgeGroupFilter] = useState<string | undefined>()
 
   const fetchApplications = async () => {
+    setLoading(true)
     try {
       const snapshot = await getDocs(collection(db, 'applications'))
       const apps = snapshot.docs.map(doc => {
@@ -106,6 +115,8 @@ const ApplicationsPage: React.FC = () => {
     } catch (error) {
       console.error('Error fetching applications:', error)
       message.error('Failed to fetch applications')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -134,10 +145,10 @@ const ApplicationsPage: React.FC = () => {
 
   const totalApplications = applications.length
   const accepted = applications.filter(
-    app => app.aiRecommendation === 'Accepted'
+    app => app.applicationStatus.toLowerCase() === 'accepted'
   ).length
   const rejected = applications.filter(
-    app => app.aiRecommendation === 'Rejected'
+    app => app.applicationStatus.toLowerCase() === 'rejected'
   ).length
 
   const genderDistribution = applications.reduce((acc, p) => {
@@ -263,23 +274,41 @@ const ApplicationsPage: React.FC = () => {
       {/* Top Metrics */}
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
         <Col span={8}>
-          <Card>
-            <Statistic title='Total Applications' value={totalApplications} />
+          <Card loading={loading}>
+            <Statistic
+              title={
+                <Space>
+                  <FileTextOutlined style={{ color: '#1890ff' }} />
+                  Total Applications
+                </Space>
+              }
+              value={totalApplications}
+            />
           </Card>
         </Col>
         <Col span={8}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
-              title='Accepted'
+              title={
+                <Space>
+                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                  Accepted
+                </Space>
+              }
               value={accepted}
               valueStyle={{ color: '#52c41a' }}
             />
           </Card>
         </Col>
         <Col span={8}>
-          <Card>
+          <Card loading={loading}>
             <Statistic
-              title='Rejected'
+              title={
+                <Space>
+                  <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
+                  Rejected
+                </Space>
+              }
               value={rejected}
               valueStyle={{ color: '#ff4d4f' }}
             />
@@ -288,17 +317,22 @@ const ApplicationsPage: React.FC = () => {
       </Row>
 
       {/* Pie Charts */}
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={12}>
-          <HighchartsReact
-            highcharts={Highcharts}
-            options={genderChartOptions}
-          />
-        </Col>
-        <Col span={12}>
-          <HighchartsReact highcharts={Highcharts} options={ageChartOptions} />
-        </Col>
-      </Row>
+      <Skeleton loading={loading} paragraph={false}>
+        <Row gutter={16} style={{ marginBottom: 24 }}>
+          <Col span={12}>
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={genderChartOptions}
+            />
+          </Col>
+          <Col span={12}>
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={ageChartOptions}
+            />
+          </Col>
+        </Row>
+      </Skeleton>
 
       {/* Filters */}
       <Space style={{ marginBottom: 16 }}>

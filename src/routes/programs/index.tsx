@@ -15,8 +15,7 @@ import {
   Col,
   Statistic,
   Card,
-  Select,
-  Spin
+  Select
 } from 'antd'
 import {
   ProjectOutlined,
@@ -28,6 +27,8 @@ import {
   DeleteOutlined,
   PoweroffOutlined
 } from '@ant-design/icons'
+import type { StatisticProps } from 'antd'
+import CountUp from 'react-countup'
 import {
   collection,
   getDocs,
@@ -44,8 +45,11 @@ import dayjs from 'dayjs'
 import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
-
 const { Text } = Typography
+
+const formatter: StatisticProps['formatter'] = value => (
+  <CountUp end={value as number} separator=',' />
+)
 
 const ProgramManager: React.FC = () => {
   const [programs, setPrograms] = useState<any[]>([])
@@ -274,282 +278,287 @@ const ProgramManager: React.FC = () => {
         />
       </Helmet>
 
-      <Spin spinning={loading} tip='Loading programs...'>
-        <div style={{ padding: 24, height: '100vh', overflow: 'auto' }}>
-          <Title level={4}>Incubation Programs</Title>
+      <div style={{ padding: 24, height: '100vh', overflow: 'auto' }}>
+        <Title level={4}>Incubation Programs</Title>
 
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-            <Col xs={24} sm={12} md={6}>
-              <Card>
-                <Statistic
-                  title='Total Programs'
-                  value={totalPrograms}
-                  prefix={<ProjectOutlined />}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Card>
-                <Statistic
-                  title='Active Programs'
-                  value={activePrograms}
-                  prefix={<CheckCircleOutlined />}
-                  valueStyle={{ color: '#3f8600' }}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Card>
-                <Statistic
-                  title='Total Budget'
-                  value={totalBudget}
-                  prefix={<DollarOutlined />}
-                  valueStyle={{ color: '#1890ff' }}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <Card>
-                <Statistic
-                  title='Total Capacity'
-                  value={totalCapacity}
-                  prefix={<TeamOutlined />}
-                />
-              </Card>
-            </Col>
-          </Row>
+        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+          <Col xs={24} sm={12} md={6}>
+            <Card loading={loading}>
+              <Statistic
+                title='Total Programs'
+                value={totalPrograms}
+                prefix={<ProjectOutlined />}
+                formatter={formatter}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card loading={loading}>
+              <Statistic
+                title='Active Programs'
+                value={activePrograms}
+                prefix={<CheckCircleOutlined />}
+                formatter={formatter}
+                valueStyle={{ color: '#3f8600' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card loading={loading}>
+              <Statistic
+                title='Total Budget'
+                value={totalBudget}
+                prefix={<DollarOutlined />}
+                valueStyle={{ color: '#1890ff' }}
+                formatter={formatter}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card loading={loading}>
+              <Statistic
+                title='Total Capacity'
+                value={totalCapacity}
+                prefix={<TeamOutlined />}
+                formatter={formatter}
+              />
+            </Card>
+          </Col>
+        </Row>
 
-          <Space
-            style={{
-              marginBottom: 16,
-              justifyContent: 'space-between',
-              display: 'flex'
-            }}
-          >
-            {userRole !== 'director' && (
-              <Button
-                type='primary'
-                icon={<PlusOutlined />}
-                onClick={() => {
-                  if (userRole !== 'Director') setModalVisible(true)
+        <Space
+          style={{
+            marginBottom: 16,
+            justifyContent: 'space-between',
+            display: 'flex'
+          }}
+        >
+          {userRole !== 'director' && (
+            <Button
+              type='primary'
+              icon={<PlusOutlined />}
+              onClick={() => {
+                if (userRole !== 'Director') setModalVisible(true)
+              }}
+            >
+              Add Program
+            </Button>
+          )}
+        </Space>
+        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+          <Col xs={24} sm={12} md={8}>
+            <Input
+              placeholder='Search Program Name'
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              allowClear
+            />
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Select
+              placeholder='Filter by Status'
+              onChange={value => setFilteredStatus(value)}
+              value={filteredStatus}
+              allowClear
+              style={{ width: '100%' }}
+            >
+              <Select.Option value='Active'>Active</Select.Option>
+              <Select.Option value='Inactive'>Inactive</Select.Option>
+              <Select.Option value='Completed'>Completed</Select.Option>
+              <Select.Option value='Upcoming'>Upcoming</Select.Option>
+            </Select>
+          </Col>
+        </Row>
+
+        <Table
+          loading={loading}
+          dataSource={filteredPrograms}
+          rowKey='id'
+          pagination={{ pageSize: 6 }}
+          expandable={{
+            expandedRowRender: record => (
+              <div>
+                <p>
+                  <strong>Description:</strong> {record.description || 'N/A'}
+                </p>
+                <p>
+                  <strong>Budget:</strong> R{' '}
+                  {record.budget?.toLocaleString() || 0}
+                </p>
+                <p>
+                  <strong>Max Capacity:</strong> {record.maxCapacity || 'N/A'}
+                </p>
+              </div>
+            )
+          }}
+        >
+          <Table.Column title='Program Name' dataIndex='name' key='name' />
+          <Table.Column
+            title='Assigned Admin'
+            key='assignedAdmin'
+            render={record =>
+              record.assignedAdmin ? (
+                <Text>
+                  {consultantOptions.find(c => c.id === record.assignedAdmin)
+                    ?.name || 'Unknown'}
+                </Text>
+              ) : (
+                <Tag color='orange'>Not Assigned</Tag>
+              )
+            }
+          />
+
+          <Table.Column title='Type' dataIndex='type' />
+          <Table.Column
+            title='Status'
+            dataIndex='status'
+            render={status => (
+              <Tag color={status === 'Active' ? 'green' : 'red'}>{status}</Tag>
+            )}
+          />
+          <Table.Column
+            title='Start Date'
+            dataIndex='startDate'
+            render={val =>
+              val?.toDate ? dayjs(val.toDate()).format('YYYY-MM-DD') : 'N/A'
+            }
+          />
+          <Table.Column
+            title='End Date'
+            dataIndex='endDate'
+            render={val =>
+              val?.toDate ? dayjs(val.toDate()).format('YYYY-MM-DD') : 'N/A'
+            }
+          />
+          <Table.Column
+            title='Registration Link'
+            dataIndex='registrationLink'
+            render={(link: string) => (
+              <Text
+                copyable={{
+                  text: window.location.origin + link,
+                  tooltips: ['Copy link', 'Copied!']
                 }}
               >
-                Add Program
-              </Button>
+                {/* Empty to hide visible text */}{' '}
+              </Text>
             )}
-          </Space>
-          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-            <Col xs={24} sm={12} md={8}>
-              <Input
-                placeholder='Search Program Name'
-                value={searchText}
-                onChange={e => setSearchText(e.target.value)}
-                allowClear
-              />
-            </Col>
-            <Col xs={24} sm={12} md={8}>
-              <Select
-                placeholder='Filter by Status'
-                onChange={value => setFilteredStatus(value)}
-                value={filteredStatus}
-                allowClear
-                style={{ width: '100%' }}
-              >
+          />
+
+          <Table.Column
+            title='Actions'
+            key='actions'
+            render={(_, record) => (
+              <Space size='middle'>
+                <Button
+                  icon={<EditOutlined />}
+                  size='small'
+                  style={{ border: 'none' }}
+                  onClick={() => {
+                    setSelectedProgram(record)
+                    editForm.setFieldsValue({
+                      ...record,
+                      startDate: record.startDate?.toDate
+                        ? dayjs(record.startDate.toDate())
+                        : null,
+                      endDate: record.endDate?.toDate
+                        ? dayjs(record.endDate.toDate())
+                        : null
+                    })
+                    setEditModalVisible(true)
+                  }}
+                />
+                <Button
+                  icon={<DeleteOutlined />}
+                  size='small'
+                  danger
+                  onClick={() => handleDeleteProgram(record.id)}
+                />
+                <Button
+                  size='small'
+                  icon={<PoweroffOutlined />}
+                  onClick={() => toggleStatus(record)}
+                  loading={togglingProgramId === record.id}
+                >
+                  {record.status === 'Active' ? 'Deactivate' : 'Activate'}
+                </Button>
+              </Space>
+            )}
+          />
+        </Table>
+
+        <Modal
+          open={modalVisible}
+          title='Add New Program'
+          onCancel={() => setModalVisible(false)}
+          footer={null}
+        >
+          <Form layout='vertical' form={form} onFinish={handleAddProgram}>
+            <Form.Item
+              name='name'
+              label='Program Name'
+              rules={[{ required: true }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              name='description'
+              label='Program Description'
+              rules={[{ required: true }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item name='type' label='Type'>
+              <Input />
+            </Form.Item>
+            <Form.Item name='status' label='Status'>
+              <Select>
                 <Select.Option value='Active'>Active</Select.Option>
                 <Select.Option value='Inactive'>Inactive</Select.Option>
                 <Select.Option value='Completed'>Completed</Select.Option>
                 <Select.Option value='Upcoming'>Upcoming</Select.Option>
               </Select>
-            </Col>
-          </Row>
+            </Form.Item>
+            <Form.Item
+              name='cohortYear'
+              label='Cohort Year'
+              rules={[
+                { required: true, message: 'Please input the cohort year' }
+              ]}
+            >
+              <Input placeholder='e.g., 2025' />
+            </Form.Item>
 
-          <Table
-            dataSource={filteredPrograms}
-            rowKey='id'
-            pagination={{ pageSize: 6 }}
-            expandable={{
-              expandedRowRender: record => (
-                <div>
-                  <p>
-                    <strong>Description:</strong> {record.description || 'N/A'}
-                  </p>
-                  <p>
-                    <strong>Budget:</strong> R{' '}
-                    {record.budget?.toLocaleString() || 0}
-                  </p>
-                  <p>
-                    <strong>Max Capacity:</strong> {record.maxCapacity || 'N/A'}
-                  </p>
-                </div>
-              )
-            }}
-          >
-            <Table.Column title='Program Name' dataIndex='name' key='name' />
-            <Table.Column
-              title='Assigned Admin'
-              key='assignedAdmin'
-              render={record =>
-                record.assignedAdmin ? (
-                  <Text>
-                    {consultantOptions.find(c => c.id === record.assignedAdmin)
-                      ?.name || 'Unknown'}
-                  </Text>
-                ) : (
-                  <Tag color='orange'>Not Assigned</Tag>
-                )
-              }
-            />
+            <Form.Item name='startDate' label='Start Date'>
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name='endDate' label='End Date'>
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name='budget' label='Budget (ZAR)'>
+              <InputNumber style={{ width: '100%' }} min={0} />
+            </Form.Item>
+            <Form.Item name='maxCapacity' label='Max Capacity'>
+              <InputNumber style={{ width: '100%' }} min={1} />
+            </Form.Item>
+            <Form.Item name='assignedAdmin' label='Assign Project Admin'>
+              <Select placeholder='Select a consultant'>
+                {consultantOptions.map(user => (
+                  <Select.Option key={user.id} value={user.id}>
+                    {user.name || user.email}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item>
+              <Button type='primary' htmlType='submit' block>
+                Add Program
+              </Button>
+            </Form.Item>
+          </Form>
+        </Modal>
+      </div>
 
-            <Table.Column title='Type' dataIndex='type' />
-            <Table.Column
-              title='Status'
-              dataIndex='status'
-              render={status => (
-                <Tag color={status === 'Active' ? 'green' : 'red'}>
-                  {status}
-                </Tag>
-              )}
-            />
-            <Table.Column
-              title='Start Date'
-              dataIndex='startDate'
-              render={val =>
-                val?.toDate ? dayjs(val.toDate()).format('YYYY-MM-DD') : 'N/A'
-              }
-            />
-            <Table.Column
-              title='End Date'
-              dataIndex='endDate'
-              render={val =>
-                val?.toDate ? dayjs(val.toDate()).format('YYYY-MM-DD') : 'N/A'
-              }
-            />
-            <Table.Column
-              title='Registration Link'
-              dataIndex='registrationLink'
-              render={(link: string) => (
-                <Text strong>
-                  <a href={link} target='_blank' rel='noopener noreferrer'>
-                    Link
-                  </a>
-                </Text>
-              )}
-            />
-
-            <Table.Column
-              title='Actions'
-              key='actions'
-              render={(_, record) => (
-                <Space size='middle'>
-                  <Button
-                    icon={<EditOutlined />}
-                    size='small'
-                    style={{ border: 'none' }}
-                    onClick={() => {
-                      setSelectedProgram(record)
-                      editForm.setFieldsValue({
-                        ...record,
-                        startDate: record.startDate?.toDate
-                          ? dayjs(record.startDate.toDate())
-                          : null,
-                        endDate: record.endDate?.toDate
-                          ? dayjs(record.endDate.toDate())
-                          : null
-                      })
-                      setEditModalVisible(true)
-                    }}
-                  />
-                  <Button
-                    icon={<DeleteOutlined />}
-                    size='small'
-                    danger
-                    onClick={() => handleDeleteProgram(record.id)}
-                  />
-                  <Button
-                    size='small'
-                    icon={<PoweroffOutlined />}
-                    onClick={() => toggleStatus(record)}
-                    loading={togglingProgramId === record.id}
-                  >
-                    {record.status === 'Active' ? 'Deactivate' : 'Activate'}
-                  </Button>
-                </Space>
-              )}
-            />
-          </Table>
-
-          <Modal
-            open={modalVisible}
-            title='Add New Program'
-            onCancel={() => setModalVisible(false)}
-            footer={null}
-          >
-            <Form layout='vertical' form={form} onFinish={handleAddProgram}>
-              <Form.Item
-                name='name'
-                label='Program Name'
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item
-                name='description'
-                label='Program Description'
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-              <Form.Item name='type' label='Type'>
-                <Input />
-              </Form.Item>
-              <Form.Item name='status' label='Status'>
-                <Select>
-                  <Select.Option value='Active'>Active</Select.Option>
-                  <Select.Option value='Inactive'>Inactive</Select.Option>
-                  <Select.Option value='Completed'>Completed</Select.Option>
-                  <Select.Option value='Upcoming'>Upcoming</Select.Option>
-                </Select>
-              </Form.Item>
-              <Form.Item
-                name='cohortYear'
-                label='Cohort Year'
-                rules={[
-                  { required: true, message: 'Please input the cohort year' }
-                ]}
-              >
-                <Input placeholder='e.g., 2025' />
-              </Form.Item>
-
-              <Form.Item name='startDate' label='Start Date'>
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-              <Form.Item name='endDate' label='End Date'>
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-              <Form.Item name='budget' label='Budget (ZAR)'>
-                <InputNumber style={{ width: '100%' }} min={0} />
-              </Form.Item>
-              <Form.Item name='maxCapacity' label='Max Capacity'>
-                <InputNumber style={{ width: '100%' }} min={1} />
-              </Form.Item>
-              <Form.Item name='assignedAdmin' label='Assign Project Admin'>
-                <Select placeholder='Select a consultant'>
-                  {consultantOptions.map(user => (
-                    <Select.Option key={user.id} value={user.id}>
-                      {user.name || user.email}
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Form.Item>
-              <Form.Item>
-                <Button type='primary' htmlType='submit' block>
-                  Add Program
-                </Button>
-              </Form.Item>
-            </Form>
-          </Modal>
-        </div>
-      </Spin>
       <Modal
         open={editModalVisible}
         title='Edit Program'
