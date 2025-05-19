@@ -38,8 +38,6 @@ import HighchartsFunnel from 'highcharts/modules/funnel'
 import HighchartsTreemap from 'highcharts/modules/treemap'
 import HighchartsMore from 'highcharts/highcharts-more'
 import CountUp from 'react-countup'
-import { fetchGeminiInsight } from '@/utilities/api'
-import ReactJson from 'react-json-view'
 
 const formatter: StatisticProps['formatter'] = value => (
   <CountUp end={value as number} separator=',' />
@@ -273,36 +271,6 @@ const OperationsReports: React.FC = () => {
       allowOverlap: true
     }
   }))
-
-  const handleGenerateResourceInsight = async () => {
-    setResourceInsightLoading(true)
-    try {
-      const text = await fetchGeminiInsight(
-        'Evaluate resource utilization efficiency and point out under/overused assets.',
-        resourceUtilization
-      )
-      setResourceAiInsight(text)
-    } catch (err) {
-      setResourceAiInsight('⚠️ Failed to fetch AI insight.')
-      console.error(err)
-    }
-    setResourceInsightLoading(false)
-  }
-
-  const handleGenerateComplianceInsight = async () => {
-    setComplianceInsightLoading(true)
-    try {
-      const text = await fetchGeminiInsight(
-        'Assess compliance document status and highlight risks or actions needed.',
-        complianceStatus
-      )
-      setComplianceAiInsight(text)
-    } catch (err) {
-      setComplianceAiInsight('⚠️ Failed to fetch AI insight.')
-      console.error(err)
-    }
-    setComplianceInsightLoading(false)
-  }
 
   const fetchAIInsight = async (type: string, data: any): Promise<string> => {
     try {
