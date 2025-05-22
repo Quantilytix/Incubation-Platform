@@ -167,10 +167,7 @@ export const ConsultantAssignments: React.FC = () => {
 
             return {
               id: app.participantId,
-              beneficiaryName:
-                participantData.beneficiaryName ||
-                participantData.name ||
-                'Unknown',
+              beneficiaryName: app.beneficiaryName || 'Unknown',
               sector: participantData.sector || '—',
               stage: participantData.stage || '—',
               province: participantData.province || '—',

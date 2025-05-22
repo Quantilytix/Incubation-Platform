@@ -32,6 +32,7 @@ import {
   AuditOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { Helmet } from 'react-helmet'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import HighchartsFunnel from 'highcharts/modules/funnel'
@@ -77,6 +78,9 @@ const ChartCard = ({
 
   return (
     <>
+      <Helmet>
+        <title>Operations Reports</title>
+      </Helmet>
       <Card
         title={title}
         extra={

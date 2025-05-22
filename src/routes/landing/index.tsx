@@ -3,6 +3,7 @@ import { Layout, Row, Col, Card, Typography } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet' // ✅ Import Helmet
 import './LandingPage.css'
+import { motion } from 'framer-motion'
 
 const { Content } = Layout
 const { Title, Paragraph } = Typography
@@ -34,11 +35,39 @@ const cardData = [
   }
 ]
 
+const blobVariants = {
+  initial: { opacity: 0, scale: 0.95, y: 40 },
+  animate: {
+    opacity: 0.83,
+    scale: 1,
+    y: 0,
+    transition: { duration: 1.2, ease: 'easeOut' }
+  }
+}
+
+const containerVariants = {
+  initial: {},
+  animate: { transition: { staggerChildren: 0.15, delayChildren: 0.3 } }
+}
+
+const cardVariants = {
+  initial: { opacity: 0, y: 40, scale: 0.97 },
+  animate: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { duration: 0.5, ease: 'easeOut' }
+  }
+}
+
 const LandingPage = () => {
   const navigate = useNavigate()
 
   return (
-    <Layout style={{ minHeight: '100vh', position: 'relative' }}>
+    <Layout
+      className={'page-bg'}
+      style={{ minHeight: '100vh', position: 'relative' }}
+    >
       {/* ✅ Helmet added here */}
       <Helmet>
         <title>Landing | Smart Incubation Platform</title>
@@ -47,6 +76,45 @@ const LandingPage = () => {
           content='Choose your role to access tailored tools, programs, and resources on the Smart Incubation Platform.'
         />
       </Helmet>
+      <>
+        {/* Animated Blobs with Framer Motion */}
+        <motion.svg
+          className='animated-blob blob-bottom-left'
+          viewBox='0 0 400 400'
+          initial='initial'
+          animate='animate'
+          variants={blobVariants}
+        >
+          <defs>
+            <linearGradient id='blob1' x1='0' y1='0' x2='1' y2='1'>
+              <stop offset='0%' stopColor='#38bdf8' />
+              <stop offset='100%' stopColor='#818cf8' />
+            </linearGradient>
+          </defs>
+          <path
+            fill='url(#blob1)'
+            d='M326.9,309Q298,378,218.5,374.5Q139,371,81,312.5Q23,254,56.5,172Q90,90,180.5,63.5Q271,37,322.5,118.5Q374,200,326.9,309Z'
+          />
+        </motion.svg>
+        <motion.svg
+          className='animated-blob blob-top-right'
+          viewBox='0 0 400 400'
+          initial='initial'
+          animate='animate'
+          variants={blobVariants}
+        >
+          <defs>
+            <linearGradient id='blob2' x1='0' y1='0' x2='1' y2='1'>
+              <stop offset='0%' stopColor='#fbc2eb' />
+              <stop offset='100%' stopColor='#a6c1ee' />
+            </linearGradient>
+          </defs>
+          <path
+            fill='url(#blob2)'
+            d='M343,294.5Q302,389,199.5,371Q97,353,71.5,226.5Q46,100,154,72.5Q262,45,315,122.5Q368,200,343,294.5Z'
+          />
+        </motion.svg>
+      </>
 
       <Content
         style={{
@@ -64,42 +132,38 @@ const LandingPage = () => {
           tailored for you.
         </Paragraph>
 
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '24px',
-            justifyContent: 'center',
-            maxWidth: '1100px',
-            width: '100%'
-          }}
+        <motion.div
+          className='card-row-flex'
+          variants={containerVariants}
+          initial='initial'
+          animate='animate'
         >
-          <Row gutter={[24, 24]} justify='center' style={{ width: '100%' }}>
-            {cardData.map((card, index) => (
-              <Col xs={24} sm={12} md={6} key={index}>
-                <div className='hover-card'>
-                  <Card
-                    hoverable
-                    className='custom-card'
-                    onClick={() => navigate(`/role/${card.key}`)}
-                    cover={
-                      <img
-                        alt={card.title}
-                        src={card.image}
-                        className='card-img'
-                      />
-                    }
-                  >
-                    <div className='card-title'>{card.title}</div>
-                    <div className='card-overlay'>
-                      <p>{card.description}</p>
-                    </div>
-                  </Card>
+          {cardData.map((card, index) => (
+            <motion.div
+              className='hover-card'
+              variants={cardVariants}
+              whileHover={{
+                scale: 1.045,
+                boxShadow: '0 16px 48px rgba(30,0,120,0.13)'
+              }}
+              key={card.key}
+            >
+              <Card
+                hoverable
+                className='custom-card glass-card'
+                onClick={() => navigate(`/role/${card.key}`)}
+                cover={
+                  <img alt={card.title} src={card.image} className='card-img' />
+                }
+              >
+                <div className='card-title'>{card.title}</div>
+                <div className='card-overlay'>
+                  <p>{card.description}</p>
                 </div>
-              </Col>
-            ))}
-          </Row>
-        </div>
+              </Card>
+            </motion.div>
+          ))}
+        </motion.div>
       </Content>
 
       {/* ✅ Bottom-right logo */}

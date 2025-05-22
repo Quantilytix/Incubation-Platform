@@ -47,7 +47,8 @@ export const RegisterPage: React.FC = () => {
       const user = userCred.user
 
       // 2. Add user info to Firestore
-      const assignedRole = role === 'sme' ? 'incubatee' : role
+      const assignedRole =
+        role === 'sme' ? 'incubatee' : role === 'incubate' ? 'director' : role
 
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
@@ -153,15 +154,15 @@ export const RegisterPage: React.FC = () => {
           />
         </div>
 
-        {/* Card */}
+        {/* Card (Now Wider) */}
         <div
           style={{
-            maxWidth: 400,
+            maxWidth: 500, // Increased from 400 to 500
             width: '100%',
             padding: '48px 32px',
             borderRadius: 12,
             boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
-            background: '#ffffffee', // Slightly transparent background for contrast
+            background: '#ffffffee',
             animation: 'fadeInUp 0.6s ease-out',
             backdropFilter: 'blur(5px)'
           }}
@@ -214,6 +215,33 @@ export const RegisterPage: React.FC = () => {
               />
             </Form.Item>
 
+            {/* Side-by-side Company Fields (Only for Directors) */}
+            {role === 'incubate' && (
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <Form.Item
+                  name='companyName'
+                  label='Company Name'
+                  style={{ flex: 1 }} // Takes equal space
+                  rules={[
+                    { required: true, message: 'Company name is required' }
+                  ]}
+                >
+                  <Input placeholder='Your Company Name' />
+                </Form.Item>
+
+                <Form.Item
+                  name='companyCode'
+                  label='Company Code'
+                  style={{ flex: 1 }} // Takes equal space
+                  rules={[
+                    { required: true, message: 'Company code is required' }
+                  ]}
+                >
+                  <Input placeholder='Unique company code' />
+                </Form.Item>
+              </div>
+            )}
+
             <Form.Item>
               <Button type='primary' htmlType='submit' block loading={loading}>
                 Register
@@ -254,25 +282,25 @@ export const RegisterPage: React.FC = () => {
         />
       </div>
 
-      {/* Animations */}
+      {/* Animations (unchanged) */}
       <style>
         {`
-                    @keyframes fadeIn {
-                      from { opacity: 0; }
-                      to { opacity: 1; }
-                    }
+          @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
 
-                    @keyframes fadeInUp {
-                      from {
-                        opacity: 0;
-                        transform: translateY(20px);
-                      }
-                      to {
-                        opacity: 1;
-                        transform: translateY(0);
-                      }
-                    }
-                  `}
+          @keyframes fadeInUp {
+            from {
+              opacity: 0;
+              transform: translateY(20px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+        `}
       </style>
     </Spin>
   )
