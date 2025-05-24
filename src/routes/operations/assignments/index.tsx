@@ -792,9 +792,10 @@ export const ConsultantAssignments: React.FC = () => {
           layout='vertical'
           onFinish={async values => {
             try {
-              const selectedParticipant = participants.find(
-                p => p.id === values.participant
-              )
+               const selectedIntervention =
+      selectedParticipant.requiredInterventions.find(
+        i => i.id === values.intervention
+      )
               const selectedConsultant = consultants.find(
                 c => c.id === values.consultant
               )
