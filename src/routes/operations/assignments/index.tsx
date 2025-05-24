@@ -157,14 +157,13 @@ export const ConsultantAssignments: React.FC = () => {
         )
 
         // Filter applications based on companyCode match
-       const filteredApplications = applicationsSnapshot.docs
-  .map(doc => ({ id: doc.id, ...doc.data() }))
-  .filter(
-    app =>
-      app.companyCode === user?.companyCode &&
-      app.applicationStatus === 'accepted' // 👈 Only show accepted
-  )
-
+        const filteredApplications = applicationsSnapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(
+            app =>
+              app.companyCode === user?.companyCode &&
+              app.applicationStatus === 'accepted' // 👈 Only show accepted
+          )
 
         const fetchedParticipants: Participant[] = filteredApplications.map(
           app => {
@@ -288,7 +287,6 @@ export const ConsultantAssignments: React.FC = () => {
       })
 
       setAssignments(updatedAssignments)
-      setNotesModalVisible(false)
       message.success('Notes saved successfully')
     } catch (error) {
       console.error('Error saving notes:', error)
@@ -792,13 +790,18 @@ export const ConsultantAssignments: React.FC = () => {
           layout='vertical'
           onFinish={async values => {
             try {
-               const selectedIntervention =
-      selectedParticipant.requiredInterventions.find(
-        i => i.id === values.intervention
-      )
+              const selectedParticipant = participants.find(
+                p => p.id === values.participant
+              )
+
+              console.log(selectedParticipant)
               const selectedConsultant = consultants.find(
                 c => c.id === values.consultant
               )
+              const selectedIntervention =
+                selectedParticipant?.requiredInterventions.find(
+                  i => i.id === values.intervention
+                )
 
               if (
                 !selectedParticipant ||
