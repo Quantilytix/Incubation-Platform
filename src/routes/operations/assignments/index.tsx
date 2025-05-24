@@ -157,9 +157,14 @@ export const ConsultantAssignments: React.FC = () => {
         )
 
         // Filter applications based on companyCode match
-        const filteredApplications = applicationsSnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(app => app.companyCode === user?.companyCode)
+       const filteredApplications = applicationsSnapshot.docs
+  .map(doc => ({ id: doc.id, ...doc.data() }))
+  .filter(
+    app =>
+      app.companyCode === user?.companyCode &&
+      app.applicationStatus === 'accepted' // 👈 Only show accepted
+  )
+
 
         const fetchedParticipants: Participant[] = filteredApplications.map(
           app => {
