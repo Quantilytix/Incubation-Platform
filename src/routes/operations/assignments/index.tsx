@@ -799,8 +799,6 @@ export const ConsultantAssignments: React.FC = () => {
               const selectedConsultant = consultants.find(
                 c => c.id === values.consultant
               )
-              const selectedIntervention =
-                selectedParticipant.requiredInterventions.find(i => i.id === id)
 
               if (
                 !selectedParticipant ||
