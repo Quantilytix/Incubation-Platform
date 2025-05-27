@@ -140,229 +140,249 @@ const App = () => {
   const notificationProvider = useNotificationProvider()
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <ConfigProvider theme={RefineThemes.Blue}>
-          <AntdApp>
-            <DevtoolsProvider>
-              <Refine
-                routerProvider={routerProvider}
-                dataProvider={dataProvider}
-                liveProvider={liveProvider}
-                notificationProvider={notificationProvider}
-                authProvider={authProvider}
-                options={{
-                  syncWithLocation: true,
-                  warnWhenUnsavedChanges: true,
-                  liveMode: 'auto',
-                  useNewQueryKeys: true,
-                  title: {
-                    text: 'Smart Incubation Platform',
-                    icon: null // or <YourIconComponent /> if needed
-                  }
-                }}
-              >
-                <Routes>
-                  <Route
-                    element={
-                      <Authenticated
-                        fallback={<CatchAllNavigate to='/login' />}
-                      >
-                        <CustomLayout /> {/* ✅ Replaces ThemedLayoutV2 */}
-                      </Authenticated>
+    <>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <ConfigProvider theme={RefineThemes.Blue}>
+            <AntdApp>
+              <DevtoolsProvider>
+                <Refine
+                  routerProvider={routerProvider}
+                  dataProvider={dataProvider}
+                  liveProvider={liveProvider}
+                  notificationProvider={notificationProvider}
+                  authProvider={authProvider}
+                  options={{
+                    syncWithLocation: true,
+                    warnWhenUnsavedChanges: true,
+                    liveMode: 'auto',
+                    useNewQueryKeys: true,
+                    title: {
+                      text: 'Smart Incubation Platform',
+                      icon: null // or <YourIconComponent /> if needed
                     }
-                  >
-                    {/* System Admin Routes */}
-                    <Route path='admin'>
-                      <Route index element={<AdminDashboard />} />
-                      <Route path='forms' element={<FormManagement />} />
-                    </Route>
-                    {/* Project Admin Routes */}
-                    <Route path='projectadmin'>
-                      <Route index element={<ProjectAdminDashboard />} />
-                      <Route path='impact' element={<ImpactAnalysisForm />} />
-                      <Route
-                        path='monitoring'
-                        element={<MonitoringEvaluationSection />}
-                      />
-                      <Route path='reports' element={<ProjectAdminReports />} />
-                    </Route>
-                    {/* Director Routes */}
-                    <Route path='director'>
-                      <Route index element={<DirectorDashboard />} />
-                      <Route
-                        path='operators'
-                        element={<OperationsOnboardingDashboard />}
-                      />
-                    </Route>
-                    {/* Funder Routes */}
-                    <Route path='funder'>
-                      <Route index element={<FunderDashboard />} />
-                      <Route path='analytics' element={<FunderAnalytics />} />
-                    </Route>
-                    {/* Incubatee Routes */}
-                    <Route path='incubatee'>
-                      <Route index element={<IncubateeDashboard />} />
-                      <Route
-                        path='interventions'
-                        element={<InterventionsTrackingView />}
-                      />
-                      <Route
-                        path='/incubatee/diagnostic'
-                        element={<GrowthPlanPage />}
-                      />
-                      <Route
-                        path='projects'
-                        element={<MonthlyPerformanceForm />}
-                      />
-                      <Route
-                        path='financials'
-                        element={<FinancialReportsInterface />}
-                      />
-                      <Route path='documents' element={<DocumentHub />} />
-                    </Route>
-                    {/* Investor Routes */}
-                    <Route path='investor'>
-                      <Route index element={<InvestorDashboard />} />
-                      <Route
-                        path='opportunities'
-                        element={<FunderOpportunities />}
-                      />
-                      <Route path='portfolio' element={<FunderPortfolio />} />
-                      <Route
-                        path='due-diligence'
-                        element={<FunderDueDiligence />}
-                      />
-                      <Route path='analytics' element={<FunderAnalytics />} />
-                      <Route path='documents' element={<FunderDocuments />} />
-                      <Route path='calendar' element={<FunderCalendarPage />} />
-                    </Route>
-                    {/* Consultant Routes */}
-                    <Route path='consultant'>
-                      <Route index element={<ConsultantDashboard />} />
-                      <Route path='feedback' element={<FeedbackWorkspace />} />
-                      <Route path='analytics' element={<ProjectAnalytics />} />
-                      <Route path='allocated'>
-                        <Route index element={<AssignedInterventions />} />
+                  }}
+                >
+                  <Routes>
+                    <Route
+                      element={
+                        <Authenticated
+                          fallback={<CatchAllNavigate to='/login' />}
+                        >
+                          <CustomLayout /> {/* ✅ Replaces ThemedLayoutV2 */}
+                        </Authenticated>
+                      }
+                    >
+                      {/* System Admin Routes */}
+                      <Route path='admin'>
+                        <Route index element={<AdminDashboard />} />
+                        <Route path='forms' element={<FormManagement />} />
+                      </Route>
+                      {/* Project Admin Routes */}
+                      <Route path='projectadmin'>
+                        <Route index element={<ProjectAdminDashboard />} />
+                        <Route path='impact' element={<ImpactAnalysisForm />} />
                         <Route
-                          path='intervention/:id'
-                          element={<InterventionTrack />}
+                          path='monitoring'
+                          element={<MonitoringEvaluationSection />}
+                        />
+                        <Route
+                          path='reports'
+                          element={<ProjectAdminReports />}
                         />
                       </Route>
-                      <Route path='participants'>
+                      {/* Director Routes */}
+                      <Route path='director'>
+                        <Route index element={<DirectorDashboard />} />
                         <Route
-                          index
+                          path='operators'
+                          element={<OperationsOnboardingDashboard />}
+                        />
+                      </Route>
+                      {/* Funder Routes */}
+                      <Route path='funder'>
+                        <Route index element={<FunderDashboard />} />
+                        <Route path='analytics' element={<FunderAnalytics />} />
+                      </Route>
+                      {/* Incubatee Routes */}
+                      <Route path='incubatee'>
+                        <Route index element={<IncubateeDashboard />} />
+                        <Route
+                          path='interventions'
+                          element={<InterventionsTrackingView />}
+                        />
+                        <Route
+                          path='/incubatee/diagnostic'
+                          element={<GrowthPlanPage />}
+                        />
+                        <Route
+                          path='projects'
+                          element={<MonthlyPerformanceForm />}
+                        />
+                        <Route
+                          path='financials'
+                          element={<FinancialReportsInterface />}
+                        />
+                        <Route path='documents' element={<DocumentHub />} />
+                      </Route>
+                      {/* Investor Routes */}
+                      <Route path='investor'>
+                        <Route index element={<InvestorDashboard />} />
+                        <Route
+                          path='opportunities'
+                          element={<FunderOpportunities />}
+                        />
+                        <Route path='portfolio' element={<FunderPortfolio />} />
+                        <Route
+                          path='due-diligence'
+                          element={<FunderDueDiligence />}
+                        />
+                        <Route path='analytics' element={<FunderAnalytics />} />
+                        <Route path='documents' element={<FunderDocuments />} />
+                        <Route
+                          path='calendar'
+                          element={<FunderCalendarPage />}
+                        />
+                      </Route>
+                      {/* Consultant Routes */}
+                      <Route path='consultant'>
+                        <Route index element={<ConsultantDashboard />} />
+                        <Route
+                          path='feedback'
+                          element={<FeedbackWorkspace />}
+                        />
+                        <Route
+                          path='analytics'
+                          element={<ProjectAnalytics />}
+                        />
+                        <Route path='allocated'>
+                          <Route index element={<AssignedInterventions />} />
+                          <Route
+                            path='intervention/:id'
+                            element={<InterventionTrack />}
+                          />
+                        </Route>
+                        <Route path='participants'>
+                          <Route
+                            index
+                            element={<OperationsParticipantsManagement />}
+                          />
+                          <Route
+                            path='new'
+                            element={<ParticipantRegistrationStepForm />}
+                          />
+                          <Route
+                            path='success'
+                            element={<ParticipantSuccess />}
+                          />
+                        </Route>
+                      </Route>
+                      {/* Operations Routes */}
+                      <Route path='operations'>
+                        <Route index element={<OperationsDashboard />} />
+                        <Route
+                          path='forms'
+                          element={<OperationsFormsManagement />}
+                        />
+                        <Route
+                          path='assignments'
+                          element={<ConsultantAssignments />}
+                        />
+                        <Route
+                          path='participants'
                           element={<OperationsParticipantsManagement />}
                         />
+                        <Route path='consultants'>
+                          <Route index element={<ConsultantPage />} />
+                        </Route>
                         <Route
-                          path='new'
-                          element={<ParticipantRegistrationStepForm />}
+                          path='resources'
+                          element={<OperationsResourceManagement />}
                         />
                         <Route
-                          path='success'
-                          element={<ParticipantSuccess />}
+                          path='compliance'
+                          element={<OperationsCompliance />}
                         />
+                        <Route path='reports' element={<OperationsReports />} />
                       </Route>
-                    </Route>
-                    {/* Operations Routes */}
-                    <Route path='operations'>
-                      <Route index element={<OperationsDashboard />} />
-                      <Route
-                        path='forms'
-                        element={<OperationsFormsManagement />}
-                      />
-                      <Route
-                        path='assignments'
-                        element={<ConsultantAssignments />}
-                      />
-                      <Route
-                        path='participants'
-                        element={<OperationsParticipantsManagement />}
-                      />
-                      <Route path='consultants'>
-                        <Route index element={<ConsultantPage />} />
+                      {/* Government Routes */}
+                      <Route path='government'>
+                        <Route index element={<GovernmentDashboard />} />
+                        <Route path='analytics' element={<FunderAnalytics />} />
+                        <Route index element={<GovernmentDashboard />} />
+                        <Route
+                          path='participants'
+                          element={<ParticipantDirectory />}
+                        />
+                        <Route
+                          path='programs'
+                          element={<ProgramsDirectory />}
+                        />
+                        <Route path='reports' element={<ImpactReports />} />
                       </Route>
                       <Route
-                        path='resources'
-                        element={<OperationsResourceManagement />}
+                        path='interventions'
+                        element={<InterventionDatabaseView />}
+                      />
+                      <Route path='chat' element={<Chat />} />
+                      <Route
+                        path='expenses'
+                        element={<GenericProgramExpenseForm />}
+                      />
+                      <Route path='system' element={<SystemSetupForm />} />
+
+                      <Route
+                        path='applications'
+                        element={<ApplicationsPage />}
+                      />
+                      <Route path='programs' element={<ProgramManager />} />
+                    </Route>
+                    {/* 🔹 IncubateeLayout Routes: SME, Tracker, Analytics */}
+                    <Route element={<IncubateeLayout />}>
+                      <Route path='/incubatee/sme' element={<SMEDashboard />} />
+                      <Route
+                        path='/incubatee/tracker'
+                        element={<ApplicationTracker />}
                       />
                       <Route
-                        path='compliance'
-                        element={<OperationsCompliance />}
+                        path='/incubatee/profile'
+                        element={<ProfileForm />}
                       />
-                      <Route path='reports' element={<OperationsReports />} />
-                    </Route>
-                    {/* Government Routes */}
-                    <Route path='government'>
-                      <Route index element={<GovernmentDashboard />} />
-                      <Route path='analytics' element={<FunderAnalytics />} />
-                      <Route index element={<GovernmentDashboard />} />
                       <Route
-                        path='participants'
-                        element={<ParticipantDirectory />}
+                        path='/incubatee/analytics'
+                        element={<IncubateeAnalytics />}
                       />
-                      <Route path='programs' element={<ProgramsDirectory />} />
-                      <Route path='reports' element={<ImpactReports />} />
                     </Route>
-                    <Route
-                      path='interventions'
-                      element={<InterventionDatabaseView />}
-                    />
-                    <Route path='chat' element={<Chat />} />
-                    <Route
-                      path='expenses'
-                      element={<GenericProgramExpenseForm />}
-                    />
-                    <Route path='system' element={<SystemSetupForm />} />
+                    {/* <Route path='/' element={<LoginPage />} /> */}
+                    <Route path='/' element={<LandingPage />} />
+                    <Route path='/role/:roleId' element={<RoleDetailPage />} />
+                    <Route path='/landing/sme' element={<SMEDashboard />} />
+                    <Route path='/login' element={<LoginPage />} />
 
-                    <Route path='applications' element={<ApplicationsPage />} />
-                    <Route path='programs' element={<ProgramManager />} />
-                  </Route>
-                  {/* 🔹 IncubateeLayout Routes: SME, Tracker, Analytics */}
-                  <Route element={<IncubateeLayout />}>
-                    <Route path='/incubatee/sme' element={<SMEDashboard />} />
                     <Route
-                      path='/incubatee/tracker'
-                      element={<ApplicationTracker />}
+                      path='/director/onboarding'
+                      element={<DirectorOnboardingPage />}
                     />
-                    <Route
-                      path='/incubatee/profile'
-                      element={<ProfileForm />}
-                    />
-                    <Route
-                      path='/incubatee/analytics'
-                      element={<IncubateeAnalytics />}
-                    />
-                  </Route>
-                  {/* <Route path='/' element={<LoginPage />} /> */}
-                  <Route path='/' element={<LandingPage />} />
-                  <Route path='/role/:roleId' element={<RoleDetailPage />} />
-                  <Route path='/landing/sme' element={<SMEDashboard />} />
-                  <Route path='/login' element={<LoginPage />} />
+                    <Route path='/registration'>
+                      <Route index element={<RegisterPage />} />
+                      <Route
+                        path='/registration/onboarding'
+                        element={<ParticipantFormalRegistration />}
+                      />
+                    </Route>
 
-                  <Route
-                    path='/director/onboarding'
-                    element={<DirectorOnboardingPage />}
-                  />
-                  <Route path='/registration'>
-                    <Route index element={<RegisterPage />} />
-                    <Route
-                      path='/registration/onboarding'
-                      element={<ParticipantFormalRegistration />}
-                    />
-                  </Route>
+                    <Route path='*' element={<h1>Page Not Found</h1>} />
+                  </Routes>
 
-                  <Route path='*' element={<h1>Page Not Found</h1>} />
-                </Routes>
-
-                <UnsavedChangesNotifier />
-                <DocumentTitleHandler />
-              </Refine>
-            </DevtoolsProvider>
-          </AntdApp>
-        </ConfigProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+                  <UnsavedChangesNotifier />
+                  <DocumentTitleHandler />
+                </Refine>
+              </DevtoolsProvider>
+            </AntdApp>
+          </ConfigProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </>
   )
 }
 
