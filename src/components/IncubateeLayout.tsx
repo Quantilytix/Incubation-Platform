@@ -48,6 +48,8 @@ const IncubateeLayout: React.FC = () => {
     ? 'analytics'
     : location.pathname.includes('/profile')
     ? 'profile'
+    : location.pathname.includes('/sme')
+    ? 'sme'
     : 'programs'
 
   useEffect(() => {
@@ -93,15 +95,26 @@ const IncubateeLayout: React.FC = () => {
     return false // prevent auto-upload
   }
 
+  const siderWidth = 220
+  const headerHeight = 64
+
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ height: '100vh' }}>
       <Sider
         theme='light'
         width={240}
         collapsible
         collapsed={collapsed}
         trigger={null}
-        style={{ borderRight: '1px solid #f0f0f0' }}
+        style={{
+          background: '#ffffff',
+          height: '100vh',
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          zIndex: 100,
+          boxShadow: '2px 0 5px rgba(0,0,0,0.06)'
+        }}
       >
         <div
           style={{
@@ -162,7 +175,7 @@ const IncubateeLayout: React.FC = () => {
             My Profile
           </Menu.Item>
           <Menu.Item key='sme' icon={<BarChartOutlined />}>
-            Programs
+            Submit Application
           </Menu.Item>
           <Menu.Item key='analytics' icon={<LineChartOutlined />}>
             Analytics
@@ -170,16 +183,27 @@ const IncubateeLayout: React.FC = () => {
         </Menu>
       </Sider>
 
-      <Layout>
+      <Layout
+        style={{
+          marginLeft: collapsed ? 80 : siderWidth,
+          transition: 'all 0.2s ease-in-out'
+        }}
+      >
         <Header
           style={{
-            height: 64,
-            background: '#fff',
+            background: '#ffffff',
             padding: '0 24px',
+            position: 'fixed',
+            top: 0,
+            left: collapsed ? 80 : siderWidth,
+            right: 0,
+            height: headerHeight,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderBottom: '1px solid #f0f0f0'
+            borderBottom: '1px solid #e0e0e0',
+            zIndex: 90,
+            transition: 'all 0.2s ease-in-out'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -204,8 +228,22 @@ const IncubateeLayout: React.FC = () => {
           </Button>
         </Header>
 
-        <Content style={{ padding: 24 }}>
-          <Outlet />
+        <Content
+          style={{
+            marginTop: headerHeight,
+            height: `calc(100vh - ${headerHeight}px)`,
+            background: '#f5f5f5'
+          }}
+        >
+          <div
+            style={{
+              padding: 15,
+              background: '#fff',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+            }}
+          >
+            <Outlet />
+          </div>
         </Content>
       </Layout>
     </Layout>

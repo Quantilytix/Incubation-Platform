@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Layout, Menu, Typography, Spin, Button } from 'antd'
 import { useGetIdentity, useLogout } from '@refinedev/core'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { Link, Outlet } from 'react-router-dom'
 import { CurrentUser } from '@/components/layout/current-user'
@@ -34,6 +34,9 @@ import {
   DollarOutlined,
   LineChartOutlined
 } from '@ant-design/icons'
+import { Upload, message } from 'antd'
+import { EditOutlined, LoadingOutlined } from '@ant-design/icons'
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 
 const { Header, Sider, Content } = Layout
 const { Title } = Typography
@@ -50,10 +53,13 @@ type UserRole =
   | 'government'
 
 export const CustomLayout: React.FC = () => {
+  const [logoUploading, setLogoUploading] = useState(false)
+  const storage = getStorage()
   const { data: identity } = useGetIdentity()
   const { mutate: logout } = useLogout()
   const [role, setRole] = useState<UserRole | null>(null)
   const [collapsed, setCollapsed] = useState(false)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchUserRole = async () => {
@@ -67,6 +73,33 @@ export const CustomLayout: React.FC = () => {
       }
     }
     fetchUserRole()
+  }, [identity])
+
+  useEffect(() => {
+    const fetchUserDetails = async () => {
+      if (!identity?.id) return
+
+      const userRef = doc(db, 'users', String(identity.id))
+      const userSnap = await getDoc(userRef)
+
+      if (!userSnap.exists()) return
+
+      const userData = userSnap.data()
+      const cleanRole = userData.role?.toLowerCase()?.replace(/\s+/g, '')
+      setRole(cleanRole)
+
+      // If participant, fetch participant-specific logo
+      if (cleanRole === 'incubatee' && userData.participantId) {
+        const participantRef = doc(db, 'participants', userData.participantId)
+        const participantSnap = await getDoc(participantRef)
+        if (participantSnap.exists()) {
+          const participantData = participantSnap.data()
+          setLogoUrl(participantData.logoUrl || null)
+        }
+      }
+    }
+
+    fetchUserDetails()
   }, [identity])
 
   const getDashboardTitle = (role: UserRole | null) => {
@@ -451,38 +484,95 @@ export const CustomLayout: React.FC = () => {
         width={siderWidth}
         trigger={null}
         style={{
-          background: '#ffffff',
-          height: '100vh',
-          position: 'fixed',
-          left: 0,
-          top: 0,
-          zIndex: 100,
-          boxShadow: '2px 0 5px rgba(0,0,0,0.06)'
-        }}
+            background: '#ffffff',
+            height: '100vh',
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            zIndex: 100,
+            boxShadow: '2px 0 5px rgba(0,0,0,0.06)'
+          }}
       >
         {/* Logo */}
-        <div
-          style={{
-            height: headerHeight,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 'bold',
-            fontSize: '18px',
-            borderBottom: '1px solid #f0f0f0'
+        <Upload
+          showUploadList={false}
+          customRequest={async ({ file, onSuccess, onError }) => {
+            if (!identity?.id) return
+            try {
+              setLogoUploading(true)
+
+              // Upload file to Firebase Storage
+              const storageRef = ref(storage, `logos/${file.name}`)
+              await uploadBytes(storageRef, file as File)
+              const downloadURL = await getDownloadURL(storageRef)
+
+              // Save URL to Firestore
+              const userRef = doc(db, 'users', String(identity.id))
+              const userSnap = await getDoc(userRef)
+              const participantId = userSnap.data()?.participantId
+
+              if (participantId) {
+                const participantRef = doc(db, 'participants', participantId)
+                await updateDoc(participantRef, { logoUrl: downloadURL })
+                setLogoUrl(downloadURL)
+                message.success('Logo updated')
+                onSuccess?.('ok')
+              } else {
+                throw new Error('No participant ID found.')
+              }
+            } catch (err) {
+              console.error(err)
+              message.error('Logo upload failed')
+              onError?.(err)
+            } finally {
+              setLogoUploading(false)
+            }
           }}
         >
-          <img
-            src='/assets/images/impala.png'
-            alt='Logo'
+          <div
             style={{
-              maxHeight: '60px',
-              width: collapsed ? '40px' : '120px',
-              transition: 'width 0.2s ease-in-out',
-              objectFit: 'contain'
+              position: 'relative',
+              height: headerHeight,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '8px',
+              boxSizing: 'border-box',
+              borderBottom: '1px solid #f0f0f0',
+              cursor: 'pointer'
             }}
-          />
-        </div>
+          >
+            <img
+              src={logoUrl || '/assets/images/impala.png'}
+              alt='Logo'
+              style={{
+                maxHeight: '100%',
+                maxWidth: '100%',
+                height: 'auto',
+                width: collapsed ? '40px' : '120px',
+                transition: 'width 0.2s ease-in-out',
+                objectFit: 'contain'
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                top: 4,
+                right: 4,
+                background: '#fff',
+                borderRadius: '50%',
+                padding: 4,
+                boxShadow: '0 0 4px rgba(0,0,0,0.2)'
+              }}
+            >
+              {logoUploading ? (
+                <LoadingOutlined spin />
+              ) : (
+                <EditOutlined style={{ fontSize: 16 }} />
+              )}
+            </div>
+          </div>
+        </Upload>
 
         {/* Menu */}
         <Menu
@@ -542,7 +632,6 @@ export const CustomLayout: React.FC = () => {
         <Content
           style={{
             marginTop: headerHeight,
-            overflowY: 'auto',
             height: `calc(100vh - ${headerHeight}px)`,
             background: '#f5f5f5'
           }}
@@ -551,8 +640,7 @@ export const CustomLayout: React.FC = () => {
             style={{
               padding: 15,
               background: '#fff',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-              minHeight: 360
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
             }}
           >
             <Outlet />
