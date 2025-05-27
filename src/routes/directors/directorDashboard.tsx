@@ -338,73 +338,91 @@ export const DirectorDashboard: React.FC = () => {
   const [notifications, setNotifications] = useState<any[]>([])
   const [notificationDrawerVisible, setNotificationDrawerVisible] =
     useState(false)
-  const [tasks, setTasks] = useState<any[]>([])
+  const [overdueInterventions, setOverdueInterventions] = useState<any[]>([])
   const [pendingApplications, setPendingApplications] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
-  const [upcomingTasks, setUpcomingTasks] = useState<any[]>([])
-  const [overdueTasks, setOverdueTasks] = useState<any[]>([])
+  const [companyCode, setCompanyCode] = useState('')
   const auth = getAuth()
   const currentUser = auth.currentUser
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const programSnap = await getDocs(collection(db, 'programs'))
-        const participantSnap = await getDocs(collection(db, 'participants'))
+    const fetchCompanyCode = async () => {
+      if (!currentUser?.email) return
+      const userSnap = await getDocs(
+        query(collection(db, 'users'), where('email', '==', currentUser.email))
+      )
+      const code = userSnap.docs[0]?.data()?.companyCode || ''
+      setCompanyCode(code)
+    }
+    fetchCompanyCode()
+  }, [currentUser])
 
-        setPrograms(
-          programSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        )
+  // PROGRAMS
+  useEffect(() => {
+    if (!companyCode) return
+    const fetchPrograms = async () => {
+      const q = query(
+        collection(db, 'programs'),
+        where('companyCode', '==', companyCode)
+      )
+      const programSnap = await getDocs(q)
+      setPrograms(programSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })))
+    }
+    fetchPrograms()
+  }, [companyCode])
 
-        const updatedParticipants = participantSnap.docs.map(doc => {
+  // PARTICIPANTS
+  useEffect(() => {
+    if (!companyCode) return
+    const fetchParticipants = async () => {
+      const q = query(
+        collection(db, 'participants'),
+        where('companyCode', '==', companyCode)
+      )
+      const participantSnap = await getDocs(q)
+      setIncubatees(
+        participantSnap.docs.map(doc => {
           const data = doc.data()
           const docs = data.complianceDocuments || []
           const validDocs = docs.filter(doc => doc.status === 'valid')
-          const totalTypes = 7 // or use your documentTypes.length if consistent
+          const totalTypes = 7
           const complianceRate = Math.round(
             (validDocs.length / totalTypes) * 100
           )
-
           return {
             id: doc.id,
             ...data,
             complianceRate
           }
         })
-
-        setIncubatees(updatedParticipants)
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error)
-      }
+      )
     }
-
-    fetchData()
-  }, [])
+    fetchParticipants()
+  }, [companyCode])
 
   // 🔽 Load notifications on mount
   useEffect(() => {
+    if (!currentUser?.uid) return
     const fetchNotifications = async () => {
       const q = query(
         collection(db, 'notifications'),
-        where('recipientRoles', 'array-contains', 'director')
+        where('recipientIds', 'array-contains', currentUser.uid)
       )
       const snapshot = await getDocs(q)
-      const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      setNotifications(all)
+      setNotifications(
+        snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      )
     }
-
     fetchNotifications()
-  }, [])
+  }, [currentUser])
 
   useEffect(() => {
-    const fetchTasksAndApplications = async () => {
+    const fetchApplications = async () => {
       setLoading(true)
       try {
         const applicationSnap = await getDocs(collection(db, 'applications'))
 
         const now = dayjs()
-        const upcoming: any[] = []
-        const overdue: any[] = []
 
         const pendingApps = applicationSnap.docs
           .map(doc => ({ id: doc.id, ...doc.data() }))
@@ -419,8 +437,9 @@ export const DirectorDashboard: React.FC = () => {
       }
     }
 
-    fetchTasksAndApplications()
+    fetchApplications()
   }, [])
+
   useEffect(() => {
     const fetchOverdueInterventions = async () => {
       setLoading(true)
@@ -462,7 +481,7 @@ export const DirectorDashboard: React.FC = () => {
             i.consultantCompletionStatus !== 'done'
         )
 
-        setOverdueTasks(overdue)
+        setOverdueInterventions(overdue)
       } catch (err) {
         console.error('Failed to fetch overdue interventions:', err)
       } finally {
@@ -527,26 +546,33 @@ export const DirectorDashboard: React.FC = () => {
     }
   }
 
-  const remindUser = (task: any) => {
-    if (!task.assignedRole || !task.assignedTo) {
-      console.warn('[⚠️ Missing assignment info] Task:', task)
-      return message.warning('Task must have an assigned user and role.')
+  const remindUser = (intervention: any) => {
+    if (!intervention.assignedRole || !intervention.assignedTo) {
+      console.warn('[⚠️ Missing assignment info] intervention:', intervention)
+      return message.warning(
+        'intervention must have an assigned user and role.'
+      )
     }
 
-    const isOverdue = dayjs(task.dueDate.toDate()).isBefore(dayjs(), 'day')
-    const formattedDate = dayjs(task.dueDate.toDate()).format('YYYY-MM-DD')
+    const isOverdue = dayjs(intervention.dueDate.toDate()).isBefore(
+      dayjs(),
+      'day'
+    )
+    const formattedDate = dayjs(intervention.dueDate.toDate()).format(
+      'YYYY-MM-DD'
+    )
 
-    const role = task.assignedRole
+    const role = intervention.assignedRole
     const messageText = isOverdue
-      ? `🚨 Your task "${task.title}" is OVERDUE (was due ${formattedDate}). Please take action.`
-      : `⏳ Reminder: Your task "${task.title}" is due on ${formattedDate}.`
+      ? `🚨 Your intervention "${intervention.title}" is OVERDUE (was due ${formattedDate}). Please take action.`
+      : `⏳ Reminder: Your intervention "${intervention.title}" is due on ${formattedDate}.`
 
     sendNotification({
       message: {
         [role]: messageText
       },
       recipientRoles: [role],
-      recipientIds: [task.assignedTo]
+      recipientIds: [intervention.assignedTo]
     })
   }
 
@@ -1219,7 +1245,7 @@ export const DirectorDashboard: React.FC = () => {
             <Col xs={24} md={12}>
               <Card title='🔴 Overdue Interventions'>
                 <List
-                  dataSource={overdueTasks}
+                  dataSource={overdueInterventions}
                   renderItem={item => (
                     <List.Item>
                       <List.Item.Meta
@@ -1627,20 +1653,6 @@ export const DirectorDashboard: React.FC = () => {
             key='portfolio'
           >
             {renderPortfolioManagement()}
-          </TabPane>
-
-          <TabPane
-            tab={
-              <span>
-                <FileTextOutlined />
-                Strategic Decisions
-              </span>
-            }
-            key='decisions'
-          >
-            <Paragraph>
-              Strategic Decision-Making content will be implemented next
-            </Paragraph>
           </TabPane>
         </Tabs>
       </div>

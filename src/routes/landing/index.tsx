@@ -12,25 +12,25 @@ const cardData = [
   {
     key: 'sme',
     title: 'Startup | SMME | Cooperative',
-    image: '/assets/images/icons/Sme.jpg',
+    image: '/assets/images/projects/1.jpg',
     description: 'Support and opportunities for Small and Medium Enterprises.'
   },
   {
     key: 'incubate',
     title: 'Incubation | ESD Program Implementor',
-    image: '/assets/images/icons/Business presentation.png',
+    image: '/assets/images/projects/4.jpg',
     description: 'Tools and resources for incubation program implementors.'
   },
   {
     key: 'government',
     title: 'Public Sector | International and Supranational Entity',
-    image: '/assets/images/icons/Government.jpg',
+    image: '/assets/images/projects/2.jpg',
     description: 'Policies and partnerships for government stakeholders.'
   },
   {
     key: 'investor',
     title: 'Investor | Funder | Capital Partner',
-    image: '/assets/images/icons/Investor.jpg',
+    image: '/assets/images/projects/5.jpg',
     description: 'Discover and support high-potential incubatees and programs.'
   }
 ]

@@ -39,7 +39,9 @@ import {
   Timestamp,
   updateDoc,
   getDocs,
-  addDoc
+  addDoc,
+  query,
+  where
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
@@ -137,6 +139,79 @@ export const ConsultantAssignments: React.FC = () => {
   >('all')
   const [searchText, setSearchText] = useState('')
   const [selectedProgram, setSelectedProgram] = useState<string | undefined>()
+  const [departments, setDepartments] = useState<any[]>([])
+  const [userDepartment, setUserDepartment] = useState<any>(null)
+
+  const fetchDepartments = async (companyCode: string) => {
+    const snapshot = await getDocs(
+      query(
+        collection(db, 'departments'),
+        where('companyCode', '==', companyCode)
+      )
+    )
+    setDepartments(
+      snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }))
+    )
+  }
+
+  const fetchAssignments = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'assignedInterventions'))
+      const fetchedAssignments: Assignment[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Assignment[]
+
+      const currentParticipantMap = new Map(
+        participants.map(p => [p.id, p.beneficiaryName])
+      )
+      const currentConsultantMap = new Map(consultants.map(c => [c.id, c.name]))
+
+      const enrichedAssignments = fetchedAssignments.map(assignment => {
+        const foundParticipant = participants.find(
+          p => p.id === assignment.participantId
+        )
+        const foundIntervention = foundParticipant?.requiredInterventions.find(
+          i => i.id === assignment.interventionId
+        )
+
+        return {
+          ...assignment,
+          beneficiaryName:
+            currentParticipantMap.get(assignment.participantId) ||
+            'Unknown Beneficiary',
+          consultantName:
+            currentConsultantMap.get(assignment.consultantId) ||
+            'Unknown Consultant',
+          area: foundIntervention?.area || 'Unknown Area',
+          interventionTitle:
+            foundIntervention?.title || assignment.interventionTitle
+        }
+      })
+
+      setAssignments(enrichedAssignments)
+      console.log('user.companyCode', user?.companyCode)
+    } catch (error) {
+      console.error('Error fetching assignments:', error)
+      message.error('Failed to load assignments')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    console.log('🔍 user identity from useGetIdentity:', user)
+  }, [user])
+
+  useEffect(() => {
+    if (dataLoaded) {
+      setLoading(true)
+      fetchAssignments()
+    }
+  }, [dataLoaded, participants, consultants])
 
   useEffect(() => {
     const fetchParticipantsConsultantsAndInterventions = async () => {
@@ -216,61 +291,20 @@ export const ConsultantAssignments: React.FC = () => {
       fetchParticipantsConsultantsAndInterventions()
     }
   }, [user])
-  const fetchAssignments = async () => {
-    try {
-      const snapshot = await getDocs(collection(db, 'assignedInterventions'))
-      const fetchedAssignments: Assignment[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Assignment[]
 
-      const currentParticipantMap = new Map(
-        participants.map(p => [p.id, p.beneficiaryName])
-      )
-      const currentConsultantMap = new Map(consultants.map(c => [c.id, c.name]))
-
-      const enrichedAssignments = fetchedAssignments.map(assignment => {
-        const foundParticipant = participants.find(
-          p => p.id === assignment.participantId
-        )
-        const foundIntervention = foundParticipant?.requiredInterventions.find(
-          i => i.id === assignment.interventionId
-        )
-
-        return {
-          ...assignment,
-          beneficiaryName:
-            currentParticipantMap.get(assignment.participantId) ||
-            'Unknown Beneficiary',
-          consultantName:
-            currentConsultantMap.get(assignment.consultantId) ||
-            'Unknown Consultant',
-          area: foundIntervention?.area || 'Unknown Area',
-          interventionTitle:
-            foundIntervention?.title || assignment.interventionTitle
-        }
-      })
-
-      setAssignments(enrichedAssignments)
-      console.log('user.companyCode', user?.companyCode)
-    } catch (error) {
-      console.error('Error fetching assignments:', error)
-      message.error('Failed to load assignments')
-    } finally {
-      setLoading(false)
-    }
-  }
-
+  // After user and participants are loaded:
   useEffect(() => {
-    console.log('🔍 user identity from useGetIdentity:', user)
+    if (user?.companyCode) {
+      fetchDepartments(user.companyCode)
+    }
   }, [user])
 
   useEffect(() => {
-    if (dataLoaded) {
-      setLoading(true)
-      fetchAssignments()
+    if (user?.departmentId && departments.length) {
+      const dep = departments.find(d => d.id === user.departmentId)
+      setUserDepartment(dep || null)
     }
-  }, [dataLoaded, participants, consultants])
+  }, [user, departments])
 
   const handleSaveNotes = async (values: any) => {
     if (!selectedAssignment) return
@@ -411,14 +445,20 @@ export const ConsultantAssignments: React.FC = () => {
           const intervention = selectedParticipant.requiredInterventions.find(
             i => i.id === id
           )
-
           return {
             id,
-            interventionTitle: intervention?.interventionTitle || 'Unknown',
+            interventionTitle:
+              intervention?.interventionTitle ||
+              intervention?.title ||
+              'Unknown',
             consultantName: 'Not Assigned',
             status: 'Not Assigned',
             dueDate: null,
-            isUnassigned: true
+            isUnassigned: true,
+            beneficiaryName: selectedParticipant.beneficiaryName,
+            sector: selectedParticipant.sector,
+            programName: selectedParticipant.programName
+            // add any other fields your columns expect here!
           }
         })
     }
@@ -552,6 +592,11 @@ export const ConsultantAssignments: React.FC = () => {
     return `${assigned.length} / ${required.length}`
   }
 
+  const getDepartmentName = intervention => {
+    const dep = departments.find(d => d.id === intervention.departmentId)
+    return dep ? dep.name : 'Unknown'
+  }
+
   const progressMetrics = [
     {
       title: 'Assigned / Required',
@@ -639,6 +684,11 @@ export const ConsultantAssignments: React.FC = () => {
       key: 'interventionTitle'
     },
     {
+      title: 'Department',
+      key: 'department',
+      render: (_: any, record: any) => getDepartmentName(record)
+    },
+    {
       title: 'Consultant',
       dataIndex: 'consultantName',
       key: 'consultantName'
@@ -683,7 +733,16 @@ export const ConsultantAssignments: React.FC = () => {
     }
   ]
 
-  const filteredParticipants = participants.filter(p => {
+  let departmentFilteredParticipants = participants
+  if (userDepartment && !userDepartment.isMain) {
+    departmentFilteredParticipants = participants.filter(participant =>
+      (participant.requiredInterventions || []).some(
+        intervention => intervention.departmentId === userDepartment.id
+      )
+    )
+  }
+
+  const filteredParticipants = departmentFilteredParticipants.filter(p => {
     const matchesSearch = p.beneficiaryName
       .toLowerCase()
       .includes(searchText.toLowerCase())
@@ -914,7 +973,12 @@ export const ConsultantAssignments: React.FC = () => {
             {({ getFieldValue }) => {
               const participantId = getFieldValue('participant')
               const selected = participants.find(p => p.id === participantId)
-              const filtered = selected?.requiredInterventions || []
+              const filtered =
+                userDepartment && !userDepartment.isMain
+                  ? (selected?.requiredInterventions || []).filter(
+                      i => i.departmentId === userDepartment.id
+                    )
+                  : selected?.requiredInterventions || []
 
               return (
                 <Form.Item
@@ -1224,7 +1288,6 @@ export const ConsultantAssignments: React.FC = () => {
         background-color: #e6fffb !important;
         animation: fadeOut 8s forwards;
       }
-      @keyframes fadeOut {
         0% {background-color: #e6fffb; }
         100% {background-color: white; }
       }

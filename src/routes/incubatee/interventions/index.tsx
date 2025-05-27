@@ -894,7 +894,7 @@ const InterventionsTrackingView: React.FC = () => {
           dataSource={getFilteredInterventions()}
           columns={interventionColumns}
           rowKey='id'
-          pagination={{ pageSize: 10 }}
+          pagination={{ pageSize: 5 }}
           expandable={{
             expandedRowRender: (record: AssignedIntervention) => (
               <div style={{ padding: '12px 24px' }}>

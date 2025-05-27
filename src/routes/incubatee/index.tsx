@@ -328,6 +328,14 @@ export const IncubateeDashboard: React.FC = () => {
     return 'TBD'
   }
 
+  const getQuarter = date => {
+    // Accepts Date, string, or number (timestamp)
+    const d = date instanceof Date ? date : new Date(date)
+    const month = d.getMonth() // 0 = Jan, 11 = Dec
+    const quarter = Math.floor(month / 3) + 1
+    return `Q${quarter}`
+  }
+
   const handleAccept = async (interventionId: string) => {
     const ref = doc(db, 'assignedInterventions', interventionId)
     const snap = await getDoc(ref)
@@ -470,7 +478,7 @@ export const IncubateeDashboard: React.FC = () => {
       companyCode: participant.companyCode || '',
       interventionId: selectedIntervention.interventionId,
       interventionTitle: selectedIntervention.interventionTitle,
-      areaOfSupport: selectedIntervention.areaOfSupport,
+      areaOfSupport: selectedIntervention.areaOfSupport || 'Area',
       participantId: selectedIntervention.participantId,
       beneficiaryName:
         selectedIntervention.beneficiaryName || participant.beneficiaryName,

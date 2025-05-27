@@ -25,51 +25,90 @@ interface Beneficiary {
 export const ProjectAnalytics: React.FC = () => {
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([])
   const [loading, setLoading] = useState(true)
-  const [timeScope, setTimeScope] = useState<'yearly' | 'monthly'>('yearly')
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('2023')
+  const [timeScope, setTimeScope] = useState<'annual' | 'monthly'>('annual')
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('')
+  const [availableMonths, setAvailableMonths] = useState<string[]>([])
+  const [availableYears, setAvailableYears] = useState<string[]>([])
+  const [participantIds, setParticipantIds] = useState<string[]>([])
+  const [consultantId, setConsultantId] = useState<string>('')
 
+  // 1. Find consultant and their assigned participantIds on mount
+  useEffect(() => {
+    const fetchConsultantParticipants = async () => {
+      const auth = getAuth()
+      const user = auth.currentUser
+      if (!user?.email) return
+      const consultantSnap = await getDocs(
+        query(collection(db, 'consultants'), where('email', '==', user.email))
+      )
+      if (consultantSnap.empty) {
+        message.error('Consultant not found')
+        return
+      }
+      const consultantId = consultantSnap.docs[0].id
+      console.log(consultantId)
+      setConsultantId(consultantId)
+      // Assigned Interventions
+      const interventionsSnap = await getDocs(
+        query(
+          collection(db, 'assignedInterventions'),
+          where('consultantId', '==', consultantId)
+        )
+      )
+      const ids = [
+        ...new Set(interventionsSnap.docs.map(doc => doc.data().participantId))
+      ]
+      setParticipantIds(ids)
+    }
+    onAuthStateChanged(getAuth(), user => {
+      if (user) fetchConsultantParticipants()
+    })
+  }, [])
+
+  // 2. When participantIds or timeScope changes, fetch periods
+  useEffect(() => {
+    const fetchPeriods = async () => {
+      if (participantIds.length === 0) return
+      const participantsSnap = await getDocs(collection(db, 'participants'))
+      const participants = participantsSnap.docs
+        .filter(doc => participantIds.includes(doc.id))
+        .map(doc => doc.data())
+      let months = new Set<string>()
+      let years = new Set<string>()
+      participants.forEach(p => {
+        Object.keys(p.revenueHistory?.monthly || {}).forEach(m => months.add(m))
+        Object.keys(p.revenueHistory?.annual || {}).forEach(y => years.add(y))
+      })
+      const monthsArr = Array.from(months)
+      const yearsArr = Array.from(years)
+      setAvailableMonths(monthsArr)
+      setAvailableYears(yearsArr)
+      // Set default period if needed
+      if (!selectedPeriod) {
+        setSelectedPeriod(
+          timeScope === 'annual' ? yearsArr[0] || '' : monthsArr[0] || ''
+        )
+      }
+    }
+    fetchPeriods()
+    // eslint-disable-next-line
+  }, [participantIds, timeScope])
+
+  // 3. Main fetch for chart data
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const auth = getAuth()
-        const user = auth.currentUser
-        if (!user?.email) return
-
-        // 1. Find consultant ID
-        const consultantSnap = await getDocs(
-          query(collection(db, 'consultants'), where('email', '==', user.email))
-        )
-        if (consultantSnap.empty) {
-          message.error('Consultant not found')
-          return
-        }
-        const consultantId = consultantSnap.docs[0].id
-
-        // 2. Find assignedInterventions for this consultant
-        const interventionsSnap = await getDocs(
-          query(
-            collection(db, 'assignedInterventions'),
-            where('consultantId', '==', consultantId)
-          )
-        )
-        const participantIds = [
-          ...new Set(
-            interventionsSnap.docs.map(doc => doc.data().participantId)
-          )
-        ]
-
-        if (participantIds.length === 0) {
+        setLoading(true)
+        if (participantIds.length === 0 || !selectedPeriod) {
           setBeneficiaries([])
           return
         }
-
-        // 3. Fetch only participants matched
         const participantsSnap = await getDocs(collection(db, 'participants'))
         const matched = participantsSnap.docs
           .filter(doc => participantIds.includes(doc.id))
           .map(doc => {
             const p = doc.data()
-            const interventionsAssigned = p.interventions?.assigned?.length || 0
+            const interventionsAssigned = p.interventions?.required?.length || 5
             const interventionsCompleted =
               p.interventions?.completed?.length || 0
             const totalInterventions =
@@ -91,7 +130,6 @@ export const ProjectAnalytics: React.FC = () => {
               stage: p.stage || 'Unknown'
             }
           })
-
         setBeneficiaries(matched)
       } catch (error) {
         console.error('Error loading analytics data:', error)
@@ -100,11 +138,9 @@ export const ProjectAnalytics: React.FC = () => {
         setLoading(false)
       }
     }
-
-    onAuthStateChanged(getAuth(), user => {
-      if (user) fetchData()
-    })
-  }, [timeScope, selectedPeriod])
+    fetchData()
+    // eslint-disable-next-line
+  }, [participantIds, timeScope, selectedPeriod])
 
   const stageCounts = beneficiaries.reduce<Record<string, number>>(
     (acc, sme) => {
@@ -137,7 +173,6 @@ export const ProjectAnalytics: React.FC = () => {
       ]
     },
     revenue: {
-      chart: { type: 'spline' },
       title: { text: 'Revenue by Beneficiary (R)' },
       xAxis: { categories: beneficiaries.map(s => s.name) },
       yAxis: {
@@ -159,14 +194,14 @@ export const ProjectAnalytics: React.FC = () => {
       series: [
         {
           name: 'Revenue',
-          type: 'spline',
+          type: 'column',
           data: beneficiaries.map(s => s.revenue)
         }
       ]
     },
     headCount: {
       chart: { type: 'bar' },
-      title: { text: `Head Count (${timeScope} - ${selectedPeriod})` },
+      title: { text: `Head Count` },
       xAxis: { categories: beneficiaries.map(s => s.name) },
       yAxis: { title: { text: 'Employees' } },
       plotOptions: {
@@ -187,28 +222,6 @@ export const ProjectAnalytics: React.FC = () => {
           name: 'Temporary',
           type: 'bar',
           data: beneficiaries.map(s => s.headCount.temporary)
-        }
-      ]
-    },
-    stages: {
-      chart: { type: 'pie' },
-      title: { text: 'Life Cycle Stage Distribution' },
-      plotOptions: {
-        series: {
-          dataLabels: {
-            enabled: true,
-            format: '{point.y}'
-          }
-        }
-      },
-      series: [
-        {
-          name: 'Beneficiaries',
-          type: 'pie',
-          data: Object.entries(stageCounts).map(([stage, count]) => ({
-            name: stage,
-            y: count
-          }))
         }
       ]
     }
@@ -236,8 +249,14 @@ export const ProjectAnalytics: React.FC = () => {
         <>
           <Row style={{ marginBottom: 16 }} gutter={16}>
             <Col>
-              <Select value={timeScope} onChange={setTimeScope}>
-                <Option value='yearly'>Yearly</Option>
+              <Select
+                value={timeScope}
+                onChange={val => {
+                  setTimeScope(val)
+                  setSelectedPeriod('') // clear so period resets when scope changes
+                }}
+              >
+                <Option value='annual'>Annual</Option>
                 <Option value='monthly'>Monthly</Option>
               </Select>
             </Col>
@@ -247,9 +266,9 @@ export const ProjectAnalytics: React.FC = () => {
                 onChange={setSelectedPeriod}
                 style={{ minWidth: 120 }}
               >
-                {(timeScope === 'yearly'
-                  ? ['2023', '2024']
-                  : ['2024-01', '2024-02', '2024-03']
+                {(timeScope === 'annual'
+                  ? availableYears
+                  : availableMonths
                 ).map(period => (
                   <Option key={period} value={period}>
                     {period}
@@ -278,20 +297,11 @@ export const ProjectAnalytics: React.FC = () => {
               </Card>
             </Col>
 
-            <Col xs={24} lg={12}>
+            <Col xs={32} lg={24}>
               <Card>
                 <HighchartsReact
                   highcharts={Highcharts}
                   options={chartOptions.headCount}
-                />
-              </Card>
-            </Col>
-
-            <Col xs={24} lg={12}>
-              <Card>
-                <HighchartsReact
-                  highcharts={Highcharts}
-                  options={chartOptions.stages}
                 />
               </Card>
             </Col>

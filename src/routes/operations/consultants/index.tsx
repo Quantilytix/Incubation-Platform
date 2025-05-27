@@ -24,7 +24,10 @@ import {
   addDoc,
   doc,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  query,
+  setDoc,
+  where
 } from 'firebase/firestore'
 import {
   PlusOutlined,
@@ -39,6 +42,10 @@ import { Helmet } from 'react-helmet'
 import { CSVLink } from 'react-csv'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '@/firebase'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '@/firebase' // Make sure you export your `functions` from your Firebase config
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
+import { compareObjs } from '@fullcalendar/core/internal'
 
 const { Title } = Typography
 const { Option } = Select
@@ -75,10 +82,47 @@ export const ConsultantPage: React.FC = () => {
   )
   const [newConsultantId, setNewConsultantId] = useState<string | null>(null)
   const [searchText, setSearchText] = useState('')
+  const { user, loading: identityLoading } = useFullIdentity()
+  const [companyCode, setCompanyCode] = useState<string>('')
+  const [departments, setDepartments] = useState<any[]>([])
+  const [userDepartment, setUserDepartment] = useState<any>(null)
+  const isMainDepartment = !!userDepartment?.isMain
 
   useEffect(() => {
-    fetchConsultants()
-  }, [])
+    if (!identityLoading) {
+      if (user?.companyCode) {
+        setCompanyCode(user.companyCode)
+        fetchConsultants(user.companyCode)
+      } else {
+        setLoading(false) // stop the spinner
+      }
+    }
+  }, [identityLoading, user?.companyCode])
+
+  const fetchDepartments = async (companyCode: string) => {
+    const snapshot = await getDocs(
+      query(
+        collection(db, 'departments'),
+        where('companyCode', '==', companyCode)
+      )
+    )
+    setDepartments(
+      snapshot.docs.map(d => ({
+        id: d.id,
+        name: d.data().name,
+        isMain: !!d.data().isMain,
+        companyCode: d.data().companyCode,
+        createdAt: d.data().createdAt
+      }))
+    )
+  }
+
+  useEffect(() => {
+    if (user?.departmentId && companyCode && departments.length) {
+      const dep = departments.find(d => d.id === user.departmentId)
+      setUserDepartment(dep || null)
+    }
+  }, [user, companyCode, departments])
 
   useEffect(() => {
     if (newConsultantId) {
@@ -89,15 +133,36 @@ export const ConsultantPage: React.FC = () => {
     }
   }, [newConsultantId])
 
-  const fetchConsultants = async () => {
+  const fetchConsultants = async (companyCode: string, userDep?: any) => {
     setLoading(true)
     try {
-      const snapshot = await getDocs(collection(db, 'consultants'))
-      const consultantList = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      })) as Consultant[]
-      setConsultants(consultantList)
+      let q
+      if (userDep?.isMain) {
+        // Main department: fetch all consultants for the company
+        q = query(
+          collection(db, 'consultants'),
+          where('companyCode', '==', companyCode)
+        )
+      } else if (userDep?.id) {
+        // Only consultants in the same department
+        q = query(
+          collection(db, 'consultants'),
+          where('companyCode', '==', companyCode),
+          where('departmentId', '==', userDep.id)
+        )
+      } else {
+        // fallback: show none
+        setConsultants([])
+        setLoading(false)
+        return
+      }
+      const snapshot = await getDocs(q)
+      setConsultants(
+        snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data()
+        }))
+      )
     } catch (error) {
       console.error('Error fetching consultants:', error)
     } finally {
@@ -105,11 +170,42 @@ export const ConsultantPage: React.FC = () => {
     }
   }
 
+  // Fetch departments and set userDepartment
+  useEffect(() => {
+    if (!identityLoading && user?.companyCode) {
+      setCompanyCode(user.companyCode)
+      fetchDepartments(user.companyCode)
+    }
+  }, [identityLoading, user?.companyCode])
+
+  // Set userDepartment when departments are loaded
+  useEffect(() => {
+    if (user?.departmentId && departments.length) {
+      const dep = departments.find(d => d.id === user.departmentId)
+      setUserDepartment(dep || null)
+    }
+  }, [user, departments])
+
+  // Fetch consultants whenever userDepartment changes
+  useEffect(() => {
+    if (companyCode && userDepartment) {
+      fetchConsultants(companyCode, userDepartment)
+    }
+  }, [companyCode, userDepartment])
+
   const handleAddConsultant = async (values: any) => {
     try {
+      // Determine department based on role
+      const deptId = isMainDepartment ? values.departmentId : userDepartment?.id
+
+      const dep = departments.find(d => d.id === deptId)
+      if (!dep) {
+        message.error('Department not found!')
+        return
+      }
       const { email, name, expertise, rate } = values
 
-      // ✅ 1. Create Firebase Auth account
+      // Create Firebase Auth account
       const userCred = await createUserWithEmailAndPassword(
         auth,
         email,
@@ -117,7 +213,6 @@ export const ConsultantPage: React.FC = () => {
       )
       const uid = userCred.user.uid
 
-      // ✅ 2. Save consultant details
       const newConsultant = {
         name,
         email,
@@ -126,26 +221,31 @@ export const ConsultantPage: React.FC = () => {
         assignmentsCount: 0,
         rating: 0,
         active: true,
-        authUid: uid
+        authUid: uid,
+        companyCode,
+        createdAt: new Date().toISOString(),
+        departmentId: dep.id,
+        departmentName: dep.name,
+        departmentIsMain: !!dep.isMain
       }
-
       await addDoc(collection(db, 'consultants'), newConsultant)
 
-      // ✅ 3. Send Email (adjust this to use your email service or backend)
-      await fetch('/api/send-welcome-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          subject: 'Welcome to Smart Incubation',
-          message: `Hi ${name}, your consultant account has been created. You can login with:\n\nEmail: ${email}\nPassword: 0000\n\nPlease change your password after logging in.`
-        })
-      })
+      const newUser = {
+        name,
+        email,
+        companyCode,
+        departmentId: dep.id,
+        departmentName: dep.name,
+        departmentIsMain: !!dep.isMain,
+        role: 'consultant',
+        createdAt: new Date().toISOString()
+      }
+      await setDoc(doc(db, 'users', uid), newUser)
 
       message.success('Consultant registered and notified!')
       form.resetFields()
       setAddModalVisible(false)
-      fetchConsultants()
+      fetchConsultants(companyCode)
     } catch (error: any) {
       console.error(error)
       message.error(error?.message || 'Failed to register consultant.')
@@ -155,12 +255,26 @@ export const ConsultantPage: React.FC = () => {
   const handleEditConsultant = async (values: any) => {
     if (!editingConsultant) return
     try {
-      await updateDoc(doc(db, 'consultants', editingConsultant.id), values)
-      message.success('Consultant updated successfully!')
+      // Determine department based on role
+      const deptId = isMainDepartment ? values.departmentId : userDepartment?.id
+
+      const dep = departments.find(d => d.id === deptId)
+      if (!dep) {
+        message.error('Department not found!')
+        return
+      }
+      // Spread the values and override department fields
+      const updated = {
+        ...values,
+        departmentId: dep.id,
+        departmentName: dep.name,
+        departmentIsMain: !!dep.isMain
+      }
+      await updateDoc(doc(db, 'consultants', editingConsultant.id), updated)
       setEditModalVisible(false)
       setEditingConsultant(null)
       editForm.resetFields()
-      fetchConsultants()
+      fetchConsultants(companyCode)
     } catch (error) {
       console.error('Error updating consultant:', error)
       message.error('Failed to update consultant.')
@@ -168,13 +282,25 @@ export const ConsultantPage: React.FC = () => {
   }
 
   const handleDeleteConsultant = async (id: string) => {
+    // 1. Find consultant
+    const consultant = consultants.find(c => c.id === id)
+    if (!consultant || !consultant.authUid) {
+      message.error('Consultant or Auth UID not found.')
+      return
+    }
     try {
+      // 2. Call cloud function to remove user from Auth
+      const deleteAuthUser = httpsCallable(functions, 'deleteConsultantAuth')
+      await deleteAuthUser({ authUid: consultant.authUid })
+
+      // 3. Delete from Firestore
       await deleteDoc(doc(db, 'consultants', id))
-      message.success('Consultant deleted successfully!')
-      fetchConsultants()
+
+      message.success('Consultant deleted from users and authentication!')
+      fetchConsultants(companyCode)
     } catch (error) {
       console.error('Error deleting consultant:', error)
-      message.error('Failed to delete consultant.')
+      message.error('Failed to fully delete consultant.')
     }
   }
 
@@ -184,7 +310,7 @@ export const ConsultantPage: React.FC = () => {
         active: !record.active
       })
       message.success('Consultant status updated!')
-      fetchConsultants()
+      fetchConsultants(companyCode)
     } catch (error) {
       console.error('Error toggling consultant:', error)
       message.error('Failed to update consultant.')
@@ -225,6 +351,26 @@ export const ConsultantPage: React.FC = () => {
       key: 'rate',
       render: val => `R ${val}`
     },
+    {
+      title: 'Department',
+      dataIndex: 'departmentId',
+      key: 'departmentId',
+      render: (id, record) => {
+        const dep = departments.find(d => d.id === id)
+        if (!dep) return <Tag color='orange'>Not Set</Tag>
+        return (
+          <span>
+            {dep.name}
+            {dep.isMain && (
+              <Tag color='purple' style={{ marginLeft: 6 }}>
+                Main
+              </Tag>
+            )}
+          </span>
+        )
+      }
+    },
+
     {
       title: 'Expertise',
       dataIndex: 'expertise',
@@ -405,7 +551,16 @@ export const ConsultantPage: React.FC = () => {
         centered
         bodyStyle={{ maxHeight: '70vh', overflowY: 'auto' }} // 👉 limit height nicely
       >
-        <Form form={form} layout='vertical' onFinish={handleAddConsultant}>
+        <Form
+          form={form}
+          layout='vertical'
+          onFinish={handleAddConsultant}
+          initialValues={
+            !isMainDepartment && userDepartment
+              ? { departmentId: userDepartment.id }
+              : {}
+          }
+        >
           <Form.Item
             name='name'
             label='Name'
@@ -424,6 +579,29 @@ export const ConsultantPage: React.FC = () => {
           >
             <Input />
           </Form.Item>
+          <Form.Item
+            name='departmentId'
+            label='Department'
+            rules={[{ required: true, message: 'Please select department' }]}
+          >
+            <Select
+              placeholder='Select department'
+              disabled={!isMainDepartment}
+              // force value to user's department if not main
+              value={
+                !isMainDepartment && userDepartment
+                  ? userDepartment.id
+                  : undefined
+              }
+            >
+              {departments.map(dep => (
+                <Option key={dep.id} value={dep.id}>
+                  {dep.name} {dep.isMain && ' (Main)'}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+
           <Form.Item
             name='expertise'
             label='Expertise Areas'
@@ -459,7 +637,16 @@ export const ConsultantPage: React.FC = () => {
         onOk={() => editForm.submit()}
         okText='Save Changes'
       >
-        <Form form={editForm} layout='vertical' onFinish={handleEditConsultant}>
+        <Form
+          form={editForm}
+          layout='vertical'
+          onFinish={handleEditConsultant}
+          initialValues={
+            !isMainDepartment && userDepartment
+              ? { departmentId: userDepartment.id }
+              : {}
+          }
+        >
           <Form.Item
             name='name'
             label='Name'
@@ -477,6 +664,27 @@ export const ConsultantPage: React.FC = () => {
             ]}
           >
             <Input />
+          </Form.Item>
+          <Form.Item
+            name='departmentId'
+            label='Department'
+            rules={[{ required: true, message: 'Please select department' }]}
+          >
+            <Select
+              placeholder='Select department'
+              disabled={!isMainDepartment}
+              value={
+                !isMainDepartment && userDepartment
+                  ? userDepartment.id
+                  : undefined
+              }
+            >
+              {departments.map(dep => (
+                <Option key={dep.id} value={dep.id}>
+                  {dep.name} {dep.isMain && ' (Main)'}
+                </Option>
+              ))}
+            </Select>
           </Form.Item>
           <Form.Item
             name='expertise'

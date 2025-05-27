@@ -320,7 +320,7 @@ export const AssignedInterventions: React.FC = () => {
   ]
 
   return (
-    <>
+    <div style={{ minHeight: '100vh' }}>
       <Helmet>
         <title>Ongoing Interventions | Consultant Workspace</title>
         <meta
@@ -329,7 +329,7 @@ export const AssignedInterventions: React.FC = () => {
         />
       </Helmet>
 
-      <Spin tip='Loaing interventions' spinning={loading} size='large'>
+      <Spin tip='Loadsing interventions' spinning={loading} size='large'>
         <Title level={4}>Ongoing Interventions</Title>
         <Table
           dataSource={assignedInterventions}
@@ -398,6 +398,6 @@ export const AssignedInterventions: React.FC = () => {
           </>
         )}
       </Modal>
-    </>
+    </div>
   )
 }

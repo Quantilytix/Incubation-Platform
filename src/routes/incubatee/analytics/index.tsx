@@ -36,7 +36,10 @@ const fallbackMonths = [
   'March',
   'April',
   'May',
-  'June'
+  'June',
+  'July',
+  'August',
+  'September'
 ]
 const fallbackData = [
   { month: 'November', revenue: 283373, permEmployees: 15, tempEmployees: 2 },
@@ -107,6 +110,7 @@ const IncubateeAnalytics = () => {
         if (!participantSnap.empty) {
           const docData = participantSnap.docs[0].data()
 
+          // When loading data from Firestore:
           const revenueMonthly = docData?.revenueHistory?.monthly || {}
           const headcountMonthly = docData?.headcountHistory?.monthly || {}
 
@@ -260,101 +264,106 @@ const IncubateeAnalytics = () => {
           content='Track your revenue, staff growth, and application success over time.'
         />
       </Helmet>
-      <Layout>
-        <Content style={{ padding: '24px' }}>
-          <Row justify='space-between' align='middle'>
-            <Col>
-              <Title level={3}>📊 My Analytics</Title>
+      <div
+        style={{
+          padding: 24,
+          background: '#fff',
+          minHeight: '100%',
+          boxSizing: 'border-box'
+        }}
+      >
+        <Row justify='space-between' align='middle'>
+          <Col>
+            <Title level={3}>📊 My Analytics</Title>
+          </Col>
+        </Row>
+
+        {loading ? (
+          <Spin size='large' />
+        ) : (
+          <Row gutter={[24, 24]}>
+            <Col xs={24} md={12}>
+              <Card
+                title='Revenue Chart'
+                extra={
+                  <Button
+                    type='link'
+                    onClick={() => {
+                      setExpandedChart('revenue')
+                      setModalVisible(true)
+                    }}
+                  >
+                    Expand
+                  </Button>
+                }
+              >
+                <HighchartsReact
+                  highcharts={Highcharts}
+                  options={revenueChartOptions}
+                />
+              </Card>
+            </Col>
+
+            <Col xs={24} md={12}>
+              <Card
+                title='Application Status'
+                extra={
+                  <Button
+                    type='link'
+                    onClick={() => {
+                      setExpandedChart('applications')
+                      setModalVisible(true)
+                    }}
+                  >
+                    Expand
+                  </Button>
+                }
+              >
+                <HighchartsReact
+                  highcharts={Highcharts}
+                  options={applicationPieOptions}
+                />
+              </Card>
+            </Col>
+
+            <Col span={24}>
+              <Card
+                title='Headcount vs Revenue'
+                extra={
+                  <Button
+                    type='link'
+                    onClick={() => {
+                      setExpandedChart('headcount')
+                      setModalVisible(true)
+                    }}
+                  >
+                    Expand
+                  </Button>
+                }
+              >
+                <HighchartsReact
+                  highcharts={Highcharts}
+                  options={headcountVsRevenueOptions}
+                />
+              </Card>
+            </Col>
+
+            <Col span={24}>
+              <Card>
+                <Title level={5}>
+                  Acceptance Rate:{' '}
+                  {applicationStats.total > 0
+                    ? `${Math.round(
+                        (applicationStats.accepted / applicationStats.total) *
+                          100
+                      )}%`
+                    : 'N/A'}
+                </Title>
+              </Card>
             </Col>
           </Row>
-
-          {loading ? (
-            <Spin size='large' />
-          ) : (
-            <Row gutter={[24, 24]}>
-              <Col xs={24} md={12}>
-                <Card
-                  title='Revenue Chart'
-                  extra={
-                    <Button
-                      type='link'
-                      onClick={() => {
-                        setExpandedChart('revenue')
-                        setModalVisible(true)
-                      }}
-                    >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={revenueChartOptions}
-                  />
-                </Card>
-              </Col>
-
-              <Col xs={24} md={12}>
-                <Card
-                  title='Application Status'
-                  extra={
-                    <Button
-                      type='link'
-                      onClick={() => {
-                        setExpandedChart('applications')
-                        setModalVisible(true)
-                      }}
-                    >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={applicationPieOptions}
-                  />
-                </Card>
-              </Col>
-
-              <Col span={24}>
-                <Card
-                  title='Headcount vs Revenue'
-                  extra={
-                    <Button
-                      type='link'
-                      onClick={() => {
-                        setExpandedChart('headcount')
-                        setModalVisible(true)
-                      }}
-                    >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={headcountVsRevenueOptions}
-                  />
-                </Card>
-              </Col>
-
-              <Col span={24}>
-                <Card>
-                  <Title level={5}>
-                    Acceptance Rate:{' '}
-                    {applicationStats.total > 0
-                      ? `${Math.round(
-                          (applicationStats.accepted / applicationStats.total) *
-                            100
-                        )}%`
-                      : 'N/A'}
-                  </Title>
-                </Card>
-              </Col>
-            </Row>
-          )}
-        </Content>
-      </Layout>
+        )}
+      </div>
       <Modal
         open={modalVisible}
         onCancel={() => setModalVisible(false)}

@@ -34,6 +34,75 @@ const { Title, Paragraph } = Typography
 const { Header, Content } = Layout
 const { TabPane } = Tabs
 
+function checkEligibility (participant, criteria = {}) {
+  if (!criteria || Object.keys(criteria).length === 0) return null // Open to all
+
+  // Min/Max Age
+  if (criteria.minAge && participant.age < criteria.minAge)
+    return `Minimum age is ${criteria.minAge}`
+  if (criteria.maxAge && participant.age > criteria.maxAge)
+    return `Maximum age is ${criteria.maxAge}`
+
+  // Gender
+  if (
+    criteria.gender &&
+    criteria.gender.length &&
+    !criteria.gender.includes(participant.gender)
+  )
+    return `Eligible gender(s): ${criteria.gender.join(', ')}`
+
+  // Sector
+  if (
+    criteria.sector &&
+    criteria.sector.length &&
+    !criteria.sector.includes(participant.sector)
+  )
+    return `Sector must be one of: ${criteria.sector.join(', ')}`
+
+  // Province
+  if (
+    criteria.province &&
+    criteria.province.length &&
+    !criteria.province.includes(participant.province)
+  )
+    return `Province must be one of: ${criteria.province.join(', ')}`
+
+  // BEE Level
+  if (
+    criteria.beeLevel &&
+    criteria.beeLevel.length &&
+    !criteria.beeLevel.includes(participant.beeLevel)
+  )
+    return `Allowed BEE Levels: ${criteria.beeLevel.join(', ')}`
+
+  // Years of trading
+  if (
+    criteria.minYearsOfTrading &&
+    participant.yearsOfTrading < criteria.minYearsOfTrading
+  )
+    return `At least ${criteria.minYearsOfTrading} year(s) of trading required`
+
+  // Ownership
+  if (
+    criteria.youthOwnedPercent !== undefined &&
+    +participant.youthOwnedPercent < +criteria.youthOwnedPercent
+  )
+    return `At least ${criteria.youthOwnedPercent}% youth ownership required`
+  if (
+    criteria.blackOwnedPercent !== undefined &&
+    +participant.blackOwnedPercent < +criteria.blackOwnedPercent
+  )
+    return `At least ${criteria.blackOwnedPercent}% black ownership required`
+  if (
+    criteria.femaleOwnedPercent !== undefined &&
+    +participant.femaleOwnedPercent < +criteria.femaleOwnedPercent
+  )
+    return `At least ${criteria.femaleOwnedPercent}% female ownership required`
+
+  // Custom note (doesn't block, just show)
+  return null
+}
+
 const SMEDashboard = () => {
   const [recommended, setRecommended] = useState<any[]>([])
   const [allPrograms, setAllPrograms] = useState<any[]>([])
@@ -44,6 +113,8 @@ const SMEDashboard = () => {
   const [applicationForm] = useForm()
 
   const [loading, setLoading] = useState(false)
+  const [companyCode, setCompanyCode] = useState<string | null>(null)
+
   const navigate = useNavigate()
   // Generate recent months and years
   const currentMonth = dayjs().month()
@@ -56,16 +127,51 @@ const SMEDashboard = () => {
   // Last 2 years
   const last2Years = Array.from({ length: 2 }, (_, i) => `${currentYear - i}`)
 
+  useEffect(() => {
+    const getCompanyCode = async () => {
+      const user = auth.currentUser
+      if (user && user.uid) {
+        // Assuming you store user info in Firestore "users" collection
+        const userSnap = await getDocs(
+          query(collection(db, 'users'), where('email', '==', user.email))
+        )
+        if (!userSnap.empty) {
+          setCompanyCode(userSnap.docs[0].data().companyCode || null)
+        }
+      }
+    }
+    getCompanyCode()
+  }, [])
+
   const fetchPrograms = async () => {
     setLoading(true)
     try {
       const ref = collection(db, 'programs')
-      const q = query(
-        ref,
-        where('status', 'in', ['Active', 'Planned', 'active', 'planned'])
-      )
-      const snapshot = await getDocs(q)
 
+      let q
+      if (companyCode) {
+        // Filter by companyCode **and** status
+        q = query(
+          ref,
+          where('status', 'in', [
+            'Active',
+            'Planned',
+            'active',
+            'planned',
+            'Upcoming',
+            'upcoming'
+          ]),
+          where('companyCode', '==', companyCode)
+        )
+      } else {
+        // Show all active/planned if no companyCode
+        q = query(
+          ref,
+          where('status', 'in', ['Active', 'Planned', 'active', 'planned'])
+        )
+      }
+
+      const snapshot = await getDocs(q)
       const data = snapshot.docs.map(doc => {
         const raw = doc.data()
         return {
@@ -85,16 +191,17 @@ const SMEDashboard = () => {
       setRecommended(recommendedPrograms)
       setAllPrograms(data)
     } catch (err) {
-      message.error('Failed to load  programs.')
+      message.error('Failed to load programs.')
       console.error(err)
     } finally {
+      console.log(companyCode)
       setLoading(false)
     }
   }
 
   useEffect(() => {
     fetchPrograms()
-  }, [])
+  }, [companyCode])
 
   useEffect(() => {
     const handleOpen = () => setProfileDrawerVisible(true)
@@ -144,6 +251,23 @@ const SMEDashboard = () => {
 
       if (!existingAppSnap.empty) {
         message.info('You’ve already applied to this program.')
+        return
+      }
+
+      const eligibilityMessage = checkEligibility(
+        participant,
+        program.eligibilityCriteria
+      )
+      if (eligibilityMessage) {
+        Modal.warning({
+          title: 'Not Eligible',
+          content: (
+            <div>
+              <b>You do not meet this program’s eligibility:</b>
+              <div style={{ marginTop: 8 }}>{eligibilityMessage}</div>
+            </div>
+          )
+        })
         return
       }
 
@@ -238,54 +362,80 @@ const SMEDashboard = () => {
         />
       </Helmet>
 
-      <Layout>
-        <Content style={{ padding: '16px 32px' }}>
-          <Tabs defaultActiveKey='recommended'>
-            <TabPane tab='Recommended for You' key='recommended'>
-              {loading ? (
-                <Spin />
-              ) : recommended.length > 0 ? (
-                <Row gutter={[16, 16]}>
-                  {recommended.map(renderProgramCard)}
-                </Row>
-              ) : (
-                <Paragraph>No recommended programs at this time.</Paragraph>
-              )}
-            </TabPane>
+      <div
+        style={{
+          padding: 24,
+          background: '#fff',
+          minHeight: '100vh',
+          boxSizing: 'border-box'
+        }}
+      >
+        <Tabs defaultActiveKey='recommended'>
+          <TabPane tab='Recommended for You' key='recommended'>
+            {loading ? (
+              <Spin />
+            ) : recommended.length > 0 ? (
+              <Row gutter={[16, 16]}>{recommended.map(renderProgramCard)}</Row>
+            ) : (
+              <Paragraph>No recommended programs at this time.</Paragraph>
+            )}
+          </TabPane>
 
-            <TabPane tab='All Programs' key='all'>
-              {loading ? (
-                <Spin />
-              ) : allPrograms.length > 0 ? (
-                <Row gutter={[16, 16]}>
-                  {allPrograms.map(renderProgramCard)}
-                </Row>
-              ) : (
-                <Paragraph>No programs found.</Paragraph>
-              )}
-            </TabPane>
-          </Tabs>
-        </Content>
+          <TabPane tab='All Programs' key='all'>
+            {loading ? (
+              <Spin />
+            ) : allPrograms.length > 0 ? (
+              <Row gutter={[16, 16]}>{allPrograms.map(renderProgramCard)}</Row>
+            ) : (
+              <Paragraph>No programs found.</Paragraph>
+            )}
+          </TabPane>
+        </Tabs>
+      </div>
 
-        <Modal
-          open={programModalVisible}
-          title={activeProgram?.name}
-          onCancel={() => setProgramModalVisible(false)}
-          onOk={submitApplication}
-          okText='Submit Application'
-          destroyOnClose
-        >
-          <Paragraph>{activeProgram?.description}</Paragraph>
+      <Modal
+        open={programModalVisible}
+        title={activeProgram?.name}
+        onCancel={() => setProgramModalVisible(false)}
+        onOk={submitApplication}
+        okText='Submit Application'
+        destroyOnClose
+      >
+        <Paragraph>{activeProgram?.description}</Paragraph>
 
-          <Divider orientation='left'>Eligibility Criteria</Divider>
-          <ul>
-            <li>Minimum BEEE level: 2 or better</li>
-            <li>Black-owned ≥ 51%</li>
-            <li>Startup must be operational</li>
-            {/* These could be dynamic from program definition later */}
-          </ul>
-        </Modal>
-      </Layout>
+        <Divider orientation='left'>Eligibility Criteria</Divider>
+        <ul>
+          {activeProgram?.eligibilityCriteria &&
+            Object.entries(activeProgram.eligibilityCriteria).map(
+              ([key, value]) => (
+                <li key={key}>
+                  {key === 'minAge' && `Minimum age: ${value}`}
+                  {key === 'maxAge' && `Maximum age: ${value}`}
+                  {key === 'gender' && `Allowed gender(s): ${value.join(', ')}`}
+                  {key === 'sector' && `Sector(s): ${value.join(', ')}`}
+                  {key === 'province' && `Province(s): ${value.join(', ')}`}
+                  {key === 'beeLevel' &&
+                    `Allowed BEE Level(s): ${value.join(', ')}`}
+                  {key === 'minYearsOfTrading' &&
+                    `Min years of trading: ${value}`}
+                  {key === 'youthOwnedPercent' &&
+                    `Min youth ownership: ${value}%`}
+                  {key === 'femaleOwnedPercent' &&
+                    `Min female ownership: ${value}%`}
+                  {key === 'blackOwnedPercent' &&
+                    `Min black ownership: ${value}%`}
+                  {key === 'custom' && (
+                    <span style={{ fontStyle: 'italic' }}>{value}</span>
+                  )}
+                </li>
+              )
+            )}
+          {!activeProgram?.eligibilityCriteria ||
+          Object.keys(activeProgram.eligibilityCriteria).length === 0 ? (
+            <li>Open to all (no restrictions)</li>
+          ) : null}
+        </ul>
+      </Modal>
     </>
   )
 }

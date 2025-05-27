@@ -73,6 +73,7 @@ const InterventionDatabaseView = () => {
           query(collection(db, 'users'), where('email', '==', user.email))
         )
         if (userSnap.empty) {
+          console.log(user.email)
           notification.error({ message: 'User not found' })
           return
         }
@@ -468,8 +469,15 @@ const InterventionDatabaseView = () => {
                             </p>
                             <p>
                               <strong>Time Spent:</strong>{' '}
-                              {(item.timeSpent || []).join(', ')} hrs
+                              {Array.isArray(item.timeSpent)
+                                ? item.timeSpent.join(', ')
+                                : item.timeSpent !== undefined &&
+                                  item.timeSpent !== null
+                                ? item.timeSpent
+                                : ''}{' '}
+                              hrs
                             </p>
+
                             <p>
                               <strong>POE:</strong>{' '}
                               {item.resources?.length ? (

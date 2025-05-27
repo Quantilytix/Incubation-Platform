@@ -15,24 +15,13 @@ export const DirectorOnboardingPage: React.FC = () => {
       const user = auth.currentUser
       if (!user) throw new Error('No user logged in.')
 
-      // 1. Reauthenticate
-      const credential = EmailAuthProvider.credential(
-        user.email || '', // user.email should exist
-        values.currentPassword // get from form
-      )
-      await reauthenticateWithCredential(user, credential)
-
-      // 2. Update profile info
+      // Update profile info
       const userRef = doc(db, 'users', user.uid)
       await updateDoc(userRef, {
-        name: values.fullName,
         company: values.company,
         companyCode: values.companyCode,
         firstLoginComplete: true
       })
-
-      // 3. Update password
-      await updatePassword(user, values.newPassword)
 
       message.success('🎉 Profile updated successfully!')
       navigate('/director') // Redirect to director dashboard
@@ -58,18 +47,10 @@ export const DirectorOnboardingPage: React.FC = () => {
       }}
     >
       <Card
-        title='Complete Your Profile'
+        title='Welcome to Smart Inc. Please complete your profile to proceed!'
         style={{ width: 400, boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)' }}
       >
         <Form form={form} layout='vertical' onFinish={handleFinish}>
-          <Form.Item
-            name='fullName'
-            label='Full Name'
-            rules={[{ required: true, message: 'Please enter your full name' }]}
-          >
-            <Input />
-          </Form.Item>
-
           <Form.Item
             name='company'
             label='Company Name'
@@ -86,24 +67,6 @@ export const DirectorOnboardingPage: React.FC = () => {
             ]}
           >
             <Input />
-          </Form.Item>
-
-          <Form.Item
-            name='currentPassword'
-            label='Current Password'
-            rules={[
-              { required: true, message: 'Please enter your current password' }
-            ]}
-          >
-            <Input.Password />
-          </Form.Item>
-
-          <Form.Item
-            name='newPassword'
-            label='New Password'
-            rules={[{ required: true, message: 'Please enter a new password' }]}
-          >
-            <Input.Password />
           </Form.Item>
 
           <Form.Item>

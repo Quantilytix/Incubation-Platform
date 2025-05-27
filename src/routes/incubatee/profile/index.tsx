@@ -241,7 +241,15 @@ const ProfileForm: React.FC = () => {
       <Helmet>
         <title>Profile | Smart Incubation Platform</title>
       </Helmet>
-      <div style={{ padding: 24 }}>
+      <div
+        style={{
+          padding: '24px',
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#fff'
+        }}
+      >
         <Title level={3}>Your Profile</Title>
         <Form layout='vertical' form={form}>
           {/* Personal Info */}
@@ -324,7 +332,10 @@ const ProfileForm: React.FC = () => {
           </Row>
           <Row>
             <Col span={24}>
-              <Form.Item name='natureOfBusiness' label='Nature of Business'>
+              <Form.Item
+                name='natureOfBusiness'
+                label='Nature of Business (What your business offers)'
+              >
                 <Input.TextArea />
               </Form.Item>
             </Col>

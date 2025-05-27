@@ -42,6 +42,7 @@ interface OperationsUser {
   gender: string
   phone: string
   companyCode: string
+  department?: string
   createdAt: Date
 }
 
@@ -60,6 +61,7 @@ export const OperationsOnboardingDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
   const [addModalVisible, setAddModalVisible] = useState(false)
+  const [departments, setDepartments] = useState<any[]>([])
   const [companyCode, setCompanyCode] = useState<string>('')
   const [form] = Form.useForm()
   const navigate = useNavigate()
@@ -76,6 +78,26 @@ export const OperationsOnboardingDashboard: React.FC = () => {
       }
     }
   }, [identityLoading, user?.companyCode])
+
+  useEffect(() => {
+    if (companyCode) {
+      const fetchDepartments = async () => {
+        const snapshot = await getDocs(
+          query(
+            collection(db, 'departments'),
+            where('companyCode', '==', companyCode)
+          )
+        )
+        setDepartments(
+          snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }))
+        )
+      }
+      fetchDepartments()
+    }
+  }, [companyCode])
 
   const fetchOperationsStaff = async (companyCode: string) => {
     try {
@@ -129,8 +151,9 @@ export const OperationsOnboardingDashboard: React.FC = () => {
         uid: firebaseUser.uid,
         email: firebaseUser.email,
         name,
-        role: 'operations', // Assign a role for operations staff
+        role: 'operations',
         companyCode,
+        department: values.department,
         createdAt: new Date()
       }
 
@@ -175,21 +198,16 @@ export const OperationsOnboardingDashboard: React.FC = () => {
       key: 'email',
       sorter: (a: any, b: any) => a.email.localeCompare(b.email)
     },
+    { title: 'Phone', dataIndex: 'phone', key: 'phone' },
+    { title: 'Gender', dataIndex: 'gender', key: 'gender' },
     {
-      title: 'Phone',
-      dataIndex: 'phone',
-      key: 'phone'
+      title: 'Department',
+      dataIndex: 'department',
+      key: 'department',
+      render: (dept: string) =>
+        dept || <span style={{ color: '#bbb' }}>Not set</span>
     },
-    {
-      title: 'Gender',
-      dataIndex: 'gender',
-      key: 'gender'
-    },
-    {
-      title: 'Company Code',
-      dataIndex: 'companyCode',
-      key: 'companyCode'
-    }
+    { title: 'Company Code', dataIndex: 'companyCode', key: 'companyCode' }
   ]
 
   const totalUsers = operationsStaff.length
@@ -269,6 +287,20 @@ export const OperationsOnboardingDashboard: React.FC = () => {
             rules={[{ required: true, message: 'Please enter full name' }]}
           >
             <Input placeholder='Enter full name' />
+          </Form.Item>
+
+          <Form.Item
+            label='Department'
+            name='department'
+            rules={[{ required: true, message: 'Please select department' }]}
+          >
+            <Select placeholder='Select department'>
+              {departments.map(dep => (
+                <Option key={dep.id} value={dep.name || dep.id}>
+                  {dep.name || dep.id}
+                </Option>
+              ))}
+            </Select>
           </Form.Item>
 
           {/* Gender */}

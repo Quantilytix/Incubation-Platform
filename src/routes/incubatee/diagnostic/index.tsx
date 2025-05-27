@@ -243,7 +243,8 @@ const GrowthPlanPage: React.FC = () => {
 
   const handleConfirmGrowthPlan = async () => {
     try {
-      const required = manualInterventions
+      const required = [...manualInterventions, ...selectedAi]
+
       const growthPlanUrl = applicationData?.growthPlanDocUrl
       if (!growthPlanUrl) {
         notification.error({

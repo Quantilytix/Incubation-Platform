@@ -17,6 +17,7 @@ import { doc, updateDoc, getDoc, addDoc, collection } from 'firebase/firestore'
 import { Modal } from 'antd'
 import { Helmet } from 'react-helmet'
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { SHA256 } from 'crypto-js'
 
 const { Title, Paragraph } = Typography
 const { TextArea } = Input
@@ -153,6 +154,49 @@ export const InterventionTrack: React.FC = () => {
         ]
       })
 
+      // ✅ Save to interventionsDatabase
+      // You may want to fetch more data for program, company, participant, etc.
+      let participantData = {}
+      if (data.participantId) {
+        const participantSnap = await getDoc(
+          doc(db, 'participants', data.participantId)
+        )
+        if (participantSnap.exists()) participantData = participantSnap.data()
+      }
+
+      await addDoc(collection(db, 'interventionsDatabase'), {
+        programId: data.programId || '',
+        companyCode: data.companyCode || '',
+        interventionId: id,
+        interventionTitle: data.interventionTitle || '',
+        areaOfSupport: data.areaOfSupport || '',
+        participantId: data.participantId,
+        beneficiaryName: participantData.beneficiaryName || '',
+        hub: participantData.hub || '',
+        province: participantData.province || '',
+        quarter: 'Q' + (Math.floor(new Date().getMonth() / 3) + 1),
+        consultantIds: [data.consultantId],
+        timeSpent: totalTimeSpent,
+        interventionType: data.interventionType || '',
+        targetMetric: data.targetMetric || '',
+        targetType: data.targetType || '',
+        targetValue: data.targetValue || 0,
+        feedback: data.feedback || null,
+        confirmedAt: new Date(),
+        createdAt: participantData.createdAt || new Date(),
+        updatedAt: new Date(),
+        interventionKey: SHA256((participantData.email || '') + id)
+          .toString()
+          .substring(0, 12),
+        resources: [
+          {
+            type: 'document',
+            label: uploadFile?.name || 'Evidence Document',
+            link: downloadURL
+          }
+        ]
+      })
+
       // 🔔 Send notification
       await addDoc(collection(db, 'notifications'), {
         type: 'intervention-submitted',
@@ -269,36 +313,9 @@ export const InterventionTrack: React.FC = () => {
 
           {/* Upload only at 100% */}
           {totalProgress === 100 && (
-            <>
-              <Title level={5}>
-                Upload POE (Proof of Execution){' '}
-                <Tag color='blue'>{interventionTitle}</Tag>
-              </Title>
-
-              <Paragraph>
-                Please provide relevant documents or links that support the
-                completion of this intervention.
-              </Paragraph>
-
-              <Upload beforeUpload={() => false} onChange={handleUpload}>
-                <Button icon={<UploadOutlined />}>Upload File</Button>
-              </Upload>
-
-              <Input
-                placeholder='Paste website link or online resource (if any)'
-                style={{ marginTop: 12 }}
-                onChange={e => console.log('Link:', e.target.value)}
-              />
-
-              <Button
-                type='primary'
-                onClick={handleSubmit}
-                disabled={!uploaded}
-                style={{ marginTop: 16 }}
-              >
-                Send For Review
-              </Button>
-            </>
+            <Button type='primary' onClick={() => setShowCompletionModal(true)}>
+              Submit Completion Evidence
+            </Button>
           )}
         </Form>
       </Card>

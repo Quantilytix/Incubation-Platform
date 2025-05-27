@@ -103,6 +103,66 @@ const ParticipantRegistrationStepForm = () => {
   const programName = searchParams.get('program')
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [complianceScore, setComplianceScore] = useState(0)
+  const [programQuestions, setProgramQuestions] = useState<any[]>([])
+
+  useEffect(() => {
+    const fetchQuestions = async () => {
+      if (!programId) return
+      const programRef = doc(db, 'programs', programId)
+      const snap = await getDoc(programRef)
+      if (snap.exists()) {
+        setProgramQuestions(snap.data().onboardingQuestions || [])
+      }
+    }
+    fetchQuestions()
+  }, [programId])
+
+  const renderQuestionField = (q: any) => {
+    // Normalize options to always be an array
+    let options: string[] = []
+    if (Array.isArray(q.options)) {
+      options = q.options
+    } else if (typeof q.options === 'string') {
+      options = q.options
+        .split(',')
+        .map(opt => opt.trim())
+        .filter(Boolean)
+    }
+
+    switch (q.type) {
+      case 'text':
+        return (
+          <Form.Item
+            key={q.id}
+            name={['profile', q.id]}
+            label={q.label}
+            rules={[{ required: true, message: `Please provide ${q.label}` }]}
+          >
+            <Input />
+          </Form.Item>
+        )
+      case 'dropdown':
+        return (
+          <Form.Item
+            key={q.id}
+            name={['profile', q.id]}
+            label={q.label}
+            rules={[{ required: true, message: `Please select ${q.label}` }]}
+          >
+            <Select>
+              {options.map(opt => (
+                <Select.Option key={opt} value={opt}>
+                  {opt}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        )
+      // add other types as needed
+      default:
+        return null
+    }
+  }
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -773,6 +833,8 @@ const ParticipantRegistrationStepForm = () => {
     await form.validateFields()
     const values = form.getFieldsValue(true) // true = get all values, even unmounted
     const uploadedDocs = await uploadAllDocuments()
+    const profileAnswers = values.profile // { [questionId]: answer }
+
     setComplianceScore(calculateCompliance(uploadedDocs))
 
     if (complianceScore < 10) {
@@ -984,6 +1046,18 @@ const ParticipantRegistrationStepForm = () => {
       )
     },
     {
+      title: 'Program Profile',
+      content: (
+        <Card>
+          <Title level={5}>Answer All To Proceed</Title>
+          {programQuestions.length === 0 && <Spin />}
+          {programQuestions.length > 0 && (
+            <>{programQuestions.map(q => renderQuestionField(q))}</>
+          )}
+        </Card>
+      )
+    },
+    {
       title: 'Documents',
       content: (
         <Space direction='vertical' style={{ width: '100%' }}>
@@ -1080,6 +1154,13 @@ const ParticipantRegistrationStepForm = () => {
         <>
           <Title level={4}>Review Your Details</Title>
           {formatReviewData(form.getFieldsValue(true))}
+          {programQuestions.map(q => (
+            <div key={q.id}>
+              <strong>{q.label}:</strong>{' '}
+              {form.getFieldValue(['profile', q.id]) || '-'}
+            </div>
+          ))}
+
           <p>
             Compliance Score: <strong>{complianceScore}%</strong>
           </p>

@@ -100,8 +100,8 @@ const ApplicationTracker = () => {
     Accepted: applications.filter(
       app => app.applicationStatus?.toLowerCase() === 'accepted'
     ).length,
-    Declined: applications.filter(
-      app => app.applicationStatus?.toLowerCase() === 'declined'
+    Rejected: applications.filter(
+      app => app.applicationStatus?.toLowerCase() === 'rejected'
     ).length,
     Pending: applications.filter(
       app => app.applicationStatus?.toLowerCase() === 'pending'
@@ -132,10 +132,29 @@ const ApplicationTracker = () => {
       title: 'Compliance',
       dataIndex: 'complianceScore',
       render: (rate: number) => <strong>{rate || 0}%</strong>
+    },
+    {
+      title: 'Diagnostic Needs',
+      key: 'growthPlan',
+      render: (_: any, record: any) => {
+        const status = record.applicationStatus?.toLowerCase()
+        if (status === 'rejected' && record.growthPlanDocUrl) {
+          return (
+            <Button
+              type='link'
+              href={record.growthPlanDocUrl}
+              target='_blank'
+              rel='noopener noreferrer'
+              size='small'
+            >
+              View Diagnostic Needs Assessment
+            </Button>
+          )
+        }
+        return null
+      }
     }
   ]
-
-
 
   return (
     <>
@@ -147,61 +166,64 @@ const ApplicationTracker = () => {
         />
       </Helmet>
 
-      <Layout style={{ padding: '24px', background: '#fff' }}>
-        <Content>
-          <Card bordered={false} style={{ padding: '24px' }}>
-            <Space direction='vertical' size='large' style={{ width: '100%' }}>
-              <Title level={3}>🎯 My Application Tracker</Title>
+      <div
+        style={{
+          padding: 24,
+          background: '#fff',
+          minHeight: '100vh',
+          boxSizing: 'border-box'
+        }}
+      >
+        <Space direction='vertical' size='large' style={{ width: '100%' }}>
+          <Title level={3}>🎯 My Application Tracker</Title>
 
-              <Card bordered style={{ background: '#fafafa' }}>
-                <Row gutter={[24, 24]}>
-                  <Col xs={24} sm={12} md={6}>
-                    <Statistic
-                      title='Total Applications'
-                      value={statusCounts.Total}
-                    />
-                  </Col>
-                  <Col xs={24} sm={12} md={6}>
-                    <Statistic
-                      title='Accepted'
-                      value={statusCounts.Accepted}
-                      valueStyle={{ color: 'green' }}
-                    />
-                  </Col>
-                  <Col xs={24} sm={12} md={6}>
-                    <Statistic
-                      title='Pending'
-                      value={statusCounts.Pending}
-                      valueStyle={{ color: 'orange' }}
-                    />
-                  </Col>
-                  <Col xs={24} sm={12} md={6}>
-                    <Statistic
-                      title='Declined'
-                      value={statusCounts.Declined}
-                      valueStyle={{ color: 'red' }}
-                    />
-                  </Col>
-                </Row>
-              </Card>
-
-              <Divider />
-
-              <Card title='📋 My Applications' bodyStyle={{ padding: 0 }}>
-                <Table
-                  rowKey='id'
-                  columns={applicationColumns}
-                  dataSource={applications}
-                  loading={loading}
-                  pagination={{ pageSize: 5 }}
-                  scroll={{ x: true }}
-                  style={{ padding: '16px' }}
+          <Card bordered style={{ background: '#fafafa' }}>
+            <Row gutter={[24, 24]}>
+              <Col xs={24} sm={12} md={6}>
+                <Statistic
+                  title='Total Applications'
+                  value={statusCounts.Total}
                 />
-              </Card>
-            </Space>
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Statistic
+                  title='Accepted'
+                  value={statusCounts.Accepted}
+                  valueStyle={{ color: 'green' }}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Statistic
+                  title='Pending'
+                  value={statusCounts.Pending}
+                  valueStyle={{ color: 'orange' }}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Statistic
+                  title='Rejected'
+                  value={statusCounts.Rejected}
+                  valueStyle={{ color: 'red' }}
+                />
+              </Col>
+            </Row>
           </Card>
-        </Content>
-      </Layout>
+
+          <Divider />
+
+          <Card title='📋 My Applications' bodyStyle={{ padding: 0 }}>
+            <Table
+              rowKey='id'
+              columns={applicationColumns}
+              dataSource={applications}
+              loading={loading}
+              pagination={{ pageSize: 5 }}
+              scroll={{ x: true }}
+              style={{ padding: '16px' }}
+            />
+          </Card>
+        </Space>
+      </div>
     </>
   )
 }

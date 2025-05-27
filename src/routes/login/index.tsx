@@ -26,6 +26,34 @@ import { Helmet } from 'react-helmet'
 
 const { Title } = Typography
 
+// 1. Add this error formatter
+function formatFirebaseError (error) {
+  if (!error || !error.code)
+    return error?.message || 'An unexpected error occurred.'
+  switch (error.code) {
+    case 'auth/wrong-password':
+      return 'The password you entered is incorrect.'
+    case 'auth/user-not-found':
+      return 'No user found with this email address.'
+    case 'auth/invalid-email':
+      return 'The email address is not valid.'
+    case 'auth/too-many-requests':
+      return 'Too many failed attempts. Please wait a few minutes or reset your password.'
+    case 'auth/network-request-failed':
+      return 'Network error. Please check your internet connection.'
+    case 'auth/popup-closed-by-user':
+      return 'Login window was closed before completing sign in.'
+    default:
+      if (typeof error.code === 'string') {
+        return error.code
+          .replace('auth/', '')
+          .replace(/-/g, ' ')
+          .replace(/\b\w/g, l => l.toUpperCase())
+      }
+      return error.message || 'Login failed. Please try again.'
+  }
+}
+
 export const LoginPage: React.FC = () => {
   const [form] = Form.useForm()
   const navigate = useNavigate()
@@ -158,7 +186,7 @@ export const LoginPage: React.FC = () => {
       }
     } catch (error: any) {
       console.error(error)
-      message.error('Invalid email or password.')
+      message.error(formatFirebaseError(error)) // 👈 Use user-friendly errors
     } finally {
       setLoading(false)
     }
@@ -181,9 +209,6 @@ export const LoginPage: React.FC = () => {
 
       const { role, firstLoginComplete } = userData
 
-      console.log('✅ Role:', role)
-      console.log('🧭 firstLoginComplete:', firstLoginComplete)
-
       if (!supportedRoles.includes(role)) {
         message.error(`🚫 The role "${role}" is not recognized.`)
         return
@@ -199,7 +224,7 @@ export const LoginPage: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Google login failed:', error)
-      message.error('Google login failed.')
+      message.error(formatFirebaseError(error)) // 👈 Use user-friendly errors
     } finally {
       setGoogleLoading(false)
     }
@@ -344,22 +369,22 @@ export const LoginPage: React.FC = () => {
 
       <style>
         {`
-                      @keyframes fadeIn {
-                        from { opacity: 0; }
-                        to { opacity: 1; }
-                      }
+                          @keyframes fadeIn {
+                            from { opacity: 0; }
+                            to { opacity: 1; }
+                          }
 
-                      @keyframes fadeInUp {
-                        from {
-                          opacity: 0;
-                          transform: translateY(20px);
-                        }
-                        to {
-                          opacity: 1;
-                          transform: translateY(0);
-                        }
-                      }
-                    `}
+                          @keyframes fadeInUp {
+                            from {
+                              opacity: 0;
+                              transform: translateY(20px);
+                            }
+                            to {
+                              opacity: 1;
+                              transform: translateY(0);
+                            }
+                          }
+                        `}
       </style>
     </Spin>
   )

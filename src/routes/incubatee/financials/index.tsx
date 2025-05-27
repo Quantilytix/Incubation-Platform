@@ -284,7 +284,7 @@ const FinancialReportsInterface = () => {
     <Spin spinning={uploading || generating} tip='Processing...'>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: 32 }}>
         <Helmet>
-          <title>QTX | Financial Statement Portal</title>
+          <title>Financial Statement Portal</title>
         </Helmet>
 
         <Title level={2} style={{ textAlign: 'center', color: '#004aad' }}>

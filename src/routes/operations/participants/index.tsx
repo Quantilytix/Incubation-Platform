@@ -24,6 +24,7 @@ import { db } from '@/firebase'
 import { Helmet } from 'react-helmet'
 import { addDoc, collection, doc, getDocs, updateDoc } from 'firebase/firestore' // addDoc to create
 import { useNavigate } from 'react-router-dom'
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 
 const { Option } = Select
 
@@ -47,6 +48,9 @@ const OperationsParticipantsManagement: React.FC = () => {
   const [filteredParticipants, setFilteredParticipants] = useState<any[]>([])
   const [searchText, setSearchText] = useState('')
   const [selectedProgram, setSelectedProgram] = useState('all')
+  const { user } = useFullIdentity()
+  const [departments, setDepartments] = useState<any[]>([])
+  const [userDepartment, setUserDepartment] = useState<any>(null)
 
   const applyFilters = () => {
     let filtered = participants
@@ -69,39 +73,83 @@ const OperationsParticipantsManagement: React.FC = () => {
   }
 
   useEffect(() => {
+    const fetchPrograms = async () => {
+      const snapshot = await getDocs(collection(db, 'programs'))
+      const list = snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().programName || doc.data().name || doc.id
+      }))
+      setPrograms(list)
+    }
+    fetchPrograms()
+  }, [])
+
+  useEffect(() => {
+    setMetrics({
+      totalParticipants: participants.length,
+      totalRequiredInterventions: participants.reduce(
+        (a, p) => a + (p.interventions?.required?.length || 0),
+        0
+      ),
+      totalCompletedInterventions: participants.reduce(
+        (a, p) => a + (p.interventions?.completed?.length || 0),
+        0
+      ),
+      totalNeedingAssignment: participants.filter(
+        p => (p.interventions?.assigned?.length || 0) === 0
+      ).length
+    })
+  }, [participants])
+
+  // 1. Fetch departments and set userDepartment after user loads
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      if (user?.companyCode) {
+        const snapshot = await getDocs(collection(db, 'departments'))
+        const all = snapshot.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        }))
+        setDepartments(all)
+        // Always set a department object, even for main
+        if (user.departmentId) {
+          setUserDepartment(
+            all.find(dep => dep.id === user.departmentId) || null
+          )
+        } else {
+          // If user is 'main', find main department for this company
+          setUserDepartment(all.find(dep => dep.isMain) || null)
+        }
+      }
+    }
+    fetchDepartments()
+  }, [user])
+
+  // 2. Only fetch participants when userDepartment is known
+  useEffect(() => {
+    if (!userDepartment) return
     const fetchParticipants = async () => {
       setLoading(true)
       try {
         const applicationSnap = await getDocs(collection(db, 'applications'))
         const participantSnap = await getDocs(collection(db, 'participants'))
-
-        // Build participant map by doc.id
         const participantMap = new Map(
           participantSnap.docs.map(doc => [doc.id, doc.data()])
         )
-
-        // Now map over applications, not participants
+        // Map over applications (not participants) - programId is on app
         const participantsList = applicationSnap.docs.map(doc => {
           const app = doc.data()
           const participantId = app.participantId
           const participant = participantMap.get(participantId) || {}
-
           const interventions = app.interventions || {}
           const required = interventions.required || []
           const completed = interventions.completed || []
           const assigned = interventions.assigned || []
-
-          console.log(`[${participant.beneficiaryName || 'UNKNOWN'}]`, {
-            required,
-            completed,
-            assigned
-          })
-
           const progress = calculateProgress(required.length, completed.length)
-
           return {
-            id: participantId, // Use participantId as row key
+            id: participantId,
             ...participant,
+            programId: app.programId || '', // <--- Ensure this is set!
             interventions: {
               required,
               completed,
@@ -115,44 +163,26 @@ const OperationsParticipantsManagement: React.FC = () => {
             status: app.status || participant.status || 'inactive'
           }
         })
-
-        // Update state
-        setParticipants(participantsList)
-        setMetrics({
-          totalParticipants: participantsList.length,
-          totalRequiredInterventions: participantsList.reduce(
-            (a, p) => a + p.interventions.required.length,
-            0
-          ),
-          totalCompletedInterventions: participantsList.reduce(
-            (a, p) => a + p.interventions.completed.length,
-            0
-          ),
-          totalNeedingAssignment: participantsList.filter(
-            p => p.interventions.assigned.length === 0
-          ).length
-        })
+        // Department filtering
+        let filteredParticipantsList = participantsList
+        if (userDepartment && !userDepartment.isMain) {
+          filteredParticipantsList = participantsList.filter(p =>
+            (p.interventions?.required || []).some(
+              i => i.departmentId === userDepartment.id
+            )
+          )
+        }
+        setParticipants(filteredParticipantsList)
       } catch (error) {
         console.error('Error fetching participants:', error)
       } finally {
         setLoading(false)
       }
     }
-
-    const fetchPrograms = async () => {
-      const snapshot = await getDocs(collection(db, 'programs'))
-      const list = snapshot.docs.map(doc => ({
-        id: doc.id,
-        name: doc.data().programName || doc.data().name || doc.id
-      }))
-      setPrograms(list)
-    }
-
     fetchParticipants()
-    fetchPrograms()
-    applyFilters()
-  }, [])
+  }, [userDepartment])
 
+  // Now run applyFilters ONLY when relevant values change:
   useEffect(() => {
     applyFilters()
   }, [participants, selectedProgram, searchText])
@@ -270,7 +300,7 @@ const OperationsParticipantsManagement: React.FC = () => {
         const required = record.interventions?.required?.length ?? 0
         const completed = record.interventions?.completed?.length ?? 0
         const progress = calculateProgress(required, completed)
-        const status = record.status?.toLowerCase()
+        const status = record.status ? record.status.toLowerCase() : 'inactive'
 
         let color = 'default'
         if (status === 'active') color = 'green'
@@ -299,7 +329,7 @@ const OperationsParticipantsManagement: React.FC = () => {
   ]
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: 24, minHeight: '100vh' }}>
       <Helmet>
         <title>Participant Management | Incubation Platform</title>
       </Helmet>
@@ -356,7 +386,6 @@ const OperationsParticipantsManagement: React.FC = () => {
             value={selectedProgram}
             onChange={val => {
               setSelectedProgram(val)
-              applyFilters()
             }}
           >
             <Option value='all'>All Programs</Option>
@@ -374,7 +403,6 @@ const OperationsParticipantsManagement: React.FC = () => {
             value={searchText}
             onChange={e => {
               setSearchText(e.target.value)
-              applyFilters()
             }}
             allowClear
           />

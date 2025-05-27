@@ -90,6 +90,9 @@ export const OperationsDashboard: React.FC = () => {
   const [directCosts, setDirectCosts] = useState([
     { description: '', amount: '' }
   ])
+  const [departments, setDepartments] = useState<any[]>([])
+  const [userDepartment, setUserDepartment] = useState<any>(null)
+
   const [selectedRole, setSelectedRole] = useState<string | null>(null)
   const [consultants, setConsultants] = useState<any[]>([])
   const [projectAdmins, setProjectAdmins] = useState<any[]>([])
@@ -145,6 +148,28 @@ export const OperationsDashboard: React.FC = () => {
 
     fetchRelevantUsers()
   }, [user?.companyCode])
+  useEffect(() => {
+    if (user?.companyCode) {
+      // Fetch all departments for dropdown
+      const fetchDepartments = async () => {
+        const snapshot = await getDocs(
+          query(
+            collection(db, 'departments'),
+            where('companyCode', '==', user.companyCode)
+          )
+        )
+        const deps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        setDepartments(deps)
+        // Set current user's department
+        if (user.departmentId) {
+          setUserDepartment(deps.find(d => d.id === user.departmentId) || null)
+        } else {
+          setUserDepartment(deps.find(d => d.isMain) || null)
+        }
+      }
+      fetchDepartments()
+    }
+  }, [user])
 
   const openInterventionDetails = async (interventionId: string) => {
     try {
@@ -366,13 +391,34 @@ export const OperationsDashboard: React.FC = () => {
   }
 
   const handleAddEvent = async (values: any) => {
+    const eventDate = values.date.format('YYYY-MM-DD')
+    const eventTime = values.time.format('HH:mm')
+    const [eventHour, eventMinute] = eventTime.split(':').map(Number)
+
+    // Enforce 6am to 6pm only
+    if (
+      eventHour < 6 ||
+      (eventHour === 18 && eventMinute > 0) ||
+      eventHour > 18
+    ) {
+      return message.error('Event time must be between 06:00 and 18:00.')
+    }
+
+    // Check for clash (same date and time)
+    const clash = events.some(
+      e => e.date === eventDate && dayjs(e.time).format('HH:mm') === eventTime
+    )
+    if (clash) {
+      return message.error('Another event is already scheduled for this time.')
+    }
+
     try {
       const newId = `event-${Date.now()}`
       const newEvent = {
         id: newId,
         title: values.title,
-        date: values.date.format('YYYY-MM-DD'), // ✅ format DatePicker value
-        time: values.time.toDate?.() || new Date(values.time),
+        date: eventDate,
+        time: values.time.toDate ? values.time.toDate() : values.time,
         type: values.type,
         createdAt: Timestamp.now()
       }
@@ -386,6 +432,7 @@ export const OperationsDashboard: React.FC = () => {
       message.error('Failed to add event')
     }
   }
+
   const handleAddTask = async (values: any) => {
     const assignedEmail = values.assignedTo
     const isOps = values.assignedRole === 'operations'
@@ -408,7 +455,9 @@ export const OperationsDashboard: React.FC = () => {
       assignedRole: values.assignedRole,
       assignedTo: assignedId,
       createdAt: Timestamp.now(),
-      status: 'To Do'
+      status: 'To Do',
+      // add department
+      department: values.department || userDepartment?.id || null
     }
 
     await setDoc(doc(db, 'tasks', `task-${Date.now()}`), newTask)
@@ -770,6 +819,27 @@ export const OperationsDashboard: React.FC = () => {
                       task.dueDate.toDate ? task.dueDate.toDate() : task.dueDate
                     ).format('YYYY-MM-DD')}`}
                   />
+                  {userDepartment?.isMain && (
+                    <Form.Item
+                      name='department'
+                      label='Department'
+                      rules={[
+                        {
+                          required: true,
+                          message: 'Please select a department'
+                        }
+                      ]}
+                    >
+                      <Select placeholder='Select department'>
+                        {departments.map(dep => (
+                          <Select.Option key={dep.id} value={dep.id}>
+                            {dep.name || dep.id}
+                          </Select.Option>
+                        ))}
+                      </Select>
+                    </Form.Item>
+                  )}
+
                   <Badge
                     status={getStatusColor(task.status) as any}
                     text={task.status}
