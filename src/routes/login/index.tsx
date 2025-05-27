@@ -6,7 +6,6 @@ import {
 import { Button, Form, Input, Typography, message, Spin } from 'antd'
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ThemedTitleV2 } from '@refinedev/antd'
 import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
@@ -18,15 +17,14 @@ import {
   getDoc,
   getDocs,
   query,
-  setDoc,
   where
 } from 'firebase/firestore'
 import { auth, db } from '@/firebase'
 import { Helmet } from 'react-helmet'
+import { motion } from 'framer-motion'
 
 const { Title } = Typography
 
-// 1. Add this error formatter
 function formatFirebaseError (error) {
   if (!error || !error.code)
     return error?.message || 'An unexpected error occurred.'
@@ -57,35 +55,36 @@ function formatFirebaseError (error) {
 export const LoginPage: React.FC = () => {
   const [form] = Form.useForm()
   const navigate = useNavigate()
-  const [loading, setLoading] = React.useState(false)
-  const [googleLoading, setGoogleLoading] = React.useState(false)
-  const [redirecting, setRedirecting] = React.useState(false)
-  const [companyCode, setCompanyCode] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
+  const [redirecting, setRedirecting] = useState(false)
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const user = auth.currentUser
-        if (!user) return
-
-        const userRef = doc(db, 'users', user.uid)
-        const userSnap = await getDoc(userRef)
-        const userData = userSnap.data()
-        const code = userData?.companyCode || ''
-        setCompanyCode(code)
-      } catch (err) {
-        console.error(err)
-        message.error('Failed to load application data')
-      } finally {
-        setLoading(false)
-      }
+  // Framer Motion Variants
+  const blobVariants = {
+    initial: { opacity: 0, scale: 0.95, y: 20 },
+    animate: {
+      opacity: 0.7,
+      scale: 1,
+      y: 0,
+      transition: { duration: 1.2, ease: 'easeOut' }
     }
-
-    fetchData()
-  }, [navigate])
-
-  const normalizeRole = (role: string): string => {
-    return role.toLowerCase().replace(/\s+/g, '')
+  }
+  const cardVariants = {
+    initial: { opacity: 0, scale: 0.94, y: 30 },
+    animate: {
+      opacity: 1,
+      scale: 1,
+      y: 0,
+      transition: { duration: 0.7, ease: 'easeOut' }
+    }
+  }
+  const logoVariants = {
+    initial: { opacity: 0, scale: 0.7 },
+    animate: {
+      opacity: 1,
+      scale: 1,
+      transition: { duration: 1.2, delay: 0.5, ease: 'easeOut' }
+    }
   }
 
   const supportedRoles = [
@@ -105,22 +104,20 @@ export const LoginPage: React.FC = () => {
     const userSnap = await getDoc(userRef)
 
     if (!userSnap.exists()) {
-      // Don't auto-create! The user must be pre-registered
       return {
         error: true,
         message: '🚫 User not found in the system. Please contact the admin.'
       }
     }
-
     const data = userSnap.data()
-
+    const normalizeRole = role => role?.toLowerCase()?.replace(/\s+/g, '') || ''
     return {
-      role: normalizeRole(data.role || ''),
+      role: normalizeRole(data.role),
       firstLoginComplete: !!data.firstLoginComplete
     }
   }
 
-  const handleLogin = async (values: any) => {
+  const handleLogin = async values => {
     try {
       setLoading(true)
       const userCred = await signInWithEmailAndPassword(
@@ -145,20 +142,17 @@ export const LoginPage: React.FC = () => {
             where('email', '==', user.email)
           )
         )
-
         const apps = appsSnap.docs.map(doc => doc.data())
 
         if (apps.length === 0) {
-          navigate('/incubatee/sme') // No applications yet
+          navigate('/incubatee/sme')
           return
         }
-
         const pending = apps.find(
           app =>
             app.applicationStatus?.toLowerCase?.() === 'pending' ||
             !app.applicationStatus
         )
-
         const accepted = apps.find(
           app => app.applicationStatus?.toLowerCase?.() === 'accepted'
         )
@@ -167,26 +161,21 @@ export const LoginPage: React.FC = () => {
           navigate('/incubatee/tracker')
           return
         }
-
         if (accepted) {
           navigate(`/${role}`)
           return
         }
-
-        // Optional fallback
         navigate('/incubatee/sme')
         return
       }
-
-      // Role-based default redirect
       if (role === 'director' && !firstLoginComplete) {
         navigate('/director/onboarding')
       } else {
         navigate(`/${role}`)
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error(error)
-      message.error(formatFirebaseError(error)) // 👈 Use user-friendly errors
+      message.error(formatFirebaseError(error))
     } finally {
       setLoading(false)
     }
@@ -195,25 +184,21 @@ export const LoginPage: React.FC = () => {
   const handleGoogleLogin = async () => {
     try {
       setGoogleLoading(true)
-
       const provider = new GoogleAuthProvider()
       const result = await signInWithPopup(auth, provider)
       const user = result.user
 
       const userData = await checkUser(user)
-
       if (userData.error) {
         message.error(userData.message)
         return
       }
 
       const { role, firstLoginComplete } = userData
-
       if (!supportedRoles.includes(role)) {
         message.error(`🚫 The role "${role}" is not recognized.`)
         return
       }
-
       message.success('✅ Google login successful! Redirecting...', 1.5)
       setRedirecting(true)
 
@@ -222,9 +207,9 @@ export const LoginPage: React.FC = () => {
       } else {
         navigate(`/${role}`)
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Google login failed:', error)
-      message.error(formatFirebaseError(error)) // 👈 Use user-friendly errors
+      message.error(formatFirebaseError(error))
     } finally {
       setGoogleLoading(false)
     }
@@ -239,153 +224,266 @@ export const LoginPage: React.FC = () => {
           content='Log in to your Smart Incubation account to access tailored tools and resources for entrepreneurs, consultants, and administrators.'
         />
       </Helmet>
-
       <div
         style={{
           minHeight: '100vh',
+          width: '100vw',
+          background:
+            'linear-gradient(120deg, #aecbfa 0%, #7fa7fa 60%, #cfbcfa 100%)',
+          overflow: 'hidden',
+          position: 'relative',
           display: 'flex',
-          flexDirection: 'column',
           justifyContent: 'center',
-          alignItems: 'center',
-          padding: '24px',
-          backgroundImage: `url("/assets/images/wave-bg.gif")`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          animation: 'fadeIn 0.7s ease-in-out',
-          position: 'relative'
+          alignItems: 'center'
         }}
       >
-        <div style={{ marginBottom: 24, textAlign: 'center' }}>
-          <ThemedTitleV2
-            collapsed={false}
-            text={
-              <span
+        {/* BLOBS */}
+        <motion.svg
+          className='animated-blob blob-bottom-left'
+          viewBox='0 0 400 400'
+          style={{
+            position: 'absolute',
+            left: '-130px',
+            bottom: '-90px',
+            width: 320,
+            height: 310,
+            zIndex: 0,
+            pointerEvents: 'none'
+          }}
+          initial='initial'
+          animate='animate'
+          variants={blobVariants}
+        >
+          <defs>
+            <linearGradient id='blob1' x1='0' y1='0' x2='1' y2='1'>
+              <stop offset='0%' stopColor='#38bdf8' />
+              <stop offset='100%' stopColor='#818cf8' />
+            </linearGradient>
+          </defs>
+          <path
+            fill='url(#blob1)'
+            d='M326.9,309Q298,378,218.5,374.5Q139,371,81,312.5Q23,254,56.5,172Q90,90,180.5,63.5Q271,37,322.5,118.5Q374,200,326.9,309Z'
+          />
+        </motion.svg>
+        <motion.svg
+          className='animated-blob blob-top-right'
+          viewBox='0 0 400 400'
+          style={{
+            position: 'absolute',
+            right: '-110px',
+            top: '-70px',
+            width: 280,
+            height: 260,
+            zIndex: 0,
+            pointerEvents: 'none'
+          }}
+          initial='initial'
+          animate='animate'
+          variants={blobVariants}
+        >
+          <defs>
+            <linearGradient id='blob2' x1='0' y1='0' x2='1' y2='1'>
+              <stop offset='0%' stopColor='#fbc2eb' />
+              <stop offset='100%' stopColor='#a6c1ee' />
+            </linearGradient>
+          </defs>
+          <path
+            fill='url(#blob2)'
+            d='M343,294.5Q302,389,199.5,371Q97,353,71.5,226.5Q46,100,154,72.5Q262,45,315,122.5Q368,200,343,294.5Z'
+          />
+        </motion.svg>
+
+        {/* CARD */}
+        <motion.div
+          initial='initial'
+          animate='animate'
+          variants={cardVariants}
+          style={{
+            width: 700,
+            minWidth: 300,
+            minHeight: 310, // shorter height
+            display: 'flex',
+            borderRadius: 16,
+            background: '#fff',
+            boxShadow: '0 8px 44px #5ec3fa24, 0 1.5px 10px #91bfff08',
+            zIndex: 1
+          }}
+        >
+          {/* Left Panel */}
+          <div
+            style={{
+              flex: 1,
+              minWidth: 210,
+              background: 'linear-gradient(135deg, #24b6d7 60%, #18d19a 100%)',
+              borderTopLeftRadius: 16,
+              borderBottomLeftRadius: 16,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: '24px 14px'
+            }}
+          >
+            <div style={{ width: '100%', maxWidth: 220 }}>
+              <Title
+                level={4}
                 style={{
-                  color: 'white',
-                  fontSize: '32px',
-                  fontWeight: '700',
-                  letterSpacing: 1
+                  color: '#fff',
+                  marginBottom: 2,
+                  marginTop: 0,
+                  textAlign: 'center'
                 }}
               >
                 Smart Incubation
-              </span>
-            }
-          />
-        </div>
-
-        <div
-          style={{
-            maxWidth: 400,
-            width: '100%',
-            padding: '48px 32px',
-            borderRadius: 12,
-            boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
-            background: '#ffffffee',
-            animation: 'fadeInUp 0.6s ease-out',
-            backdropFilter: 'blur(5px)'
-          }}
-        >
-          <Form
-            layout='vertical'
-            form={form}
-            onFinish={handleLogin}
-            requiredMark={false}
-          >
-            <Title
-              level={4}
-              style={{ textAlign: 'center', marginTop: 16, color: '#1677ff' }}
-            >
-              Welcome back
-            </Title>
-
-            <Form.Item
-              name='email'
-              label='Email'
-              rules={[
-                { required: true, message: 'Please enter your email' },
-                { type: 'email', message: 'Enter a valid email' }
-              ]}
-            >
-              <Input placeholder='you@example.com' />
-            </Form.Item>
-
-            <Form.Item
-              name='password'
-              label='Password'
-              rules={[
-                { required: true, message: 'Please enter your password' }
-              ]}
-            >
-              <Input.Password
-                placeholder='Enter your password'
-                iconRender={visible =>
-                  visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
-                }
-              />
-            </Form.Item>
-
-            <Form.Item>
-              <Button type='primary' htmlType='submit' block loading={loading}>
-                Log In
-              </Button>
-            </Form.Item>
-
-            <Form.Item>
-              <Button
-                icon={<GoogleOutlined />}
-                onClick={handleGoogleLogin}
-                style={{ width: '100%' }}
-                loading={googleLoading}
+              </Title>
+              <div
+                style={{
+                  fontSize: 14,
+                  opacity: 0.95,
+                  marginBottom: 18,
+                  color: '#fff'
+                }}
               >
-                Login with Google
+                To gain access, kindly create an account below.
+              </div>
+              <Button
+                size='middle'
+                shape='round'
+                style={{
+                  background: 'transparent',
+                  color: '#fff',
+                  border: '1.8px solid #fff',
+                  fontWeight: 600,
+                  width: '100%',
+                  fontSize: 14,
+                  marginTop: 2
+                }}
+                onClick={() => navigate('/registration')}
+              >
+                SIGN UP
               </Button>
-            </Form.Item>
-          </Form>
-
-          <div style={{ marginTop: 24, textAlign: 'center' }}>
-            Don’t have an account?{' '}
-            <a
-              onClick={() => navigate('/registration')}
-              style={{ fontWeight: 500 }}
-            >
-              Register
-            </a>
+            </div>
           </div>
-        </div>
 
-        <img
+          {/* Right Panel: Form */}
+          <div
+            style={{
+              flex: 1.2,
+              minWidth: 260,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: '40px 32px'
+            }}
+          >
+            <div style={{ width: '100%', maxWidth: 290 }}>
+              <Title
+                level={4}
+                style={{
+                  color: '#16b8e0',
+                  textAlign: 'center',
+                  fontWeight: 700,
+                  margin: 0
+                }}
+              >
+                Login to your account
+              </Title>
+
+              <Form
+                layout='vertical'
+                form={form}
+                onFinish={handleLogin}
+                requiredMark={false}
+                style={{ marginTop: 15 }}
+              >
+                <Form.Item
+                  name='email'
+                  label='Email'
+                  rules={[
+                    { required: true, message: 'Please enter your email' },
+                    { type: 'email', message: 'Enter a valid email' }
+                  ]}
+                  style={{ marginBottom: 10 }}
+                >
+                  <Input placeholder='you@example.com' />
+                </Form.Item>
+                <Form.Item
+                  name='password'
+                  label='Password'
+                  rules={[
+                    { required: true, message: 'Please enter your password' }
+                  ]}
+                  style={{ marginBottom: 10 }}
+                >
+                  <Input.Password
+                    placeholder='Enter your password'
+                    iconRender={visible =>
+                      visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
+                    }
+                  />
+                </Form.Item>
+                <Form.Item style={{ marginBottom: 7 }}>
+                  <Button
+                    type='primary'
+                    htmlType='submit'
+                    block
+                    loading={loading}
+                  >
+                    LOGIN
+                  </Button>
+                </Form.Item>
+                <div
+                  style={{
+                    color: '#000',
+                    textAlign: 'center',
+                    fontSize: 13,
+                    marginBottom: 5
+                  }}
+                >
+                  or use your Google Account for access:
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    margin: '13px 0 2px'
+                  }}
+                >
+                  <Button
+                    icon={<GoogleOutlined style={{ color: '#ea4335' }} />}
+                    shape='circle'
+                    style={{
+                      margin: '0 8px',
+                      border: '1px solid #eee',
+                      background: '#fff'
+                    }}
+                    onClick={handleGoogleLogin}
+                    loading={googleLoading}
+                  />
+                </div>
+              </Form>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Bottom-right logo */}
+        <motion.img
+          initial='initial'
+          animate='animate'
+          variants={logoVariants}
           src='/assets/images/QuantilytixO.png'
           alt='Quantilytix Logo'
           style={{
-            position: 'absolute',
-            bottom: 24,
-            right: 15,
-            height: 50,
-            opacity: 0.9
+            position: 'fixed',
+            bottom: 22,
+            right: 20,
+            height: 46,
+            width: 110,
+            zIndex: 99
           }}
         />
       </div>
-
-      <style>
-        {`
-                          @keyframes fadeIn {
-                            from { opacity: 0; }
-                            to { opacity: 1; }
-                          }
-
-                          @keyframes fadeInUp {
-                            from {
-                              opacity: 0;
-                              transform: translateY(20px);
-                            }
-                            to {
-                              opacity: 1;
-                              transform: translateY(0);
-                            }
-                          }
-                        `}
-      </style>
     </Spin>
   )
 }

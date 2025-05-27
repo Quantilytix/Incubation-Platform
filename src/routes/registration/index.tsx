@@ -11,11 +11,10 @@ import {
   Typography,
   message,
   Spin,
-  Modal
+  Card
 } from 'antd'
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ThemedTitleV2 } from '@refinedev/antd'
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -26,11 +25,9 @@ import { doc, setDoc } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import '../landing/LandingPage.css' // for .page-bg and blob styles
 
 const { Title } = Typography
 
-// 1. Firebase error translation
 function formatFirebaseError (error) {
   if (!error || !error.code)
     return error?.message || 'An unexpected error occurred.'
@@ -44,7 +41,6 @@ function formatFirebaseError (error) {
     case 'auth/network-request-failed':
       return 'Network error. Please check your internet connection.'
     default:
-      // Strip the 'auth/' prefix and show a human-friendly fallback
       if (typeof error.code === 'string') {
         return error.code
           .replace('auth/', '')
@@ -65,8 +61,6 @@ export const RegisterPage: React.FC = () => {
   const code = searchParams.get('code') || ''
   const roleFromParams = searchParams.get('role') || ''
   const [selectedRole, setSelectedRole] = React.useState(roleFromParams)
-  const [showCompanyModal, setShowCompanyModal] = React.useState(false)
-  const [pendingCompany, setPendingCompany] = React.useState<any>(null)
 
   React.useEffect(() => {
     document.title = 'Register • Incubation Platform'
@@ -80,11 +74,9 @@ export const RegisterPage: React.FC = () => {
     { label: 'Funder', value: 'funder' }
   ]
 
-  // Standard registration (email/password)
   const handleRegister = async (values: any) => {
     try {
       setLoading(true)
-      // Confirm password check (should never fail because of form validation)
       if (values.password !== values.confirmPassword) {
         message.error('Passwords do not match.')
         return
@@ -102,7 +94,6 @@ export const RegisterPage: React.FC = () => {
           ? 'director'
           : selectedRole
 
-      // 👇 Set firstLoginComplete: false for directors
       const userDoc: any = {
         uid: user.uid,
         email: user.email,
@@ -125,14 +116,13 @@ export const RegisterPage: React.FC = () => {
         }
       }, 2000)
     } catch (error: any) {
-      message.error(formatFirebaseError(error)) // 👈 Use friendly error
+      message.error(formatFirebaseError(error))
     } finally {
       setLoading(false)
     }
   }
 
-  // Google Auth handler
-  const handleGoogleRegister = async (companyInfo?: any) => {
+  const handleGoogleRegister = async () => {
     try {
       setGoogleLoading(true)
       const provider = new GoogleAuthProvider()
@@ -154,10 +144,6 @@ export const RegisterPage: React.FC = () => {
         companyCode: code || '',
         ...(assignedRole === 'director' ? { firstLoginComplete: false } : {})
       }
-      if (assignedRole === 'director' && companyInfo) {
-        userDoc.companyName = companyInfo.companyName
-        userDoc.companyCode = companyInfo.companyCode
-      }
       await setDoc(doc(db, 'users', user.uid), userDoc, { merge: true })
       message.success('✅ Google sign-up successful! Redirecting...', 2)
       setRedirecting(true)
@@ -171,46 +157,23 @@ export const RegisterPage: React.FC = () => {
         }
       }, 2000)
     } catch (error: any) {
-      message.error(formatFirebaseError(error)) // 👈 Use friendly error
+      message.error(formatFirebaseError(error))
     } finally {
       setGoogleLoading(false)
     }
   }
 
-  // When Google button is clicked:
-  const handleGoogleButtonClick = () => {
-    if (selectedRole === 'incubate') {
-      setShowCompanyModal(true)
-    } else {
-      handleGoogleRegister()
-    }
-  }
-
-  // Handle company modal submission
-  const handleCompanyModalFinish = (values: any) => {
-    setShowCompanyModal(false)
-    setPendingCompany(values)
-    setTimeout(() => {
-      handleGoogleRegister(values)
-    }, 200)
-  }
-
-  // Handle modal close
-  const handleModalClose = () => {
-    setShowCompanyModal(false)
-    setPendingCompany(null)
-  }
-
-  // Framer Motion Variants
+  // Card animation (short)
   const cardVariants = {
-    initial: { opacity: 0, y: 50, scale: 0.98 },
+    initial: { opacity: 0, scale: 0.94, y: 30 },
     animate: {
       opacity: 1,
-      y: 0,
       scale: 1,
-      transition: { duration: 0.8, ease: 'easeOut' }
+      y: 0,
+      transition: { duration: 0.7, ease: 'easeOut' }
     }
   }
+
   const logoVariants = {
     initial: { opacity: 0, scale: 0.7 },
     animate: {
@@ -220,244 +183,338 @@ export const RegisterPage: React.FC = () => {
     }
   }
 
+  // -- BLOB VARIANTS (blobs behind the card) --
+  const blobVariants = {
+    initial: { opacity: 0, scale: 0.95, y: 20 },
+    animate: {
+      opacity: 0.7,
+      scale: 1,
+      y: 0,
+      transition: { duration: 1.2, ease: 'easeOut' }
+    }
+  }
+
   return (
     <Spin spinning={loading || googleLoading || redirecting} size='large'>
       <div
         style={{
           minHeight: '100vh',
-          position: 'relative',
-          overflow: 'hidden',
+          width: '100vw',
           background:
-            'linear-gradient(120deg, #aecbfa 0%, #7fa7fa 60%, #cfbcfa 100%)'
+            'linear-gradient(120deg, #aecbfa 0%, #7fa7fa 60%, #cfbcfa 100%)',
+          overflow: 'hidden',
+          position: 'relative',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center'
         }}
       >
-        {/* ...blobs and logo as before... */}
-
-        <div
+        {/* BLOBS */}
+        <motion.svg
+          className='animated-blob blob-bottom-left'
+          viewBox='0 0 400 400'
           style={{
-            minHeight: '100vh',
+            position: 'absolute',
+            left: '-130px',
+            bottom: '-90px',
+            width: 320,
+            height: 310,
+            zIndex: 0,
+            pointerEvents: 'none'
+          }}
+          initial='initial'
+          animate='animate'
+          variants={blobVariants}
+        >
+          <defs>
+            <linearGradient id='blob1' x1='0' y1='0' x2='1' y2='1'>
+              <stop offset='0%' stopColor='#38bdf8' />
+              <stop offset='100%' stopColor='#818cf8' />
+            </linearGradient>
+          </defs>
+          <path
+            fill='url(#blob1)'
+            d='M326.9,309Q298,378,218.5,374.5Q139,371,81,312.5Q23,254,56.5,172Q90,90,180.5,63.5Q271,37,322.5,118.5Q374,200,326.9,309Z'
+          />
+        </motion.svg>
+        <motion.svg
+          className='animated-blob blob-top-right'
+          viewBox='0 0 400 400'
+          style={{
+            position: 'absolute',
+            right: '-110px',
+            top: '-70px',
+            width: 280,
+            height: 260,
+            zIndex: 0,
+            pointerEvents: 'none'
+          }}
+          initial='initial'
+          animate='animate'
+          variants={blobVariants}
+        >
+          <defs>
+            <linearGradient id='blob2' x1='0' y1='0' x2='1' y2='1'>
+              <stop offset='0%' stopColor='#fbc2eb' />
+              <stop offset='100%' stopColor='#a6c1ee' />
+            </linearGradient>
+          </defs>
+          <path
+            fill='url(#blob2)'
+            d='M343,294.5Q302,389,199.5,371Q97,353,71.5,226.5Q46,100,154,72.5Q262,45,315,122.5Q368,200,343,294.5Z'
+          />
+        </motion.svg>
+
+        {/* CARD */}
+        <motion.div
+          initial='initial'
+          animate='animate'
+          variants={cardVariants}
+          style={{
+            width: 720,
+            minWidth: 300,
+            minHeight: 310, // shorter
             display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            padding: '24px',
-            position: 'relative',
+            borderRadius: 16,
+            background: '#fff',
+            boxShadow: '0 8px 44px #5ec3fa24, 0 1.5px 10px #91bfff08',
             zIndex: 1
           }}
         >
-          {/* Logo + Title */}
-          <div style={{ marginBottom: 24, textAlign: 'center' }}>
-            <ThemedTitleV2
-              collapsed={false}
-              text={
-                <span
-                  style={{
-                    color: 'white',
-                    fontSize: '32px',
-                    fontWeight: '700',
-                    letterSpacing: 1
-                  }}
-                >
-                  Smart Incubation
-                </span>
-              }
-            />
-          </div>
-
-          {/* Card (Animated) */}
-          <motion.div
-            initial='initial'
-            animate='animate'
-            variants={cardVariants}
+          {/* Left Panel */}
+          <div
             style={{
-              maxWidth: 500,
-              width: '100%',
-              padding: '48px 32px',
-              borderRadius: 12,
-              boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
-              background: '#ffffffee',
-              backdropFilter: 'blur(5px)',
-              position: 'relative',
-              zIndex: 1
+              flex: 1,
+              minWidth: 230,
+              background: 'linear-gradient(135deg, #24b6d7 60%, #18d19a 100%)',
+              borderTopLeftRadius: 16,
+              borderBottomLeftRadius: 16,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: '28px 18px'
             }}
           >
-            <Form
-              layout='vertical'
-              form={form}
-              onFinish={handleRegister}
-              requiredMark={false}
-              initialValues={{ role: roleFromParams || undefined }}
-            >
+            <div style={{ width: '100%', maxWidth: 230 }}>
               <Title
                 level={4}
-                style={{ textAlign: 'center', color: '#1677ff' }}
+                style={{
+                  color: '#fff',
+                  marginBottom: 2,
+                  marginTop: 0,
+                  textAlign: 'center'
+                }}
               >
-                {selectedRole === 'sme'
-                  ? 'Register as a SME'
-                  : selectedRole === 'incubate'
-                  ? 'Register as an Incubate Implementor'
-                  : selectedRole === 'investor'
-                  ? 'Register as a Program Investor'
-                  : selectedRole === 'government'
-                  ? 'Register as a Public Sector'
-                  : selectedRole === 'funder'
-                  ? 'Register as a Capital Partner'
-                  : 'Create your account'}
+                Smart Incubation
+              </Title>
+              <div
+                style={{
+                  fontSize: 14,
+                  opacity: 0.95,
+                  marginBottom: 18,
+                  color: '#fff'
+                }}
+              >
+                To keep connected, please login with your personal info.
+              </div>
+              <Button
+                size='middle'
+                shape='round'
+                style={{
+                  background: 'transparent',
+                  color: '#fff',
+                  border: '1.8px solid #fff',
+                  fontWeight: 600,
+                  width: '100%',
+                  fontSize: 14,
+                  marginTop: 2
+                }}
+                onClick={() => navigate('/login')}
+              >
+                SIGN IN
+              </Button>
+            </div>
+          </div>
+
+          {/* Right Panel: Form */}
+          <div
+            style={{
+              flex: 1.2,
+              minWidth: 260,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: '28px 20px'
+            }}
+          >
+            <div style={{ width: '100%', maxWidth: 290 }}>
+              <Title
+                level={4}
+                style={{
+                  color: '#16b8e0',
+                  textAlign: 'center',
+                  fontWeight: 700,
+                  margin: 0
+                }}
+              >
+                Create Account
               </Title>
 
-              {!roleFromParams && (
+              <Form
+                layout='vertical'
+                form={form}
+                onFinish={handleRegister}
+                requiredMark={false}
+                initialValues={{ role: roleFromParams || undefined }}
+                style={{ margin: 0 }}
+              >
+                {!roleFromParams && (
+                  <Form.Item
+                    name='role'
+                    label='Select Role'
+                    rules={[
+                      { required: true, message: 'Please select your role' }
+                    ]}
+                  >
+                    <Select
+                      placeholder='Choose your role'
+                      options={roleOptions}
+                      onChange={val => setSelectedRole(val)}
+                    />
+                  </Form.Item>
+                )}
                 <Form.Item
-                  name='role'
-                  label='Select Role'
+                  name='name'
+                  label='Name'
                   rules={[
-                    { required: true, message: 'Please select your role' }
+                    { required: true, message: 'Please enter your full name' }
                   ]}
+                  style={{ marginBottom: 10 }}
                 >
-                  <Select
-                    placeholder='Choose your role'
-                    options={roleOptions}
-                    onChange={val => setSelectedRole(val)}
+                  <Input placeholder='Daniel Rumona' />
+                </Form.Item>
+                <Form.Item
+                  name='email'
+                  label='Email'
+                  rules={[
+                    { required: true, message: 'Please enter your email' },
+                    { type: 'email', message: 'Enter a valid email' }
+                  ]}
+                  style={{ marginBottom: 10 }}
+                >
+                  <Input placeholder='you@example.com' />
+                </Form.Item>
+                <Form.Item
+                  name='password'
+                  label='Password'
+                  rules={[
+                    { required: true, message: 'Please enter your password' },
+                    {
+                      min: 6,
+                      message: 'Password must be at least 6 characters'
+                    }
+                  ]}
+                  hasFeedback
+                  style={{ marginBottom: 10 }}
+                >
+                  <Input.Password
+                    placeholder='Enter your password'
+                    iconRender={visible =>
+                      visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
+                    }
                   />
                 </Form.Item>
-              )}
-
-              <Form.Item
-                name='name'
-                label='Name'
-                rules={[
-                  { required: true, message: 'Please enter your full name' }
-                ]}
-              >
-                <Input placeholder='Daniel Rumona' />
-              </Form.Item>
-
-              <Form.Item
-                name='email'
-                label='Email'
-                rules={[
-                  { required: true, message: 'Please enter your email' },
-                  { type: 'email', message: 'Enter a valid email' }
-                ]}
-              >
-                <Input placeholder='you@example.com' />
-              </Form.Item>
-
-              <Form.Item
-                name='password'
-                label='Password'
-                rules={[
-                  { required: true, message: 'Please enter your password' },
-                  { min: 6, message: 'Password must be at least 6 characters' }
-                ]}
-                hasFeedback
-              >
-                <Input.Password
-                  placeholder='Enter your password'
-                  iconRender={visible =>
-                    visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
-                  }
-                />
-              </Form.Item>
-
-              <Form.Item
-                name='confirmPassword'
-                label='Confirm Password'
-                dependencies={['password']}
-                hasFeedback
-                rules={[
-                  { required: true, message: 'Please confirm your password' },
-                  // Custom validator for confirm
-                  ({ getFieldValue }) => ({
-                    validator (_, value) {
-                      if (!value || getFieldValue('password') === value) {
-                        return Promise.resolve()
+                <Form.Item
+                  name='confirmPassword'
+                  label='Confirm Password'
+                  dependencies={['password']}
+                  hasFeedback
+                  rules={[
+                    { required: true, message: 'Please confirm your password' },
+                    ({ getFieldValue }) => ({
+                      validator (_, value) {
+                        if (!value || getFieldValue('password') === value) {
+                          return Promise.resolve()
+                        }
+                        return Promise.reject(
+                          new Error('The two passwords do not match!')
+                        )
                       }
-                      return Promise.reject(
-                        new Error('The two passwords do not match!')
-                      )
+                    })
+                  ]}
+                  style={{ marginBottom: 12 }}
+                >
+                  <Input.Password
+                    placeholder='Confirm your password'
+                    iconRender={visible =>
+                      visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
                     }
-                  })
-                ]}
-              >
-                <Input.Password
-                  placeholder='Confirm your password'
-                  iconRender={visible =>
-                    visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
-                  }
-                />
-              </Form.Item>
-
-              <Form.Item>
-                <Button
-                  type='primary'
-                  htmlType='submit'
-                  block
-                  loading={loading}
+                  />
+                </Form.Item>
+                <Form.Item style={{ marginBottom: 7 }}>
+                  <Button
+                    type='primary'
+                    htmlType='submit'
+                    block
+                    loading={loading}
+                  >
+                    SIGN UP
+                  </Button>
+                </Form.Item>
+                <div
+                  style={{
+                    color: '#000',
+                    textAlign: 'center',
+                    fontSize: 13,
+                    marginBottom: 5
+                  }}
                 >
-                  Register
-                </Button>
-              </Form.Item>
-
-              <Form.Item>
-                <Button
-                  icon={<GoogleOutlined />}
-                  onClick={handleGoogleRegister}
-                  style={{ width: '100%' }}
-                  loading={googleLoading}
+                  or use your Google Account for registration:
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    margin: '13px 0 2px'
+                  }}
                 >
-                  Register with Google
-                </Button>
-              </Form.Item>
-            </Form>
-
-            <div style={{ marginTop: 24, textAlign: 'center' }}>
-              Already have an account?{' '}
-              <a onClick={() => navigate('/login')} style={{ fontWeight: 500 }}>
-                Login
-              </a>
+                  <Button
+                    icon={<GoogleOutlined style={{ color: '#ea4335' }} />}
+                    shape='circle'
+                    style={{
+                      margin: '0 8px',
+                      border: '1px solid #eee',
+                      background: '#fff',
+                      height: '32px'
+                    }}
+                    onClick={handleGoogleRegister}
+                    loading={googleLoading}
+                  />
+                </div>
+              </Form>
             </div>
-          </motion.div>
+          </div>
+        </motion.div>
 
-          {/* Quantilytix Floating Logo - animated */}
-          <motion.img
-            initial='initial'
-            animate='animate'
-            variants={logoVariants}
-            src='/assets/images/QuantilytixO.png'
-            alt='Quantilytix Logo'
-            style={{
-              position: 'fixed',
-              bottom: 24,
-              right: 20,
-              height: 48,
-              width: 120,
-              zIndex: 99
-            }}
-          />
-        </div>
+        {/* Bottom-right logo */}
+        <motion.img
+          initial='initial'
+          animate='animate'
+          variants={logoVariants}
+          src='/assets/images/QuantilytixO.png'
+          alt='Quantilytix Logo'
+          style={{
+            position: 'fixed',
+            bottom: 22,
+            right: 20,
+            height: 46,
+            width: 110,
+            zIndex: 99
+          }}
+        />
       </div>
-
-      <style>
-        {`
-                  @keyframes fadeIn {
-                    from { opacity: 0; }
-                    to { opacity: 1; }
-                  }
-                  @keyframes fadeInUp {
-                    from {
-                      opacity: 0;
-                      transform: translateY(20px);
-                    }
-                    to {
-                      opacity: 1;
-                      transform: translateY(0);
-                    }
-                  }
-                  .page-bg {
-                    background: linear-gradient(135deg, #f8fafc 70%, #c7d2fe 100%);
-                  }
-                `}
-      </style>
     </Spin>
   )
 }
