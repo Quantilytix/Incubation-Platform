@@ -883,9 +883,10 @@ const ProgramManager: React.FC = () => {
                         ? dayjs(record.endDate.toDate())
                         : null
                     })
-                    setEligibility(record.eligibilityCriteria || {})
+                    setEligibility(record.eligibilityCriteria || {}) // <-- key!
                     setQuestions(record.onboardingQuestions || [])
                     setEditModalVisible(true)
+                    setCurrentStep(0)
                   }}
                 />
 
@@ -912,7 +913,7 @@ const ProgramManager: React.FC = () => {
           open={modalVisible}
           title='Add New Program'
           onCancel={() => {
-            setEditModalVisible(false)
+            setModalVisible(false)
             setQuestions([])
             setEditingQuestion(null)
             setCurrentStep(0)
@@ -1068,6 +1069,7 @@ const ProgramManager: React.FC = () => {
         >
           <Steps current={currentStep} style={{ marginBottom: 24 }}>
             <Steps.Step title='Program Details' />
+            <Steps.Step title='Eligibility Criteria' />
             <Steps.Step title='Onboarding Questions' />
           </Steps>
           {currentStep === 0 && (
@@ -1154,6 +1156,14 @@ const ProgramManager: React.FC = () => {
             </Form>
           )}
           {currentStep === 1 && (
+            <EligibilityCriteriaStep
+              value={eligibility}
+              onChange={setEligibility}
+              onBack={() => setCurrentStep(0)}
+              onNext={() => setCurrentStep(2)}
+            />
+          )}
+          {currentStep === 2 && (
             <>
               <QuestionTable
                 questions={questions}

@@ -34,6 +34,37 @@ const { Title, Paragraph } = Typography
 const { Header, Content } = Layout
 const { TabPane } = Tabs
 
+const eligibilityLabels = {
+  minAge: label => `Minimum age: ${label}`,
+  maxAge: label => `Maximum age: ${label}`,
+  gender: label =>
+    `Allowed gender(s): ${Array.isArray(label) ? label.join(', ') : label}`,
+  sector: label =>
+    `Sector(s): ${Array.isArray(label) ? label.join(', ') : label}`,
+  province: label =>
+    `Province(s): ${Array.isArray(label) ? label.join(', ') : label}`,
+  beeLevel: label =>
+    `Allowed BEE Level(s): ${Array.isArray(label) ? label.join(', ') : label}`,
+  minYearsOfTrading: label => `Min years of trading: ${label}`,
+  youthOwnedPercent: label => `Min youth ownership: ${label}%`,
+  femaleOwnedPercent: label => `Min female ownership: ${label}%`,
+  blackOwnedPercent: label => `Min black ownership: ${label}%`,
+  custom: label => <span style={{ fontStyle: 'italic' }}>{label}</span>
+}
+
+function renderEligibilityCriteria (criteria) {
+  if (!criteria || Object.keys(criteria).length === 0) {
+    return <li>Open to all (no restrictions)</li>
+  }
+  return Object.entries(criteria).map(([key, value]) => (
+    <li key={key}>
+      {eligibilityLabels[key]
+        ? eligibilityLabels[key](value)
+        : `${key}: ${value}`}
+    </li>
+  ))
+}
+
 function checkEligibility (participant, criteria = {}) {
   if (!criteria || Object.keys(criteria).length === 0) return null // Open to all
 
@@ -404,37 +435,7 @@ const SMEDashboard = () => {
         <Paragraph>{activeProgram?.description}</Paragraph>
 
         <Divider orientation='left'>Eligibility Criteria</Divider>
-        <ul>
-          {activeProgram?.eligibilityCriteria &&
-            Object.entries(activeProgram.eligibilityCriteria).map(
-              ([key, value]) => (
-                <li key={key}>
-                  {key === 'minAge' && `Minimum age: ${value}`}
-                  {key === 'maxAge' && `Maximum age: ${value}`}
-                  {key === 'gender' && `Allowed gender(s): ${value.join(', ')}`}
-                  {key === 'sector' && `Sector(s): ${value.join(', ')}`}
-                  {key === 'province' && `Province(s): ${value.join(', ')}`}
-                  {key === 'beeLevel' &&
-                    `Allowed BEE Level(s): ${value.join(', ')}`}
-                  {key === 'minYearsOfTrading' &&
-                    `Min years of trading: ${value}`}
-                  {key === 'youthOwnedPercent' &&
-                    `Min youth ownership: ${value}%`}
-                  {key === 'femaleOwnedPercent' &&
-                    `Min female ownership: ${value}%`}
-                  {key === 'blackOwnedPercent' &&
-                    `Min black ownership: ${value}%`}
-                  {key === 'custom' && (
-                    <span style={{ fontStyle: 'italic' }}>{value}</span>
-                  )}
-                </li>
-              )
-            )}
-          {!activeProgram?.eligibilityCriteria ||
-          Object.keys(activeProgram.eligibilityCriteria).length === 0 ? (
-            <li>Open to all (no restrictions)</li>
-          ) : null}
-        </ul>
+        <ul>{renderEligibilityCriteria(activeProgram?.eligibilityCriteria)}</ul>
       </Modal>
     </>
   )

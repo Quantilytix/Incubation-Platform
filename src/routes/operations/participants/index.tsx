@@ -22,7 +22,7 @@ import {
 } from '@ant-design/icons'
 import { db } from '@/firebase'
 import { Helmet } from 'react-helmet'
-import { addDoc, collection, doc, getDocs, updateDoc } from 'firebase/firestore' // addDoc to create
+import { addDoc, collection, doc, getDocs, updateDoc } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 
@@ -53,6 +53,12 @@ const OperationsParticipantsManagement: React.FC = () => {
   const [userDepartment, setUserDepartment] = useState<any>(null)
 
   const applyFilters = () => {
+    // LOG: Filters being applied
+    console.log('[applyFilters] Running filters', {
+      selectedProgram,
+      searchText,
+      participantsCount: participants.length
+    })
     let filtered = participants
 
     if (selectedProgram !== 'all') {
@@ -70,22 +76,47 @@ const OperationsParticipantsManagement: React.FC = () => {
     }
 
     setFilteredParticipants(filtered)
+    // LOG: Filtered results count
+    console.log('[applyFilters] Filtered participants count:', filtered.length)
   }
 
   useEffect(() => {
     const fetchPrograms = async () => {
-      const snapshot = await getDocs(collection(db, 'programs'))
-      const list = snapshot.docs.map(doc => ({
-        id: doc.id,
-        name: doc.data().programName || doc.data().name || doc.id
-      }))
-      setPrograms(list)
+      try {
+        // LOG: Fetching programs...
+        console.log('[fetchPrograms] Fetching programs...')
+        const snapshot = await getDocs(collection(db, 'programs'))
+        const list = snapshot.docs.map(doc => ({
+          id: doc.id,
+          name: doc.data().programName || doc.data().name || doc.id
+        }))
+        setPrograms(list)
+        // LOG: Programs loaded
+        console.log('[fetchPrograms] Programs loaded:', list)
+      } catch (error) {
+        console.error('[fetchPrograms] Error loading programs:', error)
+      }
     }
     fetchPrograms()
   }, [])
 
   useEffect(() => {
+    // LOG: Calculating metrics...
     setMetrics({
+      totalParticipants: participants.length,
+      totalRequiredInterventions: participants.reduce(
+        (a, p) => a + (p.interventions?.required?.length || 0),
+        0
+      ),
+      totalCompletedInterventions: participants.reduce(
+        (a, p) => a + (p.interventions?.completed?.length || 0),
+        0
+      ),
+      totalNeedingAssignment: participants.filter(
+        p => (p.interventions?.assigned?.length || 0) === 0
+      ).length
+    })
+    console.log('[metrics] Updated:', {
       totalParticipants: participants.length,
       totalRequiredInterventions: participants.reduce(
         (a, p) => a + (p.interventions?.required?.length || 0),
@@ -105,12 +136,19 @@ const OperationsParticipantsManagement: React.FC = () => {
   useEffect(() => {
     const fetchDepartments = async () => {
       if (user?.companyCode) {
+        // LOG: Fetching departments
+        console.log(
+          '[fetchDepartments] Fetching departments for companyCode:',
+          user.companyCode
+        )
         const snapshot = await getDocs(collection(db, 'departments'))
         const all = snapshot.docs.map(d => ({
           id: d.id,
           ...d.data()
         }))
         setDepartments(all)
+        // LOG: Departments fetched
+        console.log('[fetchDepartments] Departments:', all)
         // Always set a department object, even for main
         if (user.departmentId) {
           setUserDepartment(
@@ -120,24 +158,45 @@ const OperationsParticipantsManagement: React.FC = () => {
           // If user is 'main', find main department for this company
           setUserDepartment(all.find(dep => dep.isMain) || null)
         }
+      } else {
+        // LOG: user.companyCode not found yet
+        console.log('[fetchDepartments] No companyCode yet...')
       }
     }
     fetchDepartments()
   }, [user])
 
-  // 2. Only fetch participants when userDepartment is known
   useEffect(() => {
-    if (!userDepartment) return
+    // LOG: User department changed or loaded
+    console.log('[useEffect-participants] userDepartment:', userDepartment)
+    if (userDepartment === undefined) return // Still loading
+    if (!user?.companyCode) {
+      console.warn('[fetchParticipants] No user/companyCode available')
+      setParticipants([])
+      setLoading(false)
+      return
+    }
+    setLoading(true)
     const fetchParticipants = async () => {
-      setLoading(true)
       try {
+        // LOG: Fetching participants and applications...
+        console.log('[fetchParticipants] Fetching applications...')
         const applicationSnap = await getDocs(collection(db, 'applications'))
+        console.log(
+          '[fetchParticipants] Applications loaded:',
+          applicationSnap.docs.length
+        )
         const participantSnap = await getDocs(collection(db, 'participants'))
+        console.log(
+          '[fetchParticipants] Participants loaded:',
+          participantSnap.docs.length
+        )
         const participantMap = new Map(
           participantSnap.docs.map(doc => [doc.id, doc.data()])
         )
+
         // Map over applications (not participants) - programId is on app
-        const participantsList = applicationSnap.docs.map(doc => {
+        let participantsList = applicationSnap.docs.map(doc => {
           const app = doc.data()
           const participantId = app.participantId
           const participant = participantMap.get(participantId) || {}
@@ -149,7 +208,9 @@ const OperationsParticipantsManagement: React.FC = () => {
           return {
             id: participantId,
             ...participant,
-            programId: app.programId || '', // <--- Ensure this is set!
+            programId: app.programId || '',
+            companyCode: app.companyCode || '', // <-- ADD THIS LINE!
+            incubatorCode: app.incubatorCode || '', // <-- (if you use it)
             interventions: {
               required,
               completed,
@@ -159,28 +220,51 @@ const OperationsParticipantsManagement: React.FC = () => {
             assignedCount: assigned.length,
             completedCount: completed.length,
             progress,
-            stage: app.stage || participant.stage || 'N/A',
-            status: app.status || participant.status || 'inactive'
+            stage: app.stage || participant.stage || 'N/A'
           }
         })
-        // Department filtering
-        let filteredParticipantsList = participantsList
+
+        // If userDepartment is set & NOT main, filter by department
         if (userDepartment && !userDepartment.isMain) {
-          filteredParticipantsList = participantsList.filter(p =>
+          participantsList = participantsList.filter(p =>
             (p.interventions?.required || []).some(
               i => i.departmentId === userDepartment.id
             )
           )
+          console.log(
+            '[fetchParticipants] Filtered by department:',
+            userDepartment.id
+          )
+        } else {
+          // No department found: show all for company
+          console.log(
+            '[fetchParticipants] No userDepartment or isMain; showing all for company:',
+            user.companyCode
+          )
+          // If you want to filter by companyCode (recommended), do it here:
+          participantsList = participantsList.filter(
+            p =>
+              p.companyCode === user.companyCode ||
+              p.incubatorCode === user.companyCode // Support both field names
+          )
         }
-        setParticipants(filteredParticipantsList)
+        // LOG: Final filtered participant count
+        console.log(
+          '[fetchParticipants] Final filtered participant count:',
+          participantsList.length
+        )
+        setParticipants(participantsList)
       } catch (error) {
-        console.error('Error fetching participants:', error)
+        console.error('[fetchParticipants] Error fetching participants:', error)
+        setParticipants([])
       } finally {
         setLoading(false)
+        // LOG: Loading set to false (should see this)
+        console.log('[fetchParticipants] Loading set to false')
       }
     }
     fetchParticipants()
-  }, [userDepartment])
+  }, [userDepartment, user])
 
   // Now run applyFilters ONLY when relevant values change:
   useEffect(() => {
@@ -213,7 +297,11 @@ const OperationsParticipantsManagement: React.FC = () => {
           yearly: {}
         }
       }
-
+      // LOG: Adding new participant
+      console.log(
+        '[handleAddParticipant] Adding new participant:',
+        newParticipant
+      )
       await addDoc(collection(db, 'participants'), newParticipant)
 
       message.success('Participant added successfully!')
@@ -227,26 +315,14 @@ const OperationsParticipantsManagement: React.FC = () => {
         ...doc.data()
       }))
       setParticipants(participantsList)
+      // LOG: Refreshed participants after add
+      console.log(
+        '[handleAddParticipant] Participants after add:',
+        participantsList.length
+      )
     } catch (error) {
-      console.error('Error adding participant:', error)
+      console.error('[handleAddParticipant] Error adding participant:', error)
       message.error('Failed to add participant.')
-    }
-  }
-  const handleToggleStatus = async (participant: any) => {
-    const newStatus = participant.status === 'active' ? 'inactive' : 'active'
-    try {
-      const ref = doc(db, 'participants', participant.id)
-      await updateDoc(ref, { status: newStatus })
-      message.success(`Participant status set to ${newStatus}`)
-      // Refresh participants list
-      const snapshot = await getDocs(collection(db, 'participants'))
-      const updatedList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
-      setParticipants(updatedList)
-    } catch (error) {
-      message.error('Failed to update status')
     }
   }
 
@@ -292,39 +368,6 @@ const OperationsParticipantsManagement: React.FC = () => {
       key: 'participationRate',
       render: (record: any) =>
         `${record.interventions?.participationRate ?? 0}%`
-    },
-    {
-      title: 'Status',
-      key: 'status',
-      render: (record: any) => {
-        const required = record.interventions?.required?.length ?? 0
-        const completed = record.interventions?.completed?.length ?? 0
-        const progress = calculateProgress(required, completed)
-        const status = record.status ? record.status.toLowerCase() : 'inactive'
-
-        let color = 'default'
-        if (status === 'active') color = 'green'
-        else if (status === 'inactive') color = 'orange'
-        else color = 'gray'
-
-        return <Tag color={color}>{status.toUpperCase()}</Tag>
-      }
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (_: any, record: any) => {
-        const isActive = record.status.toLowerCase() === 'active'
-        return (
-          <Button
-            type={isActive ? 'default' : 'primary'}
-            danger={isActive}
-            onClick={() => handleToggleStatus(record)}
-          >
-            {isActive ? 'Inactivate' : 'Activate'}
-          </Button>
-        )
-      }
     }
   ]
 

@@ -64,8 +64,16 @@ export const OperationsOnboardingDashboard: React.FC = () => {
   const [departments, setDepartments] = useState<any[]>([])
   const [companyCode, setCompanyCode] = useState<string>('')
   const [form] = Form.useForm()
+  const [editingStaff, setEditingStaff] = useState<OperationsUser | null>(null)
   const navigate = useNavigate()
   const { user, loading: identityLoading } = useFullIdentity()
+  const getUserUidByEmail = async email => {
+    const snapshot = await getDocs(
+      query(collection(db, 'users'), where('email', '==', email))
+    )
+    if (snapshot.empty) throw new Error('No user found with that email')
+    return snapshot.docs[0].id // uid is doc ID in `users`
+  }
 
   useEffect(() => {
     if (!identityLoading) {
@@ -133,55 +141,115 @@ export const OperationsOnboardingDashboard: React.FC = () => {
 
   const handleFinish = async (values: any) => {
     try {
-      // Step 1: Create a new user in Firebase Authentication
-      const { email, password, name } = values
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
-      )
-      const firebaseUser = userCredential.user
+      const { email, password, name, department } = values
+      let userUid = ''
 
-      if (!firebaseUser) {
-        throw new Error('Failed to create user in Firebase Authentication.')
+      // If editing, get user UID by email (no password update for now)
+      if (editingStaff) {
+        userUid = await getUserUidByEmail(email)
+        await setDoc(
+          doc(db, 'users', userUid),
+          {
+            ...editingStaff,
+            ...values,
+            departmentId: department,
+            departmentName:
+              departments.find(d => d.id === department)?.name || '',
+            updatedAt: new Date()
+          },
+          { merge: true }
+        )
+
+        // Update operationsStaff record (find by ID)
+        await setDoc(
+          doc(db, 'operationsStaff', editingStaff.id),
+          {
+            ...editingStaff,
+            ...values,
+            departmentId: department,
+            departmentName:
+              departments.find(d => d.id === department)?.name || '',
+            updatedAt: new Date()
+          },
+          { merge: true }
+        )
+
+        message.success('Staff updated successfully!')
+      } else {
+        // Creating a new user
+        const userCredential = await createUserWithEmailAndPassword(
+          auth,
+          email,
+          password
+        )
+        const firebaseUser = userCredential.user
+        if (!firebaseUser) throw new Error('Failed to create user.')
+
+        // Set in users collection
+        await setDoc(doc(db, 'users', firebaseUser.uid), {
+          uid: firebaseUser.uid,
+          email,
+          name,
+          role: 'operations',
+          companyCode,
+          departmentId: department,
+          departmentName:
+            departments.find(d => d.id === department)?.name || '',
+          createdAt: new Date()
+        })
+
+        // Set in operationsStaff collection
+        await addDoc(collection(db, 'operationsStaff'), {
+          email,
+          name,
+          gender: values.gender,
+          phone: values.phone,
+          companyCode,
+          departmentId: department,
+          departmentName:
+            departments.find(d => d.id === department)?.name || '',
+          createdAt: new Date()
+        })
+
+        message.success('Operations Staff added successfully!')
       }
-
-      // Step 2: Add the user details to the `users` collection
-      const newUserDetails = {
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        name,
-        role: 'operations',
-        companyCode,
-        department: values.department,
-        createdAt: new Date()
-      }
-
-      await setDoc(doc(db, 'users', firebaseUser.uid), newUserDetails)
-
-      // Step 3: Add the user details to the `operationsStaff` collection
-      const newOperationsStaff = {
-        ...values,
-        companyCode,
-        createdAt: new Date()
-      }
-
-      await addDoc(collection(db, 'operationsStaff'), newOperationsStaff)
-
-      // Success message
-      message.success('Operations Staff added successfully!')
       form.resetFields()
       setAddModalVisible(false)
+      setEditingStaff(null)
       fetchOperationsStaff(companyCode)
     } catch (error: any) {
-      console.error('Error adding operations staff:', error)
+      console.error('Error saving staff:', error)
       if (error.code === 'auth/email-already-in-use') {
         message.error(
           'This email is already in use. Please use a different email.'
         )
       } else {
-        message.error('Failed to add operations staff.')
+        message.error(error.message || 'Failed to save operations staff.')
       }
+    }
+  }
+
+  const handleEdit = (record: OperationsUser) => {
+    setEditingStaff(record)
+    form.setFieldsValue({
+      ...record,
+      department: record.departmentId || record.department // Use ID
+    })
+    setAddModalVisible(true)
+  }
+
+  const handleDelete = async (record: OperationsUser) => {
+    try {
+      // 1. Get user UID by email
+      const userUid = await getUserUidByEmail(record.email)
+      // 2. Delete from users and operationsStaff
+      await setDoc(doc(db, 'users', userUid), {}, { merge: true }) // Optionally use deleteDoc for a hard delete
+      await setDoc(doc(db, 'operationsStaff', record.id), {}, { merge: true }) // Or use deleteDoc
+      message.success('Staff deleted successfully.')
+      fetchOperationsStaff(companyCode)
+    } catch (error) {
+      console.error('Error deleting staff:', error)
+      message.error('Failed to delete staff.')
     }
   }
 
@@ -207,7 +275,20 @@ export const OperationsOnboardingDashboard: React.FC = () => {
       render: (dept: string) =>
         dept || <span style={{ color: '#bbb' }}>Not set</span>
     },
-    { title: 'Company Code', dataIndex: 'companyCode', key: 'companyCode' }
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_: any, record: OperationsUser) => (
+        <Space>
+          <Button size='small' onClick={() => handleEdit(record)}>
+            Edit
+          </Button>
+          <Button size='small' danger onClick={() => handleDelete(record)}>
+            Delete
+          </Button>
+        </Space>
+      )
+    }
   ]
 
   const totalUsers = operationsStaff.length
@@ -273,11 +354,17 @@ export const OperationsOnboardingDashboard: React.FC = () => {
 
       {/* Add New Modal */}
       <Modal
-        title='Add New Operations Staff'
+        title={
+          editingStaff ? 'Edit Operations Staff' : 'Add New Operations Staff'
+        }
         open={addModalVisible}
-        onCancel={() => setAddModalVisible(false)}
+        onCancel={() => {
+          setAddModalVisible(false)
+          setEditingStaff(null)
+          form.resetFields()
+        }}
         onOk={() => form.submit()}
-        okText='Add Staff'
+        okText={editingStaff ? 'Update Staff' : 'Add Staff'}
       >
         <Form form={form} layout='vertical' onFinish={handleFinish}>
           {/* Full Name */}
@@ -296,7 +383,7 @@ export const OperationsOnboardingDashboard: React.FC = () => {
           >
             <Select placeholder='Select department'>
               {departments.map(dep => (
-                <Option key={dep.id} value={dep.name || dep.id}>
+                <Option key={dep.id} value={dep.id}>
                   {dep.name || dep.id}
                 </Option>
               ))}
@@ -343,11 +430,6 @@ export const OperationsOnboardingDashboard: React.FC = () => {
             rules={[{ required: true, message: 'Please set a password' }]}
           >
             <Input.Password placeholder='Enter password' />
-          </Form.Item>
-
-          {/* Company Code */}
-          <Form.Item label='Company Code'>
-            <Input value={companyCode} disabled />
           </Form.Item>
         </Form>
       </Modal>
