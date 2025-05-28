@@ -110,19 +110,17 @@ const ProfileForm: React.FC = () => {
       const user = auth.currentUser
       if (!user) throw new Error('User not authenticated')
 
-      // Extract and normalize headcount & revenue fields
-      const monthly: Record<string, any> = {}
-      const annual: Record<string, any> = {}
+      // Build monthly and annual objects as you currently do
+      const monthly = {}
+      const annual = {}
 
       Object.entries(values).forEach(([key, value]) => {
         if (key.startsWith('revenue_')) {
           const suffix = key.replace('revenue_', '')
           if (isNaN(Number(suffix))) {
-            // Monthly
             if (!monthly[suffix]) monthly[suffix] = {}
             monthly[suffix].revenue = value
           } else {
-            // Annual
             if (!annual[suffix]) annual[suffix] = {}
             annual[suffix].revenue = value
           }
@@ -149,21 +147,8 @@ const ProfileForm: React.FC = () => {
         }
       })
 
-      const data = {
-        ...values,
-        dateOfRegistration: values.dateOfRegistration
-          ? values.dateOfRegistration.toDate()
-          : null,
-        email: user.email,
-        updatedAt: new Date(),
-        revenueHistory: {
-          monthly: Object.fromEntries(
-            Object.entries(monthly).map(([k, v]) => [k, v.revenue || 0])
-          ),
-          annual: Object.fromEntries(
-            Object.entries(annual).map(([k, v]) => [k, v.revenue || 0])
-          )
-        },
+      // Only store these (plus other needed flat fields, if any)
+      const dataToSave = {
         headcountHistory: {
           monthly: Object.fromEntries(
             Object.entries(monthly).map(([k, v]) => [
@@ -177,23 +162,30 @@ const ProfileForm: React.FC = () => {
               { permanent: v.permanent || 0, temporary: v.temporary || 0 }
             ])
           )
-        }
+        },
+        revenueHistory: {
+          monthly: Object.fromEntries(
+            Object.entries(monthly).map(([k, v]) => [k, v.revenue || 0])
+          ),
+          annual: Object.fromEntries(
+            Object.entries(annual).map(([k, v]) => [k, v.revenue || 0])
+          )
+        },
+        updatedAt: new Date()
+        // ...any other simple fields you want, e.g. participantName, email
       }
 
       if (participantDocId) {
-        await setDoc(doc(db, 'participants', participantDocId), data, {
+        await setDoc(doc(db, 'participants', participantDocId), dataToSave, {
           merge: true
         })
         message.success('Profile updated successfully')
       } else {
         const newDocRef = doc(collection(db, 'participants'))
-        await setDoc(newDocRef, {
-          ...data,
-          setup: true // ✅ Mark as setup on first creation
-        })
+        await setDoc(newDocRef, { ...dataToSave, setup: true })
         setParticipantDocId(newDocRef.id)
         message.success('Profile saved successfully')
-        navigate('/incubatee/sme') // ✅ redirect
+        navigate('/incubatee/sme')
       }
     } catch (error) {
       console.error(error)

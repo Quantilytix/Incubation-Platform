@@ -31,6 +31,7 @@ import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { PlusOutlined } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 
 const { Title } = Typography
 const { Option } = Select
@@ -74,6 +75,7 @@ export const OperationsOnboardingDashboard: React.FC = () => {
     if (snapshot.empty) throw new Error('No user found with that email')
     return snapshot.docs[0].id // uid is doc ID in `users`
   }
+  const functions = getFunctions() // add region if needed
 
   useEffect(() => {
     if (!identityLoading) {
@@ -239,18 +241,28 @@ export const OperationsOnboardingDashboard: React.FC = () => {
   }
 
   const handleDelete = async (record: OperationsUser) => {
-    try {
-      // 1. Get user UID by email
-      const userUid = await getUserUidByEmail(record.email)
-      // 2. Delete from users and operationsStaff
-      await setDoc(doc(db, 'users', userUid), {}, { merge: true }) // Optionally use deleteDoc for a hard delete
-      await setDoc(doc(db, 'operationsStaff', record.id), {}, { merge: true }) // Or use deleteDoc
-      message.success('Staff deleted successfully.')
-      fetchOperationsStaff(companyCode)
-    } catch (error) {
-      console.error('Error deleting staff:', error)
-      message.error('Failed to delete staff.')
-    }
+    Modal.confirm({
+      title: 'Confirm Delete',
+      content: `Are you sure you want to permanently delete "${record.name}" (${record.email})? This cannot be undone.`,
+      okText: 'Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      async onOk () {
+        try {
+          const deleteUser = httpsCallable(functions, 'deleteUserAndFirestore')
+          await deleteUser({ email: record.email, role: 'operations' })
+          message.success('Staff deleted successfully.')
+          fetchOperationsStaff(companyCode)
+        } catch (error: any) {
+          console.error('Error deleting staff:', error)
+          message.error(
+            error?.message ||
+              error?.details ||
+              'Failed to delete staff from Auth/Firestore.'
+          )
+        }
+      }
+    })
   }
 
   const columns = [

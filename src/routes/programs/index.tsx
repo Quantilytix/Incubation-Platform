@@ -233,6 +233,14 @@ const QuestionModal = ({ visible, initialValues, onSave, onCancel }) => {
   )
 }
 
+// Utility to get UID from email
+async function getUserUidByEmail (email) {
+  const q = query(collection(db, 'users'), where('email', '==', email))
+  const snapshot = await getDocs(q)
+  if (snapshot.empty) throw new Error('No user found with that email')
+  return snapshot.docs[0].id // UID
+}
+
 const EligibilityCriteriaStep = ({ value = {}, onChange, onBack, onNext }) => {
   const [form] = Form.useForm()
   const [selectedCriteria, setSelectedCriteria] = useState([])
@@ -478,12 +486,15 @@ const ProgramManager: React.FC = () => {
     }
   }, [companyCode])
 
-  const handleAddProgram = async (values: any) => {
+  const handleAddProgram = async values => {
     try {
       if (!companyCode) {
         message.error('Company code not set')
         return
       }
+
+      // Extract email if assigning admin
+      const assignedAdminEmail = values.assignedAdminEmail || null
 
       const payload = {
         ...values,
@@ -492,7 +503,7 @@ const ProgramManager: React.FC = () => {
         startDate: values.startDate?.toDate?.() || null,
         endDate: values.endDate?.toDate?.() || null,
         registrationLink: `/registration?code=${companyCode}&role=sme`,
-        assignedAdmin: values.assignedAdmin || null
+        assignedAdmin: assignedAdminEmail
       }
 
       const docRef = await addDoc(collection(db, 'programs'), {
@@ -504,29 +515,19 @@ const ProgramManager: React.FC = () => {
       })
 
       // Update to include the generated ID inside the document itself
-      await updateDoc(docRef, {
-        id: docRef.id
-      })
+      await updateDoc(docRef, { id: docRef.id })
 
-      if (values.assignedAdmin) {
-        const selectedAdmin = consultantOptions.find(
-          user => user.id === values.assignedAdmin
-        )
-
-        await addDoc(collection(db, 'notifications'), {
-          type: 'program-assignment',
-          createdAt: new Date(),
-          readBy: {},
-          recipientIds: [values.assignedAdmin],
-          recipientRoles: ['consultant'],
-          message: {
-            consultant: `You have been assigned as the project admin for "${
-              values.name
-            }". Start: ${dayjs(payload.startDate).format(
-              'YYYY-MM-DD'
-            )}, End: ${dayjs(payload.endDate).format('YYYY-MM-DD')}`
-          }
-        })
+      // If assigning admin, update user role in users collection
+      if (assignedAdminEmail) {
+        try {
+          const uid = await getUserUidByEmail(assignedAdminEmail)
+          await updateDoc(doc(db, 'users', uid), {
+            role: 'projectadmin'
+          })
+        } catch (e) {
+          console.error('Failed to update user role:', e)
+          message.error('Could not update assigned project admin role')
+        }
       }
 
       message.success('Program added successfully')
@@ -539,23 +540,26 @@ const ProgramManager: React.FC = () => {
     }
   }
 
-  const handleUpdateProgram = async (values: any) => {
+  const handleUpdateProgram = async values => {
     if (!selectedProgram) return
 
     const toTimestamp = val => {
       if (!val) return null
-      // Handle AntD Dayjs, Moment, Date, or Firestore Timestamp
       if (val instanceof Timestamp) return val
       if (val.toDate) return Timestamp.fromDate(val.toDate())
       if (val instanceof Date) return Timestamp.fromDate(val)
       return null
     }
 
+    const assignedAdminEmail =
+      values.assignedAdminEmail || selectedProgram.assignedAdmin || null
+
     const payload = {
       ...selectedProgram,
       ...values,
       startDate: toTimestamp(values.startDate),
       endDate: toTimestamp(values.endDate),
+      assignedAdmin: assignedAdminEmail,
       eligibilityCriteria: eligibility
     }
 
@@ -563,29 +567,19 @@ const ProgramManager: React.FC = () => {
       const ref = doc(db, 'programs', selectedProgram.id)
       await updateDoc(ref, payload)
 
-      // Send notification if assigned admin was added/changed
+      // If assigned admin changed, update their role
       if (
-        values.assignedAdmin &&
-        values.assignedAdmin !== selectedProgram.assignedAdmin
+        assignedAdminEmail &&
+        assignedAdminEmail !== selectedProgram.assignedAdmin
       ) {
-        const assignedUser = consultantOptions.find(
-          u => u.id === values.assignedAdmin
-        )
-        if (assignedUser) {
-          await addDoc(collection(db, 'notifications'), {
-            type: 'program-assignment',
-            createdAt: new Date(),
-            readBy: {},
-            recipientIds: [assignedUser.id],
-            recipientRoles: ['consultant'],
-            message: {
-              consultant: `You have been assigned as the project admin for "${
-                values.name
-              }". Start: ${dayjs(values.startDate).format(
-                'YYYY-MM-DD'
-              )}, End: ${dayjs(values.endDate).format('YYYY-MM-DD')}`
-            }
+        try {
+          const uid = await getUserUidByEmail(assignedAdminEmail)
+          await updateDoc(doc(db, 'users', uid), {
+            role: 'projectadmin'
           })
+        } catch (e) {
+          console.error('Failed to update user role:', e)
+          message.error('Could not update assigned project admin role')
         }
       }
 
@@ -597,6 +591,7 @@ const ProgramManager: React.FC = () => {
       message.error('Failed to update program')
     }
   }
+
   const handleDeleteProgram = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'programs', id))

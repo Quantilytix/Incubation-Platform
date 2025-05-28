@@ -282,26 +282,34 @@ export const ConsultantPage: React.FC = () => {
   }
 
   const handleDeleteConsultant = async (id: string) => {
-    // 1. Find consultant
     const consultant = consultants.find(c => c.id === id)
-    if (!consultant || !consultant.authUid) {
-      message.error('Consultant or Auth UID not found.')
+    if (!consultant || !consultant.email) {
+      message.error('Consultant or email not found.')
       return
     }
-    try {
-      // 2. Call cloud function to remove user from Auth
-      const deleteAuthUser = httpsCallable(functions, 'deleteConsultantAuth')
-      await deleteAuthUser({ authUid: consultant.authUid })
-
-      // 3. Delete from Firestore
-      await deleteDoc(doc(db, 'consultants', id))
-
-      message.success('Consultant deleted from users and authentication!')
-      fetchConsultants(companyCode)
-    } catch (error) {
-      console.error('Error deleting consultant:', error)
-      message.error('Failed to fully delete consultant.')
-    }
+    Modal.confirm({
+      title: 'Delete Consultant',
+      content: `Are you sure you want to permanently delete "${consultant.name}" (${consultant.email})? This will remove their authentication and profile. This cannot be undone.`,
+      okText: 'Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      async onOk () {
+        try {
+          // Call your Firebase Function to delete from Auth and Firestore
+          const deleteUser = httpsCallable(functions, 'deleteUserAndFirestore')
+          await deleteUser({ email: consultant.email, role: 'consultant' })
+          message.success('Consultant deleted successfully.')
+          fetchConsultants(companyCode, userDepartment)
+        } catch (error: any) {
+          console.error('Error deleting consultant:', error)
+          message.error(
+            error?.message ||
+              error?.details ||
+              'Failed to delete consultant from Auth/Firestore.'
+          )
+        }
+      }
+    })
   }
 
   const handleActivateToggle = async (record: Consultant) => {
