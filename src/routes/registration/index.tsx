@@ -100,7 +100,7 @@ export const RegisterPage: React.FC = () => {
         name: values.name || '',
         createdAt: new Date().toISOString(),
         companyCode: code,
-        role: assignedRole,
+        role: assignedRole || 'incubatee',
         ...(assignedRole === 'director' ? { firstLoginComplete: false } : {})
       }
       await setDoc(doc(db, 'users', user.uid), userDoc)
@@ -139,7 +139,7 @@ export const RegisterPage: React.FC = () => {
         uid: user.uid,
         name: user.displayName || '',
         email: user.email,
-        role: assignedRole || 'guest',
+        role: assignedRole || 'incubatee',
         createdAt: new Date().toISOString(),
         companyCode: code || '',
         ...(assignedRole === 'director' ? { firstLoginComplete: false } : {})
