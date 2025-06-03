@@ -20,7 +20,8 @@ import {
   where,
   setDoc,
   doc,
-  getDoc
+  getDoc,
+  Timestamp
 } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import dayjs from 'dayjs'
@@ -109,6 +110,9 @@ const ProfileForm: React.FC = () => {
       const validated = await form.validateFields()
       const values = { ...form.getFieldsValue(true), ...validated }
 
+      if (values.dateOfRegistration && typeof values.dateOfRegistration === "object" && typeof values.dateOfRegistration.toDate === "function") {
+  values.dateOfRegistration = Timestamp.fromDate(values.dateOfRegistration.toDate());
+}
       const user = auth.currentUser
       if (!user) throw new Error('User not authenticated')
 
