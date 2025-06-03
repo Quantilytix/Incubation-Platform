@@ -217,6 +217,12 @@ export const CustomLayout: React.FC = () => {
         label: 'Dashboard',
         icon: <DashboardOutlined />
       },
+       {
+        key: 'applications',
+        to: '/applications',
+        label: 'Applications',
+        icon: <FormOutlined />
+      },
       {
         key: 'programs',
         to: '/programs',
