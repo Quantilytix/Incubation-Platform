@@ -106,7 +106,9 @@ const ProfileForm: React.FC = () => {
 
   const onSave = async () => {
     try {
-      const values = await form.validateFields()
+      const validated = await form.validateFields()
+      const values = { ...form.getFieldsValue(true), ...validated }
+
       const user = auth.currentUser
       if (!user) throw new Error('User not authenticated')
 
@@ -149,6 +151,7 @@ const ProfileForm: React.FC = () => {
 
       // Only store these (plus other needed flat fields, if any)
       const dataToSave = {
+        ...values,
         headcountHistory: {
           monthly: Object.fromEntries(
             Object.entries(monthly).map(([k, v]) => [
