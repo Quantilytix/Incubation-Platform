@@ -154,33 +154,78 @@ const ProfileForm: React.FC = () => {
       })
 
       // Only store these (plus other needed flat fields, if any)
-      const dataToSave = {
-        ...values,
-        headcountHistory: {
-          monthly: Object.fromEntries(
-            Object.entries(monthly).map(([k, v]) => [
-              k,
-              { permanent: v.permanent || 0, temporary: v.temporary || 0 }
-            ])
-          ),
-          annual: Object.fromEntries(
-            Object.entries(annual).map(([k, v]) => [
-              k,
-              { permanent: v.permanent || 0, temporary: v.temporary || 0 }
-            ])
-          )
-        },
-        revenueHistory: {
-          monthly: Object.fromEntries(
-            Object.entries(monthly).map(([k, v]) => [k, v.revenue || 0])
-          ),
-          annual: Object.fromEntries(
-            Object.entries(annual).map(([k, v]) => [k, v.revenue || 0])
-          )
-        },
-        updatedAt: new Date()
-        // ...any other simple fields you want, e.g. participantName, email
-      }
+     const {
+  participantName,
+  email,
+  beneficiaryName,
+  gender,
+  idNumber,
+  phone,
+  sector,
+  natureOfBusiness,
+  beeLevel,
+  youthOwnedPercent,
+  femaleOwnedPercent,
+  blackOwnedPercent,
+  dateOfRegistration,
+  yearsOfTrading,
+  registrationNumber,
+  businessAddress,
+  city,
+  postalCode,
+  province,
+  hub,
+  location,
+  // ...any other pure profile fields you want
+} = values
+
+const dataToSave = {
+  participantName,
+  email,
+  beneficiaryName,
+  gender,
+  idNumber,
+  phone,
+  sector,
+  natureOfBusiness,
+  beeLevel,
+  youthOwnedPercent,
+  femaleOwnedPercent,
+  blackOwnedPercent,
+  dateOfRegistration,
+  yearsOfTrading,
+  registrationNumber,
+  businessAddress,
+  city,
+  postalCode,
+  province,
+  hub,
+  location,
+  headcountHistory: {
+    monthly: Object.fromEntries(
+      Object.entries(monthly).map(([k, v]) => [
+        k,
+        { permanent: v.permanent || 0, temporary: v.temporary || 0 }
+      ])
+    ),
+    annual: Object.fromEntries(
+      Object.entries(annual).map(([k, v]) => [
+        k,
+        { permanent: v.permanent || 0, temporary: v.temporary || 0 }
+      ])
+    )
+  },
+  revenueHistory: {
+    monthly: Object.fromEntries(
+      Object.entries(monthly).map(([k, v]) => [k, v.revenue || 0])
+    ),
+    annual: Object.fromEntries(
+      Object.entries(annual).map(([k, v]) => [k, v.revenue || 0])
+    )
+  },
+  updatedAt: new Date()
+}
+
 
       if (participantDocId) {
         await setDoc(doc(db, 'participants', participantDocId), dataToSave, {
