@@ -5,65 +5,100 @@ import {
   Row,
   Typography,
   Statistic,
-  FloatButton,
   Tooltip,
   List,
-  Modal
+  Modal,
+  Badge,
+  Button,
+  Spin
 } from 'antd'
 import { Helmet } from 'react-helmet'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import { TeamOutlined, StarOutlined, SolutionOutlined } from '@ant-design/icons'
-import { BellOutlined } from '@ant-design/icons'
-import { Badge, Button } from 'antd'
-import { collection, getDocs, query, where } from 'firebase/firestore'
-import { db } from '@/firebase'
+import { TeamOutlined, StarOutlined, SolutionOutlined, BellOutlined } from '@ant-design/icons'
+import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
+import { db, auth } from '@/firebase'
 const { Title } = Typography
 
 export const ProjectAdminDashboard: React.FC = () => {
-  // Dummy Data
-  const ongoingInterventions = 42
-  const avgParticipation = 87 // in percent
-  const avgConsultantRating = 4.5
   const [notifications, setNotifications] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
-  const [notificationModalVisible, setNotificationModalVisible] =
-    useState(false)
+  const [notificationModalVisible, setNotificationModalVisible] = useState(false)
+  const [companyCode, setCompanyCode] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const fetchNotifications = async () => {
-      const q = query(
-        collection(db, 'notifications'),
-        where('recipientRoles', 'array-contains', 'projectadmin')
-      )
-
-      const snapshot = await getDocs(q)
-      const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-
-      setNotifications(all)
-
-      const unread = all.filter(n => !n.readBy?.projectadmin).length
-      setUnreadCount(unread)
+    const fetchCompanyCodeAndNotifications = async () => {
+      setLoading(true)
+      try {
+        // Get companyCode
+        const user = auth.currentUser
+        if (user) {
+          const userRef = doc(db, 'users', user.uid)
+          const userSnap = await getDoc(userRef)
+          if (userSnap.exists()) {
+            setCompanyCode(userSnap.data().companyCode)
+          } else {
+            setCompanyCode(null)
+          }
+        } else {
+          setCompanyCode(null)
+        }
+        // Notifications (unchanged)
+        const q = query(
+          collection(db, 'notifications'),
+          where('recipientRoles', 'array-contains', 'projectadmin')
+        )
+        const snapshot = await getDocs(q)
+        const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        setNotifications(all)
+        const unread = all.filter(n => !n.readBy?.projectadmin).length
+        setUnreadCount(unread)
+      } catch (e) {
+        setCompanyCode(null)
+      }
+      setLoading(false)
     }
-
-    fetchNotifications()
+    fetchCompanyCodeAndNotifications()
   }, [])
 
-  const topConsultants = [
-    ['Dr. Brown', 4.8],
-    ['Jane Wilson', 4.7],
-    ['Amir Khan', 4.5],
-    ['Thando Ndlovu', 4.3],
-    ['Lerato M.', 4.2]
-  ]
+  // Dummy Data
+  const isQTX = companyCode === 'QTX'
+  const ongoingInterventions = isQTX ? 42 : 0
+  const avgParticipation = isQTX ? 87 : 0 // in percent
+  const avgConsultantRating = isQTX ? 4.5 : 0.0
 
-  const topInterventions = [
-    ['Website Development', 12],
-    ['Market Research', 9],
-    ['Branding Support', 8],
-    ['Financial Literacy', 6],
-    ['Product Testing', 5]
-  ]
+  const topConsultants = isQTX
+    ? [
+        ['Dr. Brown', 4.8],
+        ['Jane Wilson', 4.7],
+        ['Amir Khan', 4.5],
+        ['Thando Ndlovu', 4.3],
+        ['Lerato M.', 4.2]
+      ]
+    : [
+        ['Dr. Brown', 0],
+        ['Jane Wilson', 0],
+        ['Amir Khan', 0],
+        ['Thando Ndlovu', 0],
+        ['Lerato M.', 0]
+      ]
+
+  const topInterventions = isQTX
+    ? [
+        ['Website Development', 12],
+        ['Market Research', 9],
+        ['Branding Support', 8],
+        ['Financial Literacy', 6],
+        ['Product Testing', 5]
+      ]
+    : [
+        ['Website Development', 0],
+        ['Market Research', 0],
+        ['Branding Support', 0],
+        ['Financial Literacy', 0],
+        ['Product Testing', 0]
+      ]
 
   // Highcharts Configs
   const consultantRatingsChart: Highcharts.Options = {
@@ -124,6 +159,14 @@ export const ProjectAdminDashboard: React.FC = () => {
     ]
   }
 
+  if (loading) {
+    return (
+      <div style={{ minHeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Spin tip="Loading dashboard..." size="large" />
+      </div>
+    )
+  }
+
   return (
     <>
       <Helmet>
@@ -133,10 +176,8 @@ export const ProjectAdminDashboard: React.FC = () => {
           content='Monitor participation, consultant performance, and top intervention needs across the platform.'
         />
       </Helmet>
-
       <div style={{ padding: 24 }}>
-        <Title level={3}>Project Admin Dashboard </Title>
-
+        <Title level={3}>Project Admin Dashboard</Title>
         {/* KPIs */}
         <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
           <Col xs={24} sm={8}>
@@ -170,7 +211,6 @@ export const ProjectAdminDashboard: React.FC = () => {
             </Card>
           </Col>
         </Row>
-
         {/* Charts */}
         <Row gutter={[24, 24]}>
           <Col xs={24} lg={12}>
@@ -202,7 +242,6 @@ export const ProjectAdminDashboard: React.FC = () => {
             </Badge>
           </Tooltip>
         </div>
-
         <Modal
           title='Notifications'
           open={notificationModalVisible}
@@ -216,9 +255,9 @@ export const ProjectAdminDashboard: React.FC = () => {
               <List.Item>
                 <List.Item.Meta
                   title={item.message?.projectadmin || 'No message'}
-                  description={new Date(
-                    item.createdAt?.seconds * 1000
-                  ).toLocaleString()}
+                  description={item.createdAt?.seconds
+                    ? new Date(item.createdAt.seconds * 1000).toLocaleString()
+                    : ''}
                 />
               </List.Item>
             )}
