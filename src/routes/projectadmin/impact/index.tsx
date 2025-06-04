@@ -1,11 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react'
-import { Card, Typography, Row, Col, Form, InputNumber, Spin, Result, Button } from 'antd'
+import { Card, Typography, Row, Col, Form, InputNumber, Spin } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import { Helmet } from 'react-helmet'
 import { auth, db } from '@/firebase'
 import { doc, getDoc } from 'firebase/firestore'
-import ProfileForm from './ProfileForm' // adjust path as needed
 
 const { Title } = Typography
 
@@ -53,7 +52,12 @@ export const ImpactAnalysisForm: React.FC = () => {
     fetchCompanyCode()
   }, [])
 
+  // If not QTX, provide empty data for the chart
   const chartData = useMemo(() => {
+    if (companyCode !== 'QTX') {
+      // Provide empty chart
+      return []
+    }
     const adjusted = rawInterventions.map(intervention => ({
       name: intervention.name,
       value:
@@ -65,7 +69,7 @@ export const ImpactAnalysisForm: React.FC = () => {
     return adjusted
       .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
       .slice(0, topN)
-  }, [topN, lagMonths])
+  }, [topN, lagMonths, companyCode])
 
   const chartOptions: Highcharts.Options = {
     chart: { type: 'bar' },
@@ -77,8 +81,8 @@ export const ImpactAnalysisForm: React.FC = () => {
       title: { text: null }
     },
     yAxis: {
-      min: Math.min(...chartData.map(i => i.value)) - 10,
-      max: Math.max(...chartData.map(i => i.value)) + 10,
+      min: chartData.length ? Math.min(...chartData.map(i => i.value)) - 10 : 0,
+      max: chartData.length ? Math.max(...chartData.map(i => i.value)) + 10 : 10,
       title: { text: 'Impact Weight (%)', align: 'high' },
       plotLines: [{ value: 0, width: 1, color: '#999' }]
     },
@@ -118,13 +122,6 @@ export const ImpactAnalysisForm: React.FC = () => {
       {loading ? (
         <div style={{ minHeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Spin tip="Loading company info..." size="large" />
-        </div>
-      ) : companyCode !== 'QTX' ? (
-        <div style={{ maxWidth: 850, margin: '40px auto' }}>
-          <Card>
-            <Title level={4} style={{ marginBottom: 16 }}>Complete Your Company Profile</Title>
-            <ProfileForm />
-          </Card>
         </div>
       ) : (
         <div style={{ padding: 24 }}>
