@@ -71,6 +71,21 @@ const makeChartOption = (original: Highcharts.Options, empty: boolean) => {
   return option
 }
 
+const reportTypes = [
+  { value: 'participant', label: 'Participant Reports' },
+  { value: 'resource', label: 'Resource Utilization' },
+  { value: 'compliance', label: 'Compliance Status' },
+  { value: 'mentorship', label: 'Mentorship Progress' },
+  { value: 'financials', label: 'Financial Reports' }
+];
+
+const timePeriods = [
+  { value: 'week', label: 'Weekly' },
+  { value: 'month', label: 'Monthly' },
+  { value: 'quarter', label: 'Quarterly' },
+  { value: 'year', label: 'Yearly' },
+  { value: 'custom', label: 'Custom Range' }
+];
 
 // Mock data for participant metrics
 const participantMetrics = [
