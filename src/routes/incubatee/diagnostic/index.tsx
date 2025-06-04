@@ -211,18 +211,19 @@ const GrowthPlanPage: React.FC = () => {
       .sort()
 
     return parsed.map(year => {
-      const rev =
-        participantData?.revenueHistory?.yearly?.[year] ??
-        participantData?.[`revenue_${year}`] ??
-        0
-      const perm =
-        participantData?.headcountHistory?.yearly?.[year]?.permanent ??
-        participantData?.[`permHeadcount_${year}`] ??
-        0
-      const temp =
-        participantData?.headcountHistory?.yearly?.[year]?.temporary ??
-        participantData?.[`tempHeadcount_${year}`] ??
-        0
+     const rev =
+  participantData?.revenueHistory?.annual?.[year] ??
+  participantData?.[`revenue_${year}`] ??
+  0
+const perm =
+  participantData?.headcountHistory?.annual?.[year]?.permanent ??
+  participantData?.[`permHeadcount_${year}`] ??
+  0
+const temp =
+  participantData?.headcountHistory?.annual?.[year]?.temporary ??
+  participantData?.[`tempHeadcount_${year}`] ??
+  0
+
 
       return {
         year,
