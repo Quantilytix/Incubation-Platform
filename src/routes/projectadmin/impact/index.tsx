@@ -1,12 +1,14 @@
-import React, { useState, useMemo } from 'react'
-import { Card, Typography, Row, Col, Form, InputNumber } from 'antd'
+import React, { useState, useMemo, useEffect } from 'react'
+import { Card, Typography, Row, Col, Form, InputNumber, Spin, Result, Button } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import { Helmet } from 'react-helmet'
+import { auth, db } from '@/firebase'
+import { doc, getDoc } from 'firebase/firestore'
+import ProfileForm from './ProfileForm' // adjust path as needed
 
 const { Title } = Typography
 
-// ⬇️ Includes negative weights now
 const rawInterventions = [
   { name: 'Website Development', weightByMonth: [80, 85, 90, 92] },
   { name: 'CRM Setup', weightByMonth: [60, 65, 75, 78] },
@@ -22,6 +24,34 @@ const rawInterventions = [
 export const ImpactAnalysisForm: React.FC = () => {
   const [topN, setTopN] = useState(5)
   const [lagMonths, setLagMonths] = useState(0)
+  const [companyCode, setCompanyCode] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchCompanyCode = async () => {
+      setLoading(true)
+      try {
+        const user = auth.currentUser
+        if (!user) {
+          setCompanyCode(null)
+          setLoading(false)
+          return
+        }
+        const userRef = doc(db, 'users', user.uid)
+        const userSnap = await getDoc(userRef)
+        if (!userSnap.exists()) {
+          setCompanyCode(null)
+          setLoading(false)
+          return
+        }
+        setCompanyCode(userSnap.data().companyCode)
+      } catch {
+        setCompanyCode(null)
+      }
+      setLoading(false)
+    }
+    fetchCompanyCode()
+  }, [])
 
   const chartData = useMemo(() => {
     const adjusted = rawInterventions.map(intervention => ({
@@ -33,16 +63,14 @@ export const ImpactAnalysisForm: React.FC = () => {
     }))
 
     return adjusted
-      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value)) // Sort by absolute impact
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
       .slice(0, topN)
   }, [topN, lagMonths])
 
   const chartOptions: Highcharts.Options = {
     chart: { type: 'bar' },
     title: {
-      text: `Top ${topN} Interventions (Lag: ${lagMonths} month${
-        lagMonths !== 1 ? 's' : ''
-      })`
+      text: `Top ${topN} Interventions (Lag: ${lagMonths} month${lagMonths !== 1 ? 's' : ''})`
     },
     xAxis: {
       categories: chartData.map(i => i.name),
@@ -64,6 +92,7 @@ export const ImpactAnalysisForm: React.FC = () => {
     },
     tooltip: {
       formatter: function () {
+        // @ts-ignore
         return `<strong>${this.key}</strong><br/>Impact: <b>${this.y}%</b>`
       }
     },
@@ -85,42 +114,54 @@ export const ImpactAnalysisForm: React.FC = () => {
           name='description'
           content='Analyze and rank the impact of interventions based on participation weight and lag-adjusted influence.'
         />
-      </Helmet>{' '}
-      <div style={{ padding: 24 }}>
-        <Title level={3}>Intervention Impact Ranking</Title>
-
-        <Card style={{ marginBottom: 24 }}>
-          <Row gutter={16}>
-            <Col span={6}>
-              <Form.Item label='Top N Interventions'>
-                <InputNumber
-                  min={1}
-                  max={rawInterventions.length}
-                  value={topN}
-                  onChange={val => setTopN(val || 5)}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-
-            <Col span={6}>
-              <Form.Item label='Lagging (months)'>
-                <InputNumber
-                  min={0}
-                  max={12}
-                  value={lagMonths}
-                  onChange={val => setLagMonths(val || 0)}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
-
-        <Card>
-          <HighchartsReact highcharts={Highcharts} options={chartOptions} />
-        </Card>
-      </div>
+      </Helmet>
+      {loading ? (
+        <div style={{ minHeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Spin tip="Loading company info..." size="large" />
+        </div>
+      ) : companyCode !== 'QTX' ? (
+        <div style={{ maxWidth: 850, margin: '40px auto' }}>
+          <Card>
+            <Title level={4} style={{ marginBottom: 16 }}>Complete Your Company Profile</Title>
+            <ProfileForm />
+          </Card>
+        </div>
+      ) : (
+        <div style={{ padding: 24 }}>
+          <Title level={3}>Intervention Impact Ranking</Title>
+          <Card style={{ marginBottom: 24 }}>
+            <Row gutter={16}>
+              <Col span={6}>
+                <Form.Item label='Top N Interventions'>
+                  <InputNumber
+                    min={1}
+                    max={rawInterventions.length}
+                    value={topN}
+                    onChange={val => setTopN(val || 5)}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={6}>
+                <Form.Item label='Lagging (months)'>
+                  <InputNumber
+                    min={0}
+                    max={12}
+                    value={lagMonths}
+                    onChange={val => setLagMonths(val || 0)}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          </Card>
+          <Card>
+            <HighchartsReact highcharts={Highcharts} options={chartOptions} />
+          </Card>
+        </div>
+      )}
     </>
   )
 }
+
+export default ImpactAnalysisForm
