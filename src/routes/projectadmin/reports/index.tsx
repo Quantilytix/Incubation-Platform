@@ -53,15 +53,24 @@ const makeChartOption = (original: Highcharts.Options, empty: boolean) => {
   if (!option.series) return option
   option.series = option.series.map(s => {
     if ('type' in s && (s.type === 'bar' || s.type === 'column')) {
-      return { ...s, data: empty ? emptySeries(s.type, Array.isArray(s.data) ? s.data.length : 5) }
+      return {
+        ...s,
+        data: empty
+          ? emptySeries(s.type, Array.isArray(s.data) ? s.data.length : 5)
+          : s.data
+      }
     }
     if ('type' in s && s.type === 'pie') {
-      return { ...s, data: empty ? emptyPieData() : s.data }
+      return {
+        ...s,
+        data: empty ? emptyPieData() : s.data
+      }
     }
     return s
   })
   return option
 }
+
 
 // Mock data for participant metrics
 const participantMetrics = [
