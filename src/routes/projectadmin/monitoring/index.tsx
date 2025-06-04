@@ -1,8 +1,11 @@
-import React, { useState } from 'react'
-import { Card, Select, Typography, Row, Col, Button, Modal } from 'antd'
+import React, { useState, useEffect } from 'react'
+import { Card, Select, Typography, Row, Col, Button, Modal, Spin, Result } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import { Helmet } from 'react-helmet'
+import { auth, db } from '@/firebase'
+import { doc, getDoc } from 'firebase/firestore'
+import ProfileForm from './ProfileForm' // <-- adjust import path if needed
 
 import('highcharts/modules/heatmap').then(HeatmapModule => {
   HeatmapModule.default(Highcharts)
@@ -12,6 +15,38 @@ const { Title } = Typography
 const { Option } = Select
 
 const MonitoringEvaluationEvaluation = () => {
+  // Company logic
+  const [companyCode, setCompanyCode] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchCompanyCode = async () => {
+      setLoading(true)
+      try {
+        const user = auth.currentUser
+        if (!user) {
+          setCompanyCode(null)
+          setLoading(false)
+          return
+        }
+        const userRef = doc(db, 'users', user.uid)
+        const userSnap = await getDoc(userRef)
+        if (!userSnap.exists()) {
+          setCompanyCode(null)
+          setLoading(false)
+          return
+        }
+        const code = userSnap.data().companyCode
+        setCompanyCode(code)
+      } catch (err) {
+        setCompanyCode(null)
+      }
+      setLoading(false)
+    }
+    fetchCompanyCode()
+  }, [])
+
+  // Dashboard state and data (dummy for QTX)
   const [gender, setGender] = useState('All')
   const [ageGroup, setAgeGroup] = useState('All')
   const [topN, setTopN] = useState(5)
@@ -26,6 +61,7 @@ const MonitoringEvaluationEvaluation = () => {
   )
   const [expandedVisible, setExpandedVisible] = useState(false)
 
+  // --- Dummy data for QTX ---
   const months = ['Jan', 'Feb', 'Mar', 'Apr']
   const categories = ['Training', 'Funding', 'Mentoring']
   const sectors = ['Agriculture', 'Tech', 'Manufacturing']
@@ -322,6 +358,7 @@ const MonitoringEvaluationEvaluation = () => {
     setExpandedVisible(true)
   }
 
+  // ---- MAIN RENDER ----
   return (
     <>
       <Helmet>
@@ -333,127 +370,141 @@ const MonitoringEvaluationEvaluation = () => {
           content='Analyze intervention trends, company-level impacts, compliance, and demographic engagement across the incubation platform.'
         />
       </Helmet>
-      <div style={{ padding: 24 }}>
-        <Title level={3}>📈 Monitoring & Evaluation Dashboard</Title>
+      {loading ? (
+        <div style={{ minHeight: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Spin tip="Loading company info..." size="large" />
+        </div>
+      ) : companyCode !== 'QTX' ? (
+        <div style={{ maxWidth: 850, margin: '40px auto' }}>
+          {/* Show a complete form if not QTX */}
+          <Card>
+            <Title level={4} style={{ marginBottom: 16 }}>Complete Your Company Profile</Title>
+            <ProfileForm />
+          </Card>
+        </div>
+      ) : (
+        <div style={{ padding: 24 }}>
+          <Title level={3}>📈 Monitoring & Evaluation Dashboard</Title>
 
-        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-          <Col>
-            <Select value={gender} onChange={setGender} style={{ width: 120 }}>
-              <Option value='All'>All</Option>
-              <Option value='Male'>Male</Option>
-              <Option value='Female'>Female</Option>
-            </Select>
-          </Col>
-          <Col>
-            <Select value={ageGroup} onChange={setAgeGroup}>
-              <Option value='All'>All Ages</Option>
-              <Option value='Youth'>Youth</Option>
-              <Option value='Adult'>Adult</Option>
-              <Option value='Senior'>Senior</Option>
-            </Select>
-          </Col>
-        </Row>
-
-        <Row gutter={[24, 24]}>
-          <Col xs={24} lg={12}>
-            <Card
-              title='📊 Interventions Overview'
-              extra={
-                <>
-                  <Select
-                    value={interventionChart}
-                    onChange={setInterventionChart}
-                    style={{ width: 250, marginRight: 12 }}
-                  >
-                    {Object.keys(interventionCharts).map(key => (
-                      <Option key={key} value={key}>
-                        {key}
-                      </Option>
-                    ))}
-                  </Select>
-                  <Button
-                    onClick={() =>
-                      openExpand(interventionCharts[interventionChart])
-                    }
-                  >
-                    Expand
-                  </Button>
-                </>
-              }
-            >
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={interventionCharts[interventionChart]}
-              />
-            </Card>
-          </Col>
-
-          <Col xs={24} lg={12}>
-            <Card
-              title='🏢 Company-Level Breakdowns'
-              extra={
-                <>
-                  <Select
-                    value={companyChart}
-                    onChange={setCompanyChart}
-                    style={{ width: 250, marginRight: 12 }}
-                  >
-                    {Object.keys(companyCharts).map(key => (
-                      <Option key={key} value={key}>
-                        {key}
-                      </Option>
-                    ))}
-                  </Select>
-                  <Button
-                    onClick={() => openExpand(companyCharts[companyChart])}
-                  >
-                    Expand
-                  </Button>
-                </>
-              }
-            >
-              <Select
-                value={topN}
-                onChange={setTopN}
-                style={{ marginBottom: 16, width: 120 }}
-              >
-                {[5, 3, 10].map(n => (
-                  <Option key={n} value={n}>
-                    Top {n}
-                  </Option>
-                ))}
+          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+            <Col>
+              <Select value={gender} onChange={setGender} style={{ width: 120 }}>
+                <Option value='All'>All</Option>
+                <Option value='Male'>Male</Option>
+                <Option value='Female'>Female</Option>
               </Select>
+            </Col>
+            <Col>
+              <Select value={ageGroup} onChange={setAgeGroup}>
+                <Option value='All'>All Ages</Option>
+                <Option value='Youth'>Youth</Option>
+                <Option value='Adult'>Adult</Option>
+                <Option value='Senior'>Senior</Option>
+              </Select>
+            </Col>
+          </Row>
 
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={companyCharts[companyChart]}
-              />
-            </Card>
-          </Col>
-        </Row>
+          <Row gutter={[24, 24]}>
+            <Col xs={24} lg={12}>
+              <Card
+                title='📊 Interventions Overview'
+                extra={
+                  <>
+                    <Select
+                      value={interventionChart}
+                      onChange={setInterventionChart}
+                      style={{ width: 250, marginRight: 12 }}
+                    >
+                      {Object.keys(interventionCharts).map(key => (
+                        <Option key={key} value={key}>
+                          {key}
+                        </Option>
+                      ))}
+                    </Select>
+                    <Button
+                      onClick={() =>
+                        openExpand(interventionCharts[interventionChart])
+                      }
+                    >
+                      Expand
+                    </Button>
+                  </>
+                }
+              >
+                <HighchartsReact
+                  highcharts={Highcharts}
+                  options={interventionCharts[interventionChart]}
+                />
+              </Card>
+            </Col>
 
-        <Row gutter={[24, 24]} style={{ marginTop: 32 }}>
-          <Col span={24}>
-            <Card title='Challenge Frequency Heatmap'>
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={challengeHeatmapOptions}
-              />
-            </Card>
-          </Col>
-        </Row>
+            <Col xs={24} lg={12}>
+              <Card
+                title='🏢 Company-Level Breakdowns'
+                extra={
+                  <>
+                    <Select
+                      value={companyChart}
+                      onChange={setCompanyChart}
+                      style={{ width: 250, marginRight: 12 }}
+                    >
+                      {Object.keys(companyCharts).map(key => (
+                        <Option key={key} value={key}>
+                          {key}
+                        </Option>
+                      ))}
+                    </Select>
+                    <Button
+                      onClick={() => openExpand(companyCharts[companyChart])}
+                    >
+                      Expand
+                    </Button>
+                  </>
+                }
+              >
+                <Select
+                  value={topN}
+                  onChange={setTopN}
+                  style={{ marginBottom: 16, width: 120 }}
+                >
+                  {[5, 3, 10].map(n => (
+                    <Option key={n} value={n}>
+                      Top {n}
+                    </Option>
+                  ))}
+                </Select>
 
-        <Modal
-          open={expandedVisible}
-          onCancel={() => setExpandedVisible(false)}
-          width='80%'
-          footer={null}
-        >
-          {expandedChart && (
-            <HighchartsReact highcharts={Highcharts} options={expandedChart} />
-          )}
-        </Modal>
-      </div>
+                <HighchartsReact
+                  highcharts={Highcharts}
+                  options={companyCharts[companyChart]}
+                />
+              </Card>
+            </Col>
+          </Row>
+
+          <Row gutter={[24, 24]} style={{ marginTop: 32 }}>
+            <Col span={24}>
+              <Card title='Challenge Frequency Heatmap'>
+                <HighchartsReact
+                  highcharts={Highcharts}
+                  options={challengeHeatmapOptions}
+                />
+              </Card>
+            </Col>
+          </Row>
+
+          <Modal
+            open={expandedVisible}
+            onCancel={() => setExpandedVisible(false)}
+            width='80%'
+            footer={null}
+          >
+            {expandedChart && (
+              <HighchartsReact highcharts={Highcharts} options={expandedChart} />
+            )}
+          </Modal>
+        </div>
+      )}
     </>
   )
 }
