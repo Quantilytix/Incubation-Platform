@@ -38,7 +38,9 @@ const ProfileForm: React.FC = () => {
   const last3Months = useMemo(
     () =>
       Array.from({ length: 3 }, (_, i) =>
-        dayjs().subtract(i, 'month').format('MMMM')
+        dayjs()
+          .subtract(i + 1, 'month')
+          .format('MMMM')
       ).reverse(),
     []
   )
@@ -47,185 +49,277 @@ const ProfileForm: React.FC = () => {
   const last2Years = useMemo(() => [currentYear - 1, currentYear - 2], [])
 
   useEffect(() => {
+    console.log('ProfileForm useEffect running!')
+
     const unsubscribe = onAuthStateChanged(auth, async user => {
-      if (!user) return
+      console.log('onAuthStateChanged triggered!', user)
+      if (!user) {
+        console.log('No user, returning early.')
+        return
+      }
 
       const userRef = doc(db, 'users', user.uid)
       const userSnap = await getDoc(userRef)
+      console.log(user)
       const fallbackEmail = user.email
       const fallbackName = userSnap.exists() ? userSnap.data()?.name || '' : ''
 
-      const defaultValues = {
-        email: fallbackEmail,
-        participantName: fallbackName
-      }
-
+      // Fetch participant doc
       const q = query(
         collection(db, 'participants'),
         where('email', '==', fallbackEmail)
       )
       const snapshot = await getDocs(q)
 
+      // Start with only minimal fields
+      let initialValues = {
+        email: fallbackEmail,
+        participantName: fallbackName
+      }
+
       if (!snapshot.empty) {
         const docRef = snapshot.docs[0]
         const data = docRef.data()
         setParticipantDocId(docRef.id)
 
-        const injectedDefaults: any = {}
-        const months = last3Months
-        const years = last2Years
-
-        months.forEach(month => {
-          if (!data[`permHeadcount_${month}`]) {
-            injectedDefaults[`permHeadcount_${month}`] = 1
+        console.log('Firestore participant data:', data)
+        // flatten headcountHistory & revenueHistory to flat field names
+        const flatFields = {}
+        // Headcount Monthly
+        Object.entries(data.headcountHistory?.monthly || {}).forEach(
+          ([month, v]) => {
+            flatFields[`permHeadcount_${month}`] = v.permanent ?? 0
+            flatFields[`tempHeadcount_${month}`] = v.temporary ?? 0
           }
-        })
-
-        years.forEach(year => {
-          if (!data[`permHeadcount_${year}`]) {
-            injectedDefaults[`permHeadcount_${year}`] = 1
+        )
+        // Headcount Annual
+        Object.entries(data.headcountHistory?.annual || {}).forEach(
+          ([year, v]) => {
+            flatFields[`permHeadcount_${year}`] = v.permanent ?? 0
+            flatFields[`tempHeadcount_${year}`] = v.temporary ?? 0
           }
-        })
+        )
+        // Revenue Monthly
+        Object.entries(data.revenueHistory?.monthly || {}).forEach(
+          ([month, v]) => {
+            flatFields[`revenue_${month}`] = v ?? 0
+          }
+        )
+        // Revenue Annual
+        Object.entries(data.revenueHistory?.annual || {}).forEach(
+          ([year, v]) => {
+            flatFields[`revenue_${year}`] = v ?? 0
+          }
+        )
 
-        form.setFieldsValue({
-          ...defaultValues,
-          ...data,
-          ...injectedDefaults,
-          dateOfRegistration: data.dateOfRegistration
-            ? dayjs(
-                data.dateOfRegistration.toDate?.() || data.dateOfRegistration
-              )
-            : null
-        })
+        console.log('flatFields:', flatFields)
+
+        // Copy all non-history (top-level) fields from DB for other profile info
+        const {
+          participantName,
+          email,
+          beneficiaryName,
+          gender,
+          idNumber,
+          phone,
+          sector,
+          natureOfBusiness,
+          beeLevel,
+          youthOwnedPercent,
+          femaleOwnedPercent,
+          blackOwnedPercent,
+          dateOfRegistration,
+          yearsOfTrading,
+          registrationNumber,
+          businessAddress,
+          city,
+          postalCode,
+          province,
+          hub,
+          location
+        } = data
+
+        // Build what to inject into the form
+        initialValues = {
+          email: email ?? fallbackEmail,
+          participantName: participantName ?? fallbackName,
+          beneficiaryName,
+          gender,
+          idNumber,
+          phone,
+          sector,
+          natureOfBusiness,
+          beeLevel,
+          youthOwnedPercent,
+          femaleOwnedPercent,
+          blackOwnedPercent,
+          dateOfRegistration: dateOfRegistration
+            ? dayjs(dateOfRegistration.toDate?.() || dateOfRegistration)
+            : null,
+          yearsOfTrading,
+          registrationNumber,
+          businessAddress,
+          city,
+          postalCode,
+          province,
+          hub,
+          location,
+          ...flatFields
+        }
+
+        console.log('initialValues to set in form:', initialValues)
+        form.resetFields()
+        form.setFieldsValue(initialValues)
+        // After setting, log what the form thinks it has
+        setTimeout(() => {
+          console.log('Form values after set:', form.getFieldsValue(true))
+        }, 100)
       } else {
-        form.setFieldsValue(defaultValues)
+        form.resetFields()
+        form.setFieldsValue({
+          email: fallbackEmail,
+          participantName: fallbackName,
+          permHeadcount_April: 1,
+          permHeadcount_May: 1,
+          permHeadcount_June: 1
+        })
       }
     })
 
     return () => unsubscribe()
-  }, [form])
+  }, [form, last3Months, last2Years])
 
   const onSave = async () => {
     try {
       const validated = await form.validateFields()
       const values = { ...form.getFieldsValue(true), ...validated }
 
-      if (values.dateOfRegistration && typeof values.dateOfRegistration === "object" && typeof values.dateOfRegistration.toDate === "function") {
-  values.dateOfRegistration = Timestamp.fromDate(values.dateOfRegistration.toDate());
-}
+      // Handle date conversion
+      if (
+        values.dateOfRegistration &&
+        typeof values.dateOfRegistration === 'object' &&
+        typeof values.dateOfRegistration.toDate === 'function'
+      ) {
+        values.dateOfRegistration = Timestamp.fromDate(
+          values.dateOfRegistration.toDate()
+        )
+      }
+
       const user = auth.currentUser
       if (!user) throw new Error('User not authenticated')
 
-      // Build monthly and annual objects as you currently do
+      // 1. Gather all revenue and headcount entries
       const monthly = {}
       const annual = {}
 
       Object.entries(values).forEach(([key, value]) => {
+        // Revenue fields
         if (key.startsWith('revenue_')) {
           const suffix = key.replace('revenue_', '')
           if (isNaN(Number(suffix))) {
             if (!monthly[suffix]) monthly[suffix] = {}
-            monthly[suffix].revenue = value
+            monthly[suffix].revenue = value ?? 0 // Respect 0 and user input
           } else {
             if (!annual[suffix]) annual[suffix] = {}
-            annual[suffix].revenue = value
+            annual[suffix].revenue = value ?? 0
           }
         }
+        // Permanent headcount fields
         if (key.startsWith('permHeadcount_')) {
           const suffix = key.replace('permHeadcount_', '')
           if (isNaN(Number(suffix))) {
             if (!monthly[suffix]) monthly[suffix] = {}
-            monthly[suffix].permanent = value
+            monthly[suffix].permanent = value ?? 0
           } else {
             if (!annual[suffix]) annual[suffix] = {}
-            annual[suffix].permanent = value
+            annual[suffix].permanent = value ?? 0
           }
         }
+        // Temporary headcount fields
         if (key.startsWith('tempHeadcount_')) {
           const suffix = key.replace('tempHeadcount_', '')
           if (isNaN(Number(suffix))) {
             if (!monthly[suffix]) monthly[suffix] = {}
-            monthly[suffix].temporary = value
+            monthly[suffix].temporary = value ?? 0
           } else {
             if (!annual[suffix]) annual[suffix] = {}
-            annual[suffix].temporary = value
+            annual[suffix].temporary = value ?? 0
           }
         }
       })
 
-      // Only store these (plus other needed flat fields, if any)
-     const {
-  participantName,
-  email,
-  beneficiaryName,
-  gender,
-  idNumber,
-  phone,
-  sector,
-  natureOfBusiness,
-  beeLevel,
-  youthOwnedPercent,
-  femaleOwnedPercent,
-  blackOwnedPercent,
-  dateOfRegistration,
-  yearsOfTrading,
-  registrationNumber,
-  businessAddress,
-  city,
-  postalCode,
-  province,
-  hub,
-  location,
-  // ...any other pure profile fields you want
-} = values
+      // 2. Prepare profile fields
+      const {
+        participantName,
+        email,
+        beneficiaryName,
+        gender,
+        idNumber,
+        phone,
+        sector,
+        natureOfBusiness,
+        beeLevel,
+        youthOwnedPercent,
+        femaleOwnedPercent,
+        blackOwnedPercent,
+        dateOfRegistration,
+        yearsOfTrading,
+        registrationNumber,
+        businessAddress,
+        city,
+        postalCode,
+        province,
+        hub,
+        location
+      } = values
 
-const dataToSave = {
-  participantName,
-  email,
-  beneficiaryName,
-  gender,
-  idNumber,
-  phone,
-  sector,
-  natureOfBusiness,
-  beeLevel,
-  youthOwnedPercent,
-  femaleOwnedPercent,
-  blackOwnedPercent,
-  dateOfRegistration,
-  yearsOfTrading,
-  registrationNumber,
-  businessAddress,
-  city,
-  postalCode,
-  province,
-  hub,
-  location,
-  headcountHistory: {
-    monthly: Object.fromEntries(
-      Object.entries(monthly).map(([k, v]) => [
-        k,
-        { permanent: v.permanent || 0, temporary: v.temporary || 0 }
-      ])
-    ),
-    annual: Object.fromEntries(
-      Object.entries(annual).map(([k, v]) => [
-        k,
-        { permanent: v.permanent || 0, temporary: v.temporary || 0 }
-      ])
-    )
-  },
-  revenueHistory: {
-    monthly: Object.fromEntries(
-      Object.entries(monthly).map(([k, v]) => [k, v.revenue || 0])
-    ),
-    annual: Object.fromEntries(
-      Object.entries(annual).map(([k, v]) => [k, v.revenue || 0])
-    )
-  },
-  updatedAt: new Date()
-}
-
+      // 3. Build the data object to save
+      const dataToSave = {
+        participantName,
+        email,
+        beneficiaryName,
+        gender,
+        idNumber,
+        phone,
+        sector,
+        natureOfBusiness,
+        beeLevel,
+        youthOwnedPercent,
+        femaleOwnedPercent,
+        blackOwnedPercent,
+        dateOfRegistration,
+        yearsOfTrading,
+        registrationNumber,
+        businessAddress,
+        city,
+        postalCode,
+        province,
+        hub,
+        location,
+        headcountHistory: {
+          monthly: Object.fromEntries(
+            Object.entries(monthly).map(([k, v]) => [
+              k,
+              { permanent: v.permanent ?? 0, temporary: v.temporary ?? 0 }
+            ])
+          ),
+          annual: Object.fromEntries(
+            Object.entries(annual).map(([k, v]) => [
+              k,
+              { permanent: v.permanent ?? 0, temporary: v.temporary ?? 0 }
+            ])
+          )
+        },
+        revenueHistory: {
+          monthly: Object.fromEntries(
+            Object.entries(monthly).map(([k, v]) => [k, v.revenue ?? 0])
+          ),
+          annual: Object.fromEntries(
+            Object.entries(annual).map(([k, v]) => [k, v.revenue ?? 0])
+          )
+        },
+        updatedAt: new Date()
+      }
 
       if (participantDocId) {
         await setDoc(doc(db, 'participants', participantDocId), dataToSave, {
@@ -522,7 +616,7 @@ const dataToSave = {
                 <Form.Item
                   name={`permHeadcount_${month}`}
                   label='Permanent Staff'
-                  initialValue={1}
+                  //   initialValue={1}
                 >
                   <InputNumber min={0} style={{ width: '100%' }} />
                 </Form.Item>
@@ -556,7 +650,7 @@ const dataToSave = {
                 <Form.Item
                   name={`permHeadcount_${year}`}
                   label='Permanent Staff'
-                  initialValue={1}
+                  //   initialValue={1}
                 >
                   <InputNumber min={0} style={{ width: '100%' }} />
                 </Form.Item>
