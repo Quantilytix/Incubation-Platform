@@ -165,6 +165,52 @@ const ParticipantRegistrationStepForm = () => {
   }
 
   useEffect(() => {
+  const fetchInterventions = async () => {
+    let filteredSnapshot
+    // 1. Try to fetch for specific companyCode
+    if (companyCode) {
+      filteredSnapshot = await getDocs(
+        query(collection(db, 'interventions'), where('companyCode', '==', companyCode))
+      )
+    }
+
+    // 2. If none found, fallback to QTX
+    if (!filteredSnapshot || filteredSnapshot.empty) {
+      filteredSnapshot = await getDocs(
+        query(collection(db, 'interventions'), where('companyCode', '==', 'QTX'))
+      )
+    }
+
+    const rawInterventions = filteredSnapshot.docs.map(doc => ({
+      id: doc.id,
+      title: doc.data().interventionTitle,
+      area: doc.data().areaOfSupport
+    }))
+
+    // Group interventions by area
+    const areaMap = {}
+    rawInterventions.forEach(intervention => {
+      if (!areaMap[intervention.area]) areaMap[intervention.area] = []
+      areaMap[intervention.area].push({
+        id: intervention.id,
+        title: intervention.title
+      })
+    })
+
+    const fetchedGroups = Object.entries(areaMap).map(
+      ([area, interventions]) => ({
+        area,
+        interventions
+      })
+    )
+    setInterventionGroups(fetchedGroups)
+  }
+
+  fetchInterventions()
+}, [companyCode])
+
+
+  useEffect(() => {
     const fetchUserData = async () => {
       const currentUser = auth.currentUser
 
@@ -180,42 +226,6 @@ const ParticipantRegistrationStepForm = () => {
             email: userData.email
           })
           setCurrentUserName(userData.name)
-
-          // 🔽 Fetch intervention groups for that company
-         const interventionsSnapshot = await getDocs(
-  query(
-    collection(db, 'interventions'),
-    where('companyCode', '==', companyCode)
-  )
-)
-          const rawInterventions = interventionsSnapshot.docs.map(doc => ({
-            id: doc.id,
-            title: doc.data().interventionTitle,
-            area: doc.data().areaOfSupport
-          }))
-
-          // Group interventions by area
-          const areaMap: Record<string, { id: string; title: string }[]> = {}
-
-          rawInterventions.forEach(intervention => {
-            if (!areaMap[intervention.area]) {
-              areaMap[intervention.area] = []
-            }
-            areaMap[intervention.area].push({
-              id: intervention.id,
-              title: intervention.title
-            })
-          })
-
-          // Format as grouped list
-          const fetchedGroups = Object.entries(areaMap).map(
-            ([area, interventions]) => ({
-              area,
-              interventions
-            })
-          )
-
-          setInterventionGroups(fetchedGroups)
         }
       }
     }
