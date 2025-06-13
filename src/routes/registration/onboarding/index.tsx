@@ -182,12 +182,12 @@ const ParticipantRegistrationStepForm = () => {
           setCurrentUserName(userData.name)
 
           // 🔽 Fetch intervention groups for that company
-          const interventionsSnapshot = await getDocs(
-            query(collection(db, 'interventions'))
-          )
-          console.log(companyCode)
-          console.log(interventionGroups)
-
+         const interventionsSnapshot = await getDocs(
+  query(
+    collection(db, 'interventions'),
+    where('companyCode', '==', companyCode)
+  )
+)
           const rawInterventions = interventionsSnapshot.docs.map(doc => ({
             id: doc.id,
             title: doc.data().interventionTitle,
