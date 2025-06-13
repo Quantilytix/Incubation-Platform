@@ -923,33 +923,35 @@ const ParticipantRegistrationStepForm = () => {
       }
 
       await addDoc(
-        collection(db, 'applications'),
-        removeUndefinedDeep({
-          participantId,
-          programName: programName,
-          programId: programId,
-          companyCode: companyCode,
-          applicationStatus: 'pending',
-          submittedAt: new Date().toISOString(),
-          beneficiaryName: values.beneficiaryName,
-          gender: values.gender,
-          ageGroup: getAgeGroup(derivedAge),
-          stage: participant.stage,
-          province: values.province,
-          hub: values.hub,
-          email: values.email,
-          motivation: values.motivation,
-          challenges: values.challenges,
-          facebook: values.facebook,
-          instagram: values.instagram,
-          linkedIn: values.linkedIn,
-          complianceScore,
-          complianceDocuments: uploadedDocs,
-          interventions: participant.interventions,
-          aiEvaluation,
-          growthPlanDocUrl: participant.growthPlanDocUrl
-        })
-      )
+  collection(db, 'applications'),
+  removeUndefinedDeep({
+    participantId,
+    programName: programName,
+    programId: programId,
+    companyCode: companyCode,
+    applicationStatus: 'pending',
+    submittedAt: new Date().toISOString(),
+    beneficiaryName: values.beneficiaryName,
+    gender: values.gender,
+    ageGroup: getAgeGroup(derivedAge),
+    stage: participant.stage,
+    province: values.province,
+    hub: values.hub,
+    email: values.email,
+    motivation: values.motivation,
+    challenges: values.challenges,
+    facebook: values.facebook,
+    instagram: values.instagram,
+    linkedIn: values.linkedIn,
+    complianceScore,
+    complianceDocuments: uploadedDocs,
+    interventions: participant.interventions,
+    aiEvaluation,
+    growthPlanDocUrl: participant.growthPlanDocUrl,
+    profile: values.profile 
+  })
+)
+
 
       await sendApplicationEmail(values.email, values.participantName)
 
