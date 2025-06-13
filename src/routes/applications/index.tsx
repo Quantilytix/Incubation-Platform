@@ -10,26 +10,38 @@ import {
   Button,
   Space,
   Typography,
-  Divider,
   Select,
   message,
   Skeleton
 } from 'antd'
-import { db } from '@/firebase'
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore'
+import { db, auth } from '@/firebase'
+import { collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore'
 import {
   FileTextOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
-  FileOutlined
+  FileOutlined,
+  DownloadOutlined
 } from '@ant-design/icons'
-
 import { Helmet } from 'react-helmet'
 import HighchartsReact from 'highcharts-react-official'
 import Highcharts from 'highcharts'
 
 const { Title, Text } = Typography
 const { Option } = Select
+
+function toCSV(rows, columns) {
+  const csvRows = [columns.map(col => `"${col.title}"`).join(',')]
+  for (let row of rows) {
+    const values = columns.map(col => {
+      let val = row[col.dataIndex]
+      if (typeof val === 'undefined' || val === null) return ''
+      return `"${String(val).replace(/"/g, '""')}"`
+    })
+    csvRows.push(values.join(','))
+  }
+  return csvRows.join('\n')
+}
 
 const ApplicationsPage: React.FC = () => {
   const [loading, setLoading] = useState(false)
@@ -40,30 +52,41 @@ const ApplicationsPage: React.FC = () => {
   const [documentsModalVisible, setDocumentsModalVisible] = useState(false)
   const [genderFilter, setGenderFilter] = useState<string | undefined>()
   const [ageGroupFilter, setAgeGroupFilter] = useState<string | undefined>()
+  const [companyCode, setCompanyCode] = useState<string | null>(null)
 
+  // 1. Get companyCode for current user
+  useEffect(() => {
+    async function getUserCompanyCode() {
+      const user = auth.currentUser
+      if (!user) return
+      const userRef = doc(db, 'users', user.uid)
+      const userSnap = await getDoc(userRef)
+      setCompanyCode(userSnap.exists() ? userSnap.data()?.companyCode : null)
+    }
+    getUserCompanyCode()
+  }, [])
+
+  // 2. Fetch & filter applications by companyCode
   const fetchApplications = async () => {
+    if (!companyCode) return
     setLoading(true)
     try {
       const snapshot = await getDocs(collection(db, 'applications'))
-      const apps = snapshot.docs.map(doc => {
+      let apps = snapshot.docs.map(doc => {
         const data = doc.data()
-
         let aiEvaluation = data.aiEvaluation
         let ai = {
           'AI Recommendation': 'Pending',
           'AI Score': 'N/A',
           Justification: 'No justification provided.'
         }
-
         try {
           if (typeof aiEvaluation?.raw_response === 'string') {
-            // Case 1: raw_response exists and is a string
             const cleaned = aiEvaluation.raw_response
               .replace(/```json/i, '')
               .replace(/```/g, '')
               .trim()
             const parsed = JSON.parse(cleaned)
-
             ai['AI Recommendation'] = parsed['AI Recommendation'] || 'Pending'
             ai['AI Score'] = parsed['AI Score'] ?? 'N/A'
             ai['Justification'] =
@@ -73,7 +96,6 @@ const ApplicationsPage: React.FC = () => {
             aiEvaluation !== null &&
             !aiEvaluation.raw_response
           ) {
-            // Case 2: structured directly
             ai['AI Recommendation'] =
               aiEvaluation['AI Recommendation'] || 'Pending'
             ai['AI Score'] = aiEvaluation['AI Score'] ?? 'N/A'
@@ -81,20 +103,14 @@ const ApplicationsPage: React.FC = () => {
               aiEvaluation['Justification'] || 'No justification provided.'
           }
         } catch (err) {
-          console.warn(
-            '⚠️ Failed to parse aiEvaluation data:',
-            aiEvaluation,
-            err
-          )
-
           if (typeof aiEvaluation?.raw_response === 'string') {
             ai['Justification'] = aiEvaluation.raw_response
           }
         }
-
         return {
           id: doc.id,
           ...data,
+          companyCode: data.companyCode || '',
           beneficiaryName: data.beneficiaryName || 'N/A',
           gender: data.gender || 'N/A',
           ageGroup: data.ageGroup || 'N/A',
@@ -110,6 +126,17 @@ const ApplicationsPage: React.FC = () => {
           applicationStatus: data.applicationStatus || 'Pending'
         }
       })
+
+      // Filter by companyCode
+      apps = apps.filter(app => app.companyCode === companyCode)
+
+      // Sort by aiScore descending (N/A at bottom)
+      apps.sort((a, b) => {
+        const aScore = isNaN(Number(a.aiScore)) ? -Infinity : Number(a.aiScore)
+        const bScore = isNaN(Number(b.aiScore)) ? -Infinity : Number(b.aiScore)
+        return bScore - aScore
+      })
+
       setApplications(apps)
       setFilteredApplications(apps)
     } catch (error) {
@@ -119,6 +146,11 @@ const ApplicationsPage: React.FC = () => {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (companyCode) fetchApplications()
+    // eslint-disable-next-line
+  }, [companyCode])
 
   const updateStatus = async (newStatus: string, docId: string) => {
     const ref = doc(db, 'applications', docId)
@@ -227,6 +259,18 @@ const ApplicationsPage: React.FC = () => {
       key: 'ageGroup'
     },
     {
+      title: 'AI Score',
+      dataIndex: 'aiScore',
+      key: 'aiScore',
+      sorter: (a, b) => {
+        const aScore = isNaN(Number(a.aiScore)) ? -Infinity : Number(a.aiScore)
+        const bScore = isNaN(Number(b.aiScore)) ? -Infinity : Number(b.aiScore)
+        return bScore - aScore
+      },
+      defaultSortOrder: 'descend',
+      render: score => score ?? 'N/A'
+    },
+    {
       title: 'Decision',
       key: 'applicationStatus',
       render: (record: any) => {
@@ -261,9 +305,19 @@ const ApplicationsPage: React.FC = () => {
       )
     }
   ]
-  useEffect(() => {
-    fetchApplications()
-  }, [])
+
+  // CSV export function
+  const handleExportCSV = () => {
+    const exportCols = columns.filter(col => col.dataIndex)
+    const csv = toCSV(filteredApplications, exportCols)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.setAttribute('download', 'applications.csv')
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div style={{ padding: 24 }}>
@@ -334,7 +388,7 @@ const ApplicationsPage: React.FC = () => {
         </Row>
       </Skeleton>
 
-      {/* Filters */}
+      {/* Filters & Export */}
       <Space style={{ marginBottom: 16 }}>
         <Select
           placeholder='Filter by Gender'
@@ -355,6 +409,13 @@ const ApplicationsPage: React.FC = () => {
           <Option value='Adult'>Adult</Option>
           <Option value='Senior'>Senior</Option>
         </Select>
+        <Button
+          type='primary'
+          icon={<DownloadOutlined />}
+          onClick={handleExportCSV}
+        >
+          Export CSV
+        </Button>
       </Space>
 
       {/* Table & Detail Card */}
@@ -384,7 +445,6 @@ const ApplicationsPage: React.FC = () => {
                     flexWrap: 'wrap'
                   }}
                 >
-                  {/* Left Block: AI and Status Info */}
                   <div style={{ maxWidth: '70%' }}>
                     <div style={{ marginBottom: 8 }}>
                       <Text strong>Current Status: </Text>
@@ -400,21 +460,18 @@ const ApplicationsPage: React.FC = () => {
                         {readableStatus}
                       </Tag>
                     </div>
-
                     <div style={{ marginBottom: 8 }}>
                       <Text type='secondary'>
                         <strong>AI Recommendation:</strong>{' '}
                         {selectedApplication.aiRecommendation || 'N/A'}
                       </Text>
                     </div>
-
                     <div style={{ marginBottom: 8 }}>
                       <Text>
                         <strong>Score:</strong>{' '}
                         {selectedApplication.aiScore ?? 'N/A'}
                       </Text>
                     </div>
-
                     <div style={{ marginBottom: 8 }}>
                       <Text>
                         <strong>Justification:</strong>{' '}
@@ -429,11 +486,9 @@ const ApplicationsPage: React.FC = () => {
                       </Text>
                     </div>
                   </div>
-
-                  {/* Right Block: Status Select */}
                   <div>
                     <Text>
-                      <strong>Alter Desicion:</strong>{' '}
+                      <strong>Alter Decision:</strong>{' '}
                     </Text>
                     <Select
                       style={{ width: 160, marginBottom: 5 }}
@@ -484,40 +539,36 @@ const ApplicationsPage: React.FC = () => {
           >
             {selectedApplication ? (
               <div style={{ padding: '8px 16px' }}>
-                {selectedApplication ? (
-                  <>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text strong>Enterprise:</Text>
-                      <div>{selectedApplication.beneficiaryName || 'N/A'}</div>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text strong>Email:</Text>
-                      <div>{selectedApplication.email || 'N/A'}</div>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text strong>Gender:</Text>
-                      <div>{selectedApplication.gender || 'N/A'}</div>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text strong>Stage:</Text>
-                      <div>{selectedApplication.stage || 'N/A'}</div>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text strong>Hub:</Text>
-                      <div>{selectedApplication.hub || 'N/A'}</div>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text strong>Motivation:</Text>
-                      <div>{selectedApplication.motivation || 'N/A'}</div>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text strong>Challenges:</Text>
-                      <div>{selectedApplication.challenges || 'N/A'}</div>
-                    </div>
-                  </>
-                ) : (
-                  <Text type='secondary'>Click a row to view details</Text>
-                )}
+                <>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Enterprise:</Text>
+                    <div>{selectedApplication.beneficiaryName || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Email:</Text>
+                    <div>{selectedApplication.email || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Gender:</Text>
+                    <div>{selectedApplication.gender || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Stage:</Text>
+                    <div>{selectedApplication.stage || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Hub:</Text>
+                    <div>{selectedApplication.hub || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Motivation:</Text>
+                    <div>{selectedApplication.motivation || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Challenges:</Text>
+                    <div>{selectedApplication.challenges || 'N/A'}</div>
+                  </div>
+                </>
               </div>
             ) : (
               <Text type='secondary'>Click a row to view details</Text>
