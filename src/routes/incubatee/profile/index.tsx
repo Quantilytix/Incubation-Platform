@@ -10,7 +10,8 @@ import {
   Button,
   DatePicker,
   Typography,
-  message
+  message,
+  Spin
 } from 'antd'
 import { db, auth } from '@/firebase'
 import {
@@ -31,6 +32,7 @@ import { Helmet } from 'react-helmet'
 const { Title } = Typography
 
 const ProfileForm: React.FC = () => {
+  const [loading, setLoading] = useState(false)
   const [form] = Form.useForm()
   const [participantDocId, setParticipantDocId] = useState<string | null>(null)
   const navigate = useNavigate()
@@ -379,299 +381,314 @@ const ProfileForm: React.FC = () => {
       <Helmet>
         <title>Profile | Smart Incubation Platform</title>
       </Helmet>
-      <div
-        style={{
-          padding: '24px',
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          background: '#fff'
-        }}
-      >
-        <Title level={3}>Your Profile</Title>
-        <Form layout='vertical' form={form}>
-          {/* Personal Info */}
-          <Divider orientation='left'>Personal Details</Divider>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item
-                name='participantName'
-                label='Owner Name'
-                rules={[{ required: true }]}
-              >
-                <Input disabled />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name='gender'
-                label='Gender'
-                rules={[{ required: true }]}
-              >
-                <Select>
-                  <Select.Option value='Male'>Male</Select.Option>
-                  <Select.Option value='Female'>Female</Select.Option>
-                  <Select.Option value='Other'>Other</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name='idNumber'
-                label='ID Number'
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {/* Contact */}
-          <Row gutter={16}>
-            <Col span={10}>
-              <Form.Item name='email' label='Email' rules={[{ type: 'email' }]}>
-                <Input disabled />
-              </Form.Item>
-            </Col>
-            <Col span={10}>
-              <Form.Item name='phone' label='Phone'>
-                <Input />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {/* Company Info */}
-          <Divider orientation='left'>Company Info</Divider>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name='beneficiaryName'
-                label='Company Name'
-                rules={[{ required: true }]}
-              >
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name='sector'
-                label='Sector'
-                rules={[{ required: true }]}
-              >
-                <Select>
-                  {sectors.map(sector => (
-                    <Select.Option key={sector} value={sector}>
-                      {sector}
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row>
-            <Col span={24}>
-              <Form.Item
-                name='natureOfBusiness'
-                label='Nature of Business (What your business offers)'
-              >
-                <Input.TextArea />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name='beeLevel' label='B-BBEE Level'>
-                <Select>
-                  {[1, 2, 3, 4].map(level => (
-                    <Select.Option key={level} value={level}>
-                      Level {level}
-                    </Select.Option>
-                  ))}
-                  <Select.Option key='5plus' value='5+'>
-                    Level 5 and above
-                  </Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name='youthOwnedPercent' label='Youth-Owned %'>
-                <InputNumber
-                  addonAfter='%'
-                  min={0}
-                  max={100}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name='femaleOwnedPercent' label='Female-Owned %'>
-                <InputNumber
-                  addonAfter='%'
-                  min={0}
-                  max={100}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name='blackOwnedPercent' label='Black-Owned %'>
-                <InputNumber
-                  addonAfter='%'
-                  min={0}
-                  max={100}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name='dateOfRegistration' label='Date of Registration'>
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name='yearsOfTrading' label='Years of Trading'>
-                <InputNumber min={0} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name='registrationNumber' label='Registration Number'>
-                <Input />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {/* Location Info */}
-          <Divider orientation='left'>Location</Divider>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name='businessAddress' label='Business Address'>
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name='city' label='City'>
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name='postalCode' label='Postal Code'>
-                <Input />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name='province' label='Province'>
-                <Select>
-                  {provinces.map(province => (
-                    <Select.Option key={province} value={province}>
-                      {province}
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name='hub' label='Host Community'>
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name='location' label='Location Type'>
-                <Select>
-                  <Select.Option value='Urban'>Urban</Select.Option>
-                  <Select.Option value='Rural'>Rural</Select.Option>
-                  <Select.Option value='Township'>Township</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {/* Metrics Section */}
-          <Divider orientation='left'>📈 Headcount & Revenue</Divider>
-          <Title level={5}>Monthly Data</Title>
-          {last3Months.map(month => (
-            <Row gutter={16} key={month}>
+      <Spin spinning={loading} tip='Saving...'>
+        <div
+          style={{
+            padding: '24px',
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            background: '#fff'
+          }}
+        >
+          <Title level={3}>Your Profile</Title>
+          <Form layout='vertical' form={form}>
+            {/* Personal Info */}
+            <Divider orientation='left'>Personal Details</Divider>
+            <Row gutter={16}>
               <Col span={8}>
                 <Form.Item
-                  name={`revenue_${month}`}
-                  label={`Revenue (${month})`}
+                  name='participantName'
+                  label='Owner Name'
+                  rules={[{ required: true }]}
                 >
-                  <InputNumber
-                    style={{ width: '100%' }}
-                    formatter={v =>
-                      `R ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-                    }
-                    parser={v => Number(v?.replace(/R\s?|(,*)/g, '') || 0)}
-                  />
+                  <Input disabled />
                 </Form.Item>
               </Col>
               <Col span={8}>
                 <Form.Item
-                  name={`permHeadcount_${month}`}
-                  label='Permanent Staff'
-                  //   initialValue={1}
+                  name='gender'
+                  label='Gender'
+                  rules={[{ required: true }]}
                 >
-                  <InputNumber min={0} style={{ width: '100%' }} />
+                  <Select>
+                    <Select.Option value='Male'>Male</Select.Option>
+                    <Select.Option value='Female'>Female</Select.Option>
+                    <Select.Option value='Other'>Other</Select.Option>
+                  </Select>
                 </Form.Item>
               </Col>
               <Col span={8}>
                 <Form.Item
-                  name={`tempHeadcount_${month}`}
-                  label='Temporary Staff'
+                  name='idNumber'
+                  label='ID Number'
+                  rules={[{ required: true }]}
                 >
-                  <InputNumber min={0} style={{ width: '100%' }} />
+                  <Input />
                 </Form.Item>
               </Col>
             </Row>
-          ))}
 
-          <Title level={5}>Annual Data</Title>
-          {last2Years.map(year => (
-            <Row gutter={16} key={year}>
-              <Col span={8}>
-                <Form.Item name={`revenue_${year}`} label={`Revenue (${year})`}>
-                  <InputNumber
-                    style={{ width: '100%' }}
-                    formatter={v =>
-                      `R ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-                    }
-                    parser={v => Number(v?.replace(/R\s?|(,*)/g, '') || 0)}
-                  />
+            {/* Contact */}
+            <Row gutter={16}>
+              <Col span={10}>
+                <Form.Item
+                  name='email'
+                  label='Email'
+                  rules={[{ type: 'email' }]}
+                >
+                  <Input disabled />
                 </Form.Item>
               </Col>
-              <Col span={8}>
-                <Form.Item
-                  name={`permHeadcount_${year}`}
-                  label='Permanent Staff'
-                  //   initialValue={1}
-                >
-                  <InputNumber min={0} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item
-                  name={`tempHeadcount_${year}`}
-                  label='Temporary Staff'
-                >
-                  <InputNumber min={0} style={{ width: '100%' }} />
+              <Col span={10}>
+                <Form.Item name='phone' label='Phone'>
+                  <Input />
                 </Form.Item>
               </Col>
             </Row>
-          ))}
 
-          <Divider />
-          <Button type='primary' onClick={onSave} block>
-            Save Profile
-          </Button>
-        </Form>
-      </div>
+            {/* Company Info */}
+            <Divider orientation='left'>Company Info</Divider>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  name='beneficiaryName'
+                  label='Company Name'
+                  rules={[{ required: true }]}
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name='sector'
+                  label='Sector'
+                  rules={[{ required: true }]}
+                >
+                  <Select>
+                    {sectors.map(sector => (
+                      <Select.Option key={sector} value={sector}>
+                        {sector}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row>
+              <Col span={24}>
+                <Form.Item
+                  name='natureOfBusiness'
+                  label='Nature of Business (What your business offers)'
+                >
+                  <Input.TextArea />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name='beeLevel' label='B-BBEE Level'>
+                  <Select>
+                    {[1, 2, 3, 4].map(level => (
+                      <Select.Option key={level} value={level}>
+                        Level {level}
+                      </Select.Option>
+                    ))}
+                    <Select.Option key='5plus' value='5+'>
+                      Level 5 and above
+                    </Select.Option>
+                  </Select>
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name='youthOwnedPercent' label='Youth-Owned %'>
+                  <InputNumber
+                    addonAfter='%'
+                    min={0}
+                    max={100}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name='femaleOwnedPercent' label='Female-Owned %'>
+                  <InputNumber
+                    addonAfter='%'
+                    min={0}
+                    max={100}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name='blackOwnedPercent' label='Black-Owned %'>
+                  <InputNumber
+                    addonAfter='%'
+                    min={0}
+                    max={100}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Row gutter={16}>
+              <Col span={8}>
+                <Form.Item
+                  name='dateOfRegistration'
+                  label='Date of Registration'
+                >
+                  <DatePicker style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item name='yearsOfTrading' label='Years of Trading'>
+                  <InputNumber min={0} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name='registrationNumber'
+                  label='Registration Number'
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            {/* Location Info */}
+            <Divider orientation='left'>Location</Divider>
+            <Row gutter={16}>
+              <Col span={8}>
+                <Form.Item name='businessAddress' label='Business Address'>
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item name='city' label='City'>
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item name='postalCode' label='Postal Code'>
+                  <Input />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Row gutter={16}>
+              <Col span={8}>
+                <Form.Item name='province' label='Province'>
+                  <Select>
+                    {provinces.map(province => (
+                      <Select.Option key={province} value={province}>
+                        {province}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item name='hub' label='Host Community'>
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item name='location' label='Location Type'>
+                  <Select>
+                    <Select.Option value='Urban'>Urban</Select.Option>
+                    <Select.Option value='Rural'>Rural</Select.Option>
+                    <Select.Option value='Township'>Township</Select.Option>
+                  </Select>
+                </Form.Item>
+              </Col>
+            </Row>
+
+            {/* Metrics Section */}
+            <Divider orientation='left'>📈 Headcount & Revenue</Divider>
+            <Title level={5}>Monthly Data</Title>
+            {last3Months.map(month => (
+              <Row gutter={16} key={month}>
+                <Col span={8}>
+                  <Form.Item
+                    name={`revenue_${month}`}
+                    label={`Revenue (${month})`}
+                  >
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      formatter={v =>
+                        `R ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+                      }
+                      parser={v => Number(v?.replace(/R\s?|(,*)/g, '') || 0)}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    name={`permHeadcount_${month}`}
+                    label='Permanent Staff'
+                    //   initialValue={1}
+                  >
+                    <InputNumber min={0} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    name={`tempHeadcount_${month}`}
+                    label='Temporary Staff'
+                  >
+                    <InputNumber min={0} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            ))}
+
+            <Title level={5}>Annual Data</Title>
+            {last2Years.map(year => (
+              <Row gutter={16} key={year}>
+                <Col span={8}>
+                  <Form.Item
+                    name={`revenue_${year}`}
+                    label={`Revenue (${year})`}
+                  >
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      formatter={v =>
+                        `R ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+                      }
+                      parser={v => Number(v?.replace(/R\s?|(,*)/g, '') || 0)}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    name={`permHeadcount_${year}`}
+                    label='Permanent Staff'
+                    //   initialValue={1}
+                  >
+                    <InputNumber min={0} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    name={`tempHeadcount_${year}`}
+                    label='Temporary Staff'
+                  >
+                    <InputNumber min={0} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            ))}
+
+            <Divider />
+            <Button type='primary' onClick={onSave} block>
+              Save Profile
+            </Button>
+          </Form>
+        </div>
+      </Spin>
     </>
   )
 }

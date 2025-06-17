@@ -121,10 +121,6 @@ export const ConsultantAssignments: React.FC = () => {
     useState<Assignment | null>(null)
   const [lockedIntervention, setLockedIntervention] = useState<any>(null)
 
-  const [selectedType, setSelectedType] = useState<'singular' | 'grouped'>(
-    'singular'
-  )
-
   const [assignmentParticipant, setAssignmentParticipant] =
     useState<Participant | null>(null)
   const [assignmentModalVisible, setAssignmentModalVisible] = useState(false)
@@ -141,6 +137,11 @@ export const ConsultantAssignments: React.FC = () => {
   const [selectedProgram, setSelectedProgram] = useState<string | undefined>()
   const [departments, setDepartments] = useState<any[]>([])
   const [userDepartment, setUserDepartment] = useState<any>(null)
+  const [selectedType, setSelectedType] = useState<'singular' | 'grouped'>(
+    'singular'
+  )
+  const [multiParticipants, setMultiParticipants] = useState<string[]>([])
+  const [sharedInterventions, setSharedInterventions] = useState<any[]>([])
 
   const fetchDepartments = async (companyCode: string) => {
     const snapshot = await getDocs(
@@ -848,96 +849,92 @@ export const ConsultantAssignments: React.FC = () => {
           form={assignmentForm}
           layout='vertical'
           onFinish={async values => {
-            try {
-              const selectedParticipant = participants.find(
-                p => p.id === values.participant
-              )
+            // 🔽 INSERT LOGIC HERE
+            const isGrouped = values.type === 'grouped'
+            const selectedIds = isGrouped
+              ? values.participants
+              : [values.participant]
 
-              console.log(selectedParticipant)
-              const selectedConsultant = consultants.find(
-                c => c.id === values.consultant
-              )
-              const selectedIntervention =
-                selectedParticipant?.requiredInterventions.find(
+            await Promise.all(
+              selectedIds.map(async pid => {
+                const participant = participants.find(p => p.id === pid)
+                const consultant = consultants.find(
+                  c => c.id === values.consultant
+                )
+                const intervention = participant?.requiredInterventions.find(
                   i => i.id === values.intervention
                 )
+                if (!participant || !consultant || !intervention) return
 
-              if (
-                !selectedParticipant ||
-                !selectedConsultant ||
-                !selectedIntervention
-              ) {
-                console.warn('DEBUG:', {
-                  participant: values.participant,
-                  consultant: values.consultant,
-                  intervention: values.intervention,
-                  selectedParticipant,
-                  selectedConsultant,
-                  selectedIntervention
-                })
-                message.error('Invalid data selected. Please retry.')
-                return
-              }
+                const newId = `ai${Date.now()}-${pid}`
 
-              const newId = `ai${Date.now()}`
+                const assignment = {
+                  id: newId,
+                  participantId: participant.id,
+                  beneficiaryName: participant.beneficiaryName,
+                  consultantId: consultant.id,
+                  consultantName: consultant.name,
+                  interventionId: intervention.id,
+                  interventionTitle: intervention.title,
+                  type: values.type,
+                  targetType: values.targetType,
+                  targetValue: values.targetValue,
+                  targetMetric: values.targetMetric,
+                  dueDate: values.dueDate
+                    ? Timestamp.fromDate(values.dueDate.toDate())
+                    : null,
+                  status: 'assigned',
+                  consultantStatus: 'pending',
+                  userStatus: 'pending',
+                  consultantCompletionStatus: 'pending',
+                  userCompletionStatus: 'pending',
+                  createdAt: Timestamp.now(),
+                  updatedAt: Timestamp.now()
+                }
 
-              const newAssignment = {
-                id: newId,
-                participantId: selectedParticipant.id,
-                beneficiaryName: selectedParticipant.beneficiaryName,
-                consultantId: selectedConsultant.id,
-                consultantName: selectedConsultant.name,
-                interventionId: selectedIntervention.id,
-                interventionTitle: selectedIntervention.title,
-                type: values.type,
-                targetType: values.targetType,
-                targetValue: values.targetValue,
-                targetMetric: values.targetMetric,
-                dueDate: values.dueDate
-                  ? Timestamp.fromDate(values.dueDate.toDate())
-                  : null, // ✅ ADD THIS
-                status: 'assigned',
-                consultantStatus: 'pending',
-                userStatus: 'pending',
-                consultantCompletionStatus: 'pending',
-                userCompletionStatus: 'pending',
-                createdAt: Timestamp.now(),
-                updatedAt: Timestamp.now()
-              }
+                await setDoc(
+                  doc(db, 'assignedInterventions', newId),
+                  assignment
+                )
+              })
+            )
 
-              await setDoc(
-                doc(db, 'assignedInterventions', newId),
-                newAssignment
-              )
-
-              setNewAssignmentId(newId)
-
-              fetchAssignments()
-
-              message.success('New intervention assigned successfully')
-              setAssignmentModalVisible(false)
-              assignmentForm.resetFields()
-            } catch (error) {
-              console.error('❌ Error assigning intervention:', error)
-              message.error('Failed to create assignment')
-            }
+            message.success('Intervention(s) assigned successfully')
+            setAssignmentModalVisible(false)
+            assignmentForm.resetFields()
+            fetchAssignments()
           }}
           onValuesChange={changedValues => {
-            if (changedValues.participant) {
-              assignmentForm.setFieldsValue({
-                intervention: undefined
-              })
-
-              const selectedParticipant = participants.find(
-                p => p.id === changedValues.participant
-              )
-
-              console.log('🛠 Selected Participant:', selectedParticipant)
-              console.log(
-                '📋 Required Interventions:',
-                selectedParticipant?.requiredInterventions
-              )
+            if (changedValues.type) {
+              setSelectedType(changedValues.type)
             }
+            if (changedValues.participants && selectedType === 'grouped') {
+              const selectedIds = changedValues.participants
+              const selectedList = participants.filter(p =>
+                selectedIds.includes(p.id)
+              )
+
+              // Compute shared interventions
+              const interventionSets = selectedList.map(
+                p => new Set(p.requiredInterventions.map(i => i.id))
+              )
+              const sharedIds = interventionSets.reduce(
+                (acc, set) => new Set([...acc].filter(id => set.has(id))),
+                interventionSets[0] || new Set()
+              )
+
+              const intersection = [...sharedIds]
+                .map(id => {
+                  const example = selectedList.find(p =>
+                    p.requiredInterventions.some(i => i.id === id)
+                  )
+                  return example?.requiredInterventions.find(i => i.id === id)
+                })
+                .filter(Boolean)
+
+              setSharedInterventions(intersection)
+            }
+
             if (changedValues.targetType) {
               if (changedValues.targetType === 'percentage') {
                 assignmentForm.setFieldsValue({ targetMetric: 'Completion' })
@@ -947,30 +944,97 @@ export const ConsultantAssignments: React.FC = () => {
             }
           }}
         >
-          {/* Participant */}
+          {/* Type */}
           <Form.Item
-            name='participant'
-            label='Select Beneficiary'
-            rules={[{ required: true, message: 'Please select a participant' }]}
+            name='type'
+            label='Assignment Type'
+            rules={[
+              { required: true, message: 'Please select assignment type' }
+            ]}
           >
-            <Select
-              placeholder='Choose a beneficiary'
-              disabled={!!assignmentParticipant}
-            >
-              {participants.map(p => (
-                <Select.Option key={p.id} value={p.id}>
-                  {p.beneficiaryName}
-                </Select.Option>
-              ))}
+            <Select placeholder='Select type'>
+              <Select.Option value='singular'>Singular (1 SME)</Select.Option>
+              <Select.Option value='grouped'>
+                Grouped (Multiple SMEs)
+              </Select.Option>
             </Select>
           </Form.Item>
 
+          {/* Participant */}
+          {selectedType === 'grouped' ? (
+            <Form.Item
+              name='participants'
+              label='Select Multiple Beneficiaries'
+              rules={[
+                {
+                  required: true,
+                  message: 'Please select at least one participant'
+                }
+              ]}
+            >
+              <Select mode='multiple' placeholder='Choose beneficiaries'>
+                {participants.map(p => (
+                  <Select.Option key={p.id} value={p.id}>
+                    {p.beneficiaryName}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          ) : (
+            <Form.Item
+              name='participant'
+              label='Select Beneficiary'
+              rules={[
+                { required: true, message: 'Please select a participant' }
+              ]}
+            >
+              <Select placeholder='Choose a beneficiary'>
+                {participants.map(p => (
+                  <Select.Option key={p.id} value={p.id}>
+                    {p.beneficiaryName}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          )}
+
           {/* Intervention */}
           <Form.Item
-            shouldUpdate={(prev, curr) => prev.participant !== curr.participant}
+            shouldUpdate={(prev, curr) =>
+              prev.participant !== curr.participant ||
+              prev.participants !== curr.participants ||
+              prev.type !== curr.type
+            }
             noStyle
           >
             {({ getFieldValue }) => {
+              const isGrouped = getFieldValue('type') === 'grouped'
+              if (isGrouped) {
+                return (
+                  <Form.Item
+                    name='intervention'
+                    label='Select Shared Intervention'
+                    rules={[
+                      {
+                        required: true,
+                        message: 'Please select an intervention'
+                      }
+                    ]}
+                  >
+                    <Select placeholder='Select intervention (shared)'>
+                      {sharedInterventions.map(intervention => (
+                        <Select.Option
+                          key={intervention.id}
+                          value={intervention.id}
+                        >
+                          {intervention.title}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
               const participantId = getFieldValue('participant')
               const selected = participants.find(p => p.id === participantId)
               const filtered =
@@ -1018,22 +1082,6 @@ export const ConsultantAssignments: React.FC = () => {
                   {c.name}
                 </Select.Option>
               ))}
-            </Select>
-          </Form.Item>
-
-          {/* Type */}
-          <Form.Item
-            name='type'
-            label='Assignment Type'
-            rules={[
-              { required: true, message: 'Please select assignment type' }
-            ]}
-          >
-            <Select placeholder='Select type'>
-              <Select.Option value='singular'>Singular (1 SME)</Select.Option>
-              <Select.Option value='grouped'>
-                Grouped (Multiple SMEs)
-              </Select.Option>
             </Select>
           </Form.Item>
 

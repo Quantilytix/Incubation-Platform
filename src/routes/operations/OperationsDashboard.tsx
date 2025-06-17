@@ -122,6 +122,7 @@ export const OperationsDashboard: React.FC = () => {
     }
     fetchNotifications()
   }, [])
+
   useEffect(() => {
     const fetchRelevantUsers = async () => {
       if (!user?.companyCode) return
@@ -148,6 +149,7 @@ export const OperationsDashboard: React.FC = () => {
 
     fetchRelevantUsers()
   }, [user?.companyCode])
+
   useEffect(() => {
     if (user?.companyCode) {
       // Fetch all departments for dropdown
@@ -320,20 +322,26 @@ export const OperationsDashboard: React.FC = () => {
   ).length
   const total = complianceDocuments.length
 
-  const fetchTasks = async () => {
-    try {
-      const snapshot = await getDocs(collection(db, 'tasks'))
-      const taskList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
-      setTasks(taskList)
-    } catch (error) {
-      console.error('Error fetching tasks:', error)
-    }
-  }
   // Fetch Tasks
   useEffect(() => {
+    if (!user?.companyCode) return
+
+    const fetchTasks = async () => {
+      try {
+        const q = query(
+          collection(db, 'tasks'),
+          where('companyCode', '==', user?.companyCode)
+        )
+        const snapshot = await getDocs(q)
+        const taskList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        setTasks(taskList)
+      } catch (error) {
+        console.error('Error fetching tasks:', error)
+      }
+    }
     const fetchAllOtherData = async () => {
       try {
         // Participants
@@ -365,13 +373,20 @@ export const OperationsDashboard: React.FC = () => {
     fetchComplianceDocuments()
     fetchTasks()
     fetchAllOtherData()
-  }, [])
+  }, [user?.companyCode])
 
   // Fetch Events
   useEffect(() => {
+    if (!user?.companyCode) return
+
     const fetchEvents = async () => {
       try {
-        const snapshot = await getDocs(collection(db, 'events'))
+        const q = query(
+          collection(db, 'events'),
+          where('companyCode', '==', user?.companyCode)
+        )
+        console.log(user?.companyCode)
+        const snapshot = await getDocs(q)
         const eventList = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
@@ -382,7 +397,7 @@ export const OperationsDashboard: React.FC = () => {
       }
     }
     fetchEvents()
-  }, [])
+  }, [user?.companyCode])
 
   const handleEventClick = (event: any) => {
     const eventData = events.find(e => e.id === event.id)
@@ -727,7 +742,7 @@ export const OperationsDashboard: React.FC = () => {
         <Col xs={24} sm={12} md={6} lg={6}>
           <Card>
             <Statistic
-              title='Confirmed Tasks'
+              title='Completed Tasks'
               value={
                 tasks.filter(
                   t => t.status === 'Completed' || t.status === 'confirmed'
@@ -1066,7 +1081,10 @@ export const OperationsDashboard: React.FC = () => {
               <strong>Date:</strong> {selectedEvent.date}
             </p>
             <p>
-              <strong>Time:</strong> {selectedEvent.time || 'N/A'}
+              <strong>Time:</strong>{' '}
+              {selectedEvent.time?.toDate
+                ? dayjs(selectedEvent.time.toDate()).format('HH:mm')
+                : 'N/A'}
             </p>
             <p>
               <strong>Type:</strong> {selectedEvent.type}

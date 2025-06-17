@@ -196,33 +196,41 @@ const OperationsParticipantsManagement: React.FC = () => {
         )
 
         // Map over applications (not participants) - programId is on app
-        let participantsList = applicationSnap.docs.map(doc => {
-          const app = doc.data()
-          const participantId = app.participantId
-          const participant = participantMap.get(participantId) || {}
-          const interventions = app.interventions || {}
-          const required = interventions.required || []
-          const completed = interventions.completed || []
-          const assigned = interventions.assigned || []
-          const progress = calculateProgress(required.length, completed.length)
-          return {
-            id: participantId,
-            ...participant,
-            programId: app.programId || '',
-            companyCode: app.companyCode || '', // <-- ADD THIS LINE!
-            incubatorCode: app.incubatorCode || '', // <-- (if you use it)
-            interventions: {
-              required,
-              completed,
-              assigned,
-              participationRate: interventions.participationRate || 0
-            },
-            assignedCount: assigned.length,
-            completedCount: completed.length,
-            progress,
-            stage: app.stage || participant.stage || 'N/A'
-          }
-        })
+        let participantsList = applicationSnap.docs
+          .filter(
+            doc =>
+              (doc.data().applicationStatus || '').toLowerCase() === 'accepted'
+          )
+          .map(doc => {
+            const app = doc.data()
+            const participantId = app.participantId
+            const participant = participantMap.get(participantId) || {}
+            const interventions = app.interventions || {}
+            const required = interventions.required || []
+            const completed = interventions.completed || []
+            const assigned = interventions.assigned || []
+            const progress = calculateProgress(
+              required.length,
+              completed.length
+            )
+            return {
+              id: participantId,
+              ...participant,
+              programId: app.programId || '',
+              companyCode: app.companyCode || '', // <-- ADD THIS LINE!
+              incubatorCode: app.incubatorCode || '', // <-- (if you use it)
+              interventions: {
+                required,
+                completed,
+                assigned,
+                participationRate: interventions.participationRate || 0
+              },
+              assignedCount: assigned.length,
+              completedCount: completed.length,
+              progress,
+              stage: app.stage || participant.stage || 'N/A'
+            }
+          })
 
         // If userDepartment is set & NOT main, filter by department
         if (userDepartment && !userDepartment.isMain) {

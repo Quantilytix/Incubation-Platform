@@ -165,50 +165,55 @@ const ParticipantRegistrationStepForm = () => {
   }
 
   useEffect(() => {
-  const fetchInterventions = async () => {
-    let filteredSnapshot
-    // 1. Try to fetch for specific companyCode
-    if (companyCode) {
-      filteredSnapshot = await getDocs(
-        query(collection(db, 'interventions'), where('companyCode', '==', companyCode))
+    const fetchInterventions = async () => {
+      let filteredSnapshot
+      // 1. Try to fetch for specific companyCode
+      if (companyCode) {
+        filteredSnapshot = await getDocs(
+          query(
+            collection(db, 'interventions'),
+            where('companyCode', '==', companyCode)
+          )
+        )
+      }
+
+      // 2. If none found, fallback to QTX
+      if (!filteredSnapshot || filteredSnapshot.empty) {
+        filteredSnapshot = await getDocs(
+          query(
+            collection(db, 'interventions'),
+            where('companyCode', '==', 'QTX')
+          )
+        )
+      }
+
+      const rawInterventions = filteredSnapshot.docs.map(doc => ({
+        id: doc.id,
+        title: doc.data().interventionTitle,
+        area: doc.data().areaOfSupport
+      }))
+
+      // Group interventions by area
+      const areaMap = {}
+      rawInterventions.forEach(intervention => {
+        if (!areaMap[intervention.area]) areaMap[intervention.area] = []
+        areaMap[intervention.area].push({
+          id: intervention.id,
+          title: intervention.title
+        })
+      })
+
+      const fetchedGroups = Object.entries(areaMap).map(
+        ([area, interventions]) => ({
+          area,
+          interventions
+        })
       )
+      setInterventionGroups(fetchedGroups)
     }
 
-    // 2. If none found, fallback to QTX
-    if (!filteredSnapshot || filteredSnapshot.empty) {
-      filteredSnapshot = await getDocs(
-        query(collection(db, 'interventions'), where('companyCode', '==', 'QTX'))
-      )
-    }
-
-    const rawInterventions = filteredSnapshot.docs.map(doc => ({
-      id: doc.id,
-      title: doc.data().interventionTitle,
-      area: doc.data().areaOfSupport
-    }))
-
-    // Group interventions by area
-    const areaMap = {}
-    rawInterventions.forEach(intervention => {
-      if (!areaMap[intervention.area]) areaMap[intervention.area] = []
-      areaMap[intervention.area].push({
-        id: intervention.id,
-        title: intervention.title
-      })
-    })
-
-    const fetchedGroups = Object.entries(areaMap).map(
-      ([area, interventions]) => ({
-        area,
-        interventions
-      })
-    )
-    setInterventionGroups(fetchedGroups)
-  }
-
-  fetchInterventions()
-}, [companyCode])
-
+    fetchInterventions()
+  }, [companyCode])
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -933,35 +938,34 @@ const ParticipantRegistrationStepForm = () => {
       }
 
       await addDoc(
-  collection(db, 'applications'),
-  removeUndefinedDeep({
-    participantId,
-    programName: programName,
-    programId: programId,
-    companyCode: companyCode,
-    applicationStatus: 'pending',
-    submittedAt: new Date().toISOString(),
-    beneficiaryName: values.beneficiaryName,
-    gender: values.gender,
-    ageGroup: getAgeGroup(derivedAge),
-    stage: participant.stage,
-    province: values.province,
-    hub: values.hub,
-    email: values.email,
-    motivation: values.motivation,
-    challenges: values.challenges,
-    facebook: values.facebook,
-    instagram: values.instagram,
-    linkedIn: values.linkedIn,
-    complianceScore,
-    complianceDocuments: uploadedDocs,
-    interventions: participant.interventions,
-    aiEvaluation,
-    growthPlanDocUrl: participant.growthPlanDocUrl,
-    profile: values.profile 
-  })
-)
-
+        collection(db, 'applications'),
+        removeUndefinedDeep({
+          participantId,
+          programName: programName,
+          programId: programId,
+          companyCode: companyCode,
+          applicationStatus: 'pending',
+          submittedAt: new Date().toISOString(),
+          beneficiaryName: values.beneficiaryName,
+          gender: values.gender,
+          ageGroup: getAgeGroup(derivedAge),
+          stage: participant.stage,
+          province: values.province,
+          hub: values.hub,
+          email: values.email,
+          motivation: values.motivation,
+          challenges: values.challenges,
+          facebook: values.facebook,
+          instagram: values.instagram,
+          linkedIn: values.linkedIn,
+          complianceScore,
+          complianceDocuments: uploadedDocs,
+          interventions: participant.interventions,
+          aiEvaluation,
+          growthPlanDocUrl: participant.growthPlanDocUrl,
+          profile: values.profile
+        })
+      )
 
       await sendApplicationEmail(values.email, values.participantName)
 

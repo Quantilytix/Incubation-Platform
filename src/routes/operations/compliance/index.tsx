@@ -48,7 +48,8 @@ import {
   addDoc,
   updateDoc,
   doc,
-  query
+  query,
+  where
 } from 'firebase/firestore'
 import {
   getStorage,
@@ -63,6 +64,7 @@ import { Helmet } from 'react-helmet'
 
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '@/firebase' // ⬅️ make sure this exports Firebase functions
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 
 const { Title, Text } = Typography
 const { TabPane } = Tabs
@@ -80,7 +82,7 @@ const mockParticipants = [
 
 const OperationsCompliance: React.FC = () => {
   const [documents, setDocuments] = useState<ComplianceDocument[]>([])
-  const [loading, setLoading] = useState(true)
+  const [formLoading, setFormLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [isEDAgreementModalVisible, setIsEDAgreementModalVisible] =
@@ -97,11 +99,23 @@ const OperationsCompliance: React.FC = () => {
   const [uploadPercent, setUploadPercent] = useState<number>(0)
   const [isUploading, setIsUploading] = useState<boolean>(false)
   const [contactInfoMap, setContactInfoMap] = useState<Record<string, any>>({})
+  const { user, loading } = useFullIdentity()
 
   useEffect(() => {
     const fetchContactInfo = async () => {
-      const appsSnap = await getDocs(collection(db, 'applications'))
-      const participantsSnap = await getDocs(collection(db, 'participants'))
+      console.log('Company Code:', user?.companyCode)
+      if (!user?.companyCode) return
+
+      const appsSnap = await getDocs(
+        query(
+          collection(db, 'applications'),
+          where('companyCode', '==', user.companyCode)
+        )
+      )
+
+      const participantsSnap = await getDocs(
+        query(collection(db, 'participants'))
+      )
 
       const participantMap = participantsSnap.docs.reduce((acc, doc) => {
         acc[doc.id] = doc.data()
@@ -122,18 +136,18 @@ const OperationsCompliance: React.FC = () => {
         return acc
       }, {} as Record<string, any>)
 
-      console.log('ContactInfoMap', contactInfoMap)
+      console.log('ContactInfoMap', contactMap)
 
       setContactInfoMap(contactMap)
     }
 
     fetchContactInfo()
-  }, [])
+  }, [user?.companyCode])
 
   const uploadProps: UploadProps = {
     beforeUpload: file => {
       setUploadingFile(file)
-      return false // ❗ Prevent AntD from auto-uploading
+      return false
     },
     showUploadList: true
   }
@@ -141,9 +155,18 @@ const OperationsCompliance: React.FC = () => {
   // Load data
   useEffect(() => {
     const fetchDocuments = async () => {
-      setLoading(true)
+      if (!user?.companyCode) return
+
+      setFormLoading(true)
       try {
-        const snapshot = await getDocs(collection(db, 'applications'))
+        const snapshot = await getDocs(
+          query(
+            collection(db, 'applications'),
+            where('companyCode', '==', user.companyCode),
+            where('applicationStatus', '==', 'accepted')
+          )
+        )
+
         const fetchedDocuments: ComplianceDocument[] = []
 
         snapshot.forEach(applicationDoc => {
@@ -155,7 +178,7 @@ const OperationsCompliance: React.FC = () => {
             fetchedDocuments.push({
               id: `${applicationDoc.id}-${index}`,
               participantName: applicantEmail,
-              participantId: appData.participantId, // ✅ Add this
+              participantId: appData.participantId,
               ...doc
             })
           })
@@ -169,12 +192,12 @@ const OperationsCompliance: React.FC = () => {
         )
         message.error('Failed to load documents.')
       } finally {
-        setLoading(false)
+        setFormLoading(false)
       }
     }
 
     fetchDocuments()
-  }, [])
+  }, [user?.companyCode]) // ✅ run when companyCode becomes available
 
   const handleSendReminders = async () => {
     const remindersByUser: Record<string, ComplianceDocument[]> = {}
@@ -571,7 +594,7 @@ const OperationsCompliance: React.FC = () => {
         style={{ marginTop: '20px', marginBottom: '20px' }}
       >
         <Col span={4}>
-          <Card loading={loading}>
+          <Card loading={formLoading}>
             <Statistic
               title='Total Documents'
               value={complianceStats.total}
@@ -581,7 +604,7 @@ const OperationsCompliance: React.FC = () => {
           </Card>
         </Col>
         <Col span={4}>
-          <Card loading={loading}>
+          <Card loading={formLoading}>
             <Statistic
               title='Valid'
               value={complianceStats.valid}
@@ -591,7 +614,7 @@ const OperationsCompliance: React.FC = () => {
           </Card>
         </Col>
         <Col span={4}>
-          <Card loading={loading}>
+          <Card loading={formLoading}>
             <Statistic
               title='Expiring Soon'
               value={complianceStats.expiring}
@@ -601,7 +624,7 @@ const OperationsCompliance: React.FC = () => {
           </Card>
         </Col>
         <Col span={4}>
-          <Card loading={loading}>
+          <Card loading={formLoading}>
             <Statistic
               title='Expired'
               value={complianceStats.expired}
@@ -611,7 +634,7 @@ const OperationsCompliance: React.FC = () => {
           </Card>
         </Col>
         <Col span={4}>
-          <Card loading={loading}>
+          <Card loading={formLoading}>
             <Statistic
               title='Missing'
               value={complianceStats.missing}
@@ -621,7 +644,7 @@ const OperationsCompliance: React.FC = () => {
           </Card>
         </Col>
         <Col span={4}>
-          <Card loading={loading}>
+          <Card loading={formLoading}>
             <Statistic
               title='Pending Review'
               value={complianceStats.pending}
@@ -672,17 +695,17 @@ const OperationsCompliance: React.FC = () => {
         </Space>
       </div>
 
-      <Card loading={loading}>
+      <Card loading={formLoading}>
         <Table
           columns={columns}
           dataSource={filteredDocuments}
           rowKey='id'
-          loading={loading}
+          loading={formLoading}
           expandable={{
             expandedRowRender: record => (
               <div style={{ padding: '0 20px' }}>
                 <p>
-                  <strong>Issue Date:</strong> {record.issueDate || 'N/A'}
+                  <strong>Expiry Date:</strong> {record.expiryDate || 'N/A'}
                 </p>
                 {record.notes && (
                   <p>

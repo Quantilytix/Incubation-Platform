@@ -21,6 +21,12 @@ import {
   doc,
   getDoc
 } from 'firebase/firestore'
+import {
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  CloseCircleOutlined,
+  AppstoreOutlined
+} from '@ant-design/icons'
 import { auth, db } from '@/firebase'
 import { useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
@@ -176,13 +182,14 @@ const ApplicationTracker = () => {
       >
         <Space direction='vertical' size='large' style={{ width: '100%' }}>
           <Title level={3}>🎯 My Application Tracker</Title>
-
-          <Card bordered style={{ background: '#fafafa' }}>
+          <Divider>Metrics</Divider>
+          <Card variant='outlined' style={{ background: '#fafafa' }}>
             <Row gutter={[24, 24]}>
               <Col xs={24} sm={12} md={6}>
                 <Statistic
                   title='Total Applications'
                   value={statusCounts.Total}
+                  prefix={<AppstoreOutlined />}
                 />
               </Col>
               <Col xs={24} sm={12} md={6}>
@@ -190,6 +197,7 @@ const ApplicationTracker = () => {
                   title='Accepted'
                   value={statusCounts.Accepted}
                   valueStyle={{ color: 'green' }}
+                  prefix={<CheckCircleOutlined />}
                 />
               </Col>
               <Col xs={24} sm={12} md={6}>
@@ -197,6 +205,7 @@ const ApplicationTracker = () => {
                   title='Pending'
                   value={statusCounts.Pending}
                   valueStyle={{ color: 'orange' }}
+                  prefix={<ClockCircleOutlined />}
                 />
               </Col>
               <Col xs={24} sm={12} md={6}>
@@ -204,6 +213,7 @@ const ApplicationTracker = () => {
                   title='Rejected'
                   value={statusCounts.Rejected}
                   valueStyle={{ color: 'red' }}
+                  prefix={<CloseCircleOutlined />}
                 />
               </Col>
             </Row>
