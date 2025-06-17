@@ -60,6 +60,7 @@ interface Feedback {
   id: string
   sme: string
   comment: string
+  rating?: number
 }
 
 export const ConsultantDashboard: React.FC = () => {
@@ -81,6 +82,7 @@ export const ConsultantDashboard: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0)
   const [currentRole, setCurrentRole] = useState<string | null>(null)
   const [roleLoading, setRoleLoading] = useState(true)
+  const [companyCode, setCompanyCode] = useState<string | null>(null)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
@@ -104,6 +106,9 @@ export const ConsultantDashboard: React.FC = () => {
           if (consultantData.role) {
             setCurrentRole(consultantData.role.toLowerCase())
           }
+
+          // After fetching consultantData:
+          setCompanyCode(consultantData.companyCode || null)
 
           setRoleLoading(false)
         } else {
@@ -177,15 +182,27 @@ export const ConsultantDashboard: React.FC = () => {
         setInterventions(assigned)
         setOngoingCount(inProgress.length)
 
-        const feedbackSnap = await getDocs(collection(db, 'feedbacks'))
-        const feedbackList: Feedback[] = feedbackSnap.docs.map(docSnap => {
-          const data = docSnap.data()
-          return {
-            id: docSnap.id,
-            sme: data.smeName,
-            comment: data.comment
-          }
-        })
+        const feedbackSnap = await getDocs(
+          query(
+            collection(db, 'interventionsDatabase'),
+            where('consultantId', '==', consultantId),
+            where('companyCode', '==', companyCode)
+          )
+        )
+
+        const feedbackList: Feedback[] = feedbackSnap.docs
+          .map(docSnap => {
+            const data = docSnap.data()
+            if (!data.feedback || !data.feedback.comments) return null
+
+            return {
+              id: docSnap.id,
+              sme: data.beneficiaryName || 'Unknown SME',
+              comment: data.feedback.comments,
+              rating: data.feedback?.rating
+            }
+          })
+          .filter(Boolean) as Feedback[] // remove nulls
 
         setFeedbacks(feedbackList)
       } catch (error) {
