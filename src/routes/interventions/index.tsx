@@ -28,8 +28,6 @@ import {
   BarChartOutlined
 } from '@ant-design/icons'
 
-import { SHA256 } from 'crypto-js'
-
 const { Text } = Typography
 const { Option } = Select
 
@@ -73,10 +71,26 @@ const InterventionDatabaseView = () => {
           query(collection(db, 'users'), where('email', '==', user.email))
         )
         if (userSnap.empty) {
-          console.log(user.email)
-          notification.error({ message: 'User not found' })
+          console.warn(`User not found on first try: ${user.email}`)
+
+          // Retry once after a short delay
+          setTimeout(async () => {
+            const retrySnap = await getDocs(
+              query(collection(db, 'users'), where('email', '==', user.email))
+            )
+            if (retrySnap.empty) {
+              console.log(user.email)
+              return
+            }
+            // Proceed as usual after retry
+            const userData = retrySnap.docs[0].data()
+            setCompanyCode(userData.companyCode)
+            // ... proceed with fetchParticipants etc.
+          }, 1000)
+
           return
         }
+
         const participantsSnap = await getDocs(collection(db, 'participants'))
         const pMap: any = {}
         participantsSnap.forEach(doc => {
