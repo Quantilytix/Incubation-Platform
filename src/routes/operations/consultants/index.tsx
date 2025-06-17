@@ -84,9 +84,6 @@ export const ConsultantPage: React.FC = () => {
   const [searchText, setSearchText] = useState('')
   const { user, loading: identityLoading } = useFullIdentity()
   const [companyCode, setCompanyCode] = useState<string>('')
-  const [departments, setDepartments] = useState<any[]>([])
-  const [userDepartment, setUserDepartment] = useState<any>(null)
-  const isMainDepartment = !!userDepartment?.isMain
 
   useEffect(() => {
     if (!identityLoading) {
@@ -98,31 +95,6 @@ export const ConsultantPage: React.FC = () => {
       }
     }
   }, [identityLoading, user?.companyCode])
-
-  const fetchDepartments = async (companyCode: string) => {
-    const snapshot = await getDocs(
-      query(
-        collection(db, 'departments'),
-        where('companyCode', '==', companyCode)
-      )
-    )
-    setDepartments(
-      snapshot.docs.map(d => ({
-        id: d.id,
-        name: d.data().name,
-        isMain: !!d.data().isMain,
-        companyCode: d.data().companyCode,
-        createdAt: d.data().createdAt
-      }))
-    )
-  }
-
-  useEffect(() => {
-    if (user?.departmentId && companyCode && departments.length) {
-      const dep = departments.find(d => d.id === user.departmentId)
-      setUserDepartment(dep || null)
-    }
-  }, [user, companyCode, departments])
 
   useEffect(() => {
     if (newConsultantId) {
@@ -137,25 +109,11 @@ export const ConsultantPage: React.FC = () => {
     setLoading(true)
     try {
       let q
-      if (userDep?.isMain) {
-        // Main department: fetch all consultants for the company
-        q = query(
-          collection(db, 'consultants'),
-          where('companyCode', '==', companyCode)
-        )
-      } else if (userDep?.id) {
-        // Only consultants in the same department
-        q = query(
-          collection(db, 'consultants'),
-          where('companyCode', '==', companyCode),
-          where('departmentId', '==', userDep.id)
-        )
-      } else {
-        // fallback: show none
-        setConsultants([])
-        setLoading(false)
-        return
-      }
+      q = query(
+        collection(db, 'consultants'),
+        where('companyCode', '==', companyCode)
+      )
+
       const snapshot = await getDocs(q)
       setConsultants(
         snapshot.docs.map(docSnap => ({
@@ -170,39 +128,14 @@ export const ConsultantPage: React.FC = () => {
     }
   }
 
-  // Fetch departments and set userDepartment
   useEffect(() => {
     if (!identityLoading && user?.companyCode) {
       setCompanyCode(user.companyCode)
-      fetchDepartments(user.companyCode)
     }
   }, [identityLoading, user?.companyCode])
 
-  // Set userDepartment when departments are loaded
-  useEffect(() => {
-    if (user?.departmentId && departments.length) {
-      const dep = departments.find(d => d.id === user.departmentId)
-      setUserDepartment(dep || null)
-    }
-  }, [user, departments])
-
-  // Fetch consultants whenever userDepartment changes
-  useEffect(() => {
-    if (companyCode && userDepartment) {
-      fetchConsultants(companyCode, userDepartment)
-    }
-  }, [companyCode, userDepartment])
-
   const handleAddConsultant = async (values: any) => {
     try {
-      // Determine department based on role
-      const deptId = isMainDepartment ? values.departmentId : userDepartment?.id
-
-      const dep = departments.find(d => d.id === deptId)
-      if (!dep) {
-        message.error('Department not found!')
-        return
-      }
       const { email, name, expertise, rate } = values
 
       // Create Firebase Auth account
@@ -223,10 +156,7 @@ export const ConsultantPage: React.FC = () => {
         active: true,
         authUid: uid,
         companyCode,
-        createdAt: new Date().toISOString(),
-        departmentId: dep.id,
-        departmentName: dep.name,
-        departmentIsMain: !!dep.isMain
+        createdAt: new Date().toISOString()
       }
       await addDoc(collection(db, 'consultants'), newConsultant)
 
@@ -234,9 +164,6 @@ export const ConsultantPage: React.FC = () => {
         name,
         email,
         companyCode,
-        departmentId: dep.id,
-        departmentName: dep.name,
-        departmentIsMain: !!dep.isMain,
         role: 'consultant',
         createdAt: new Date().toISOString()
       }
@@ -255,20 +182,8 @@ export const ConsultantPage: React.FC = () => {
   const handleEditConsultant = async (values: any) => {
     if (!editingConsultant) return
     try {
-      // Determine department based on role
-      const deptId = isMainDepartment ? values.departmentId : userDepartment?.id
-
-      const dep = departments.find(d => d.id === deptId)
-      if (!dep) {
-        message.error('Department not found!')
-        return
-      }
-      // Spread the values and override department fields
       const updated = {
-        ...values,
-        departmentId: dep.id,
-        departmentName: dep.name,
-        departmentIsMain: !!dep.isMain
+        ...values
       }
       await updateDoc(doc(db, 'consultants', editingConsultant.id), updated)
       setEditModalVisible(false)
@@ -358,25 +273,6 @@ export const ConsultantPage: React.FC = () => {
       dataIndex: 'rate',
       key: 'rate',
       render: val => `R ${val}`
-    },
-    {
-      title: 'Department',
-      dataIndex: 'departmentId',
-      key: 'departmentId',
-      render: (id, record) => {
-        const dep = departments.find(d => d.id === id)
-        if (!dep) return <Tag color='orange'>Not Set</Tag>
-        return (
-          <span>
-            {dep.name}
-            {dep.isMain && (
-              <Tag color='purple' style={{ marginLeft: 6 }}>
-                Main
-              </Tag>
-            )}
-          </span>
-        )
-      }
     },
 
     {
@@ -559,16 +455,7 @@ export const ConsultantPage: React.FC = () => {
         centered
         bodyStyle={{ maxHeight: '70vh', overflowY: 'auto' }} // 👉 limit height nicely
       >
-        <Form
-          form={form}
-          layout='vertical'
-          onFinish={handleAddConsultant}
-          initialValues={
-            !isMainDepartment && userDepartment
-              ? { departmentId: userDepartment.id }
-              : {}
-          }
-        >
+        <Form form={form} layout='vertical' onFinish={handleAddConsultant}>
           <Form.Item
             name='name'
             label='Name'
@@ -586,28 +473,6 @@ export const ConsultantPage: React.FC = () => {
             ]}
           >
             <Input />
-          </Form.Item>
-          <Form.Item
-            name='departmentId'
-            label='Department'
-            rules={[{ required: true, message: 'Please select department' }]}
-          >
-            <Select
-              placeholder='Select department'
-              disabled={!isMainDepartment}
-              // force value to user's department if not main
-              value={
-                !isMainDepartment && userDepartment
-                  ? userDepartment.id
-                  : undefined
-              }
-            >
-              {departments.map(dep => (
-                <Option key={dep.id} value={dep.id}>
-                  {dep.name} {dep.isMain && ' (Main)'}
-                </Option>
-              ))}
-            </Select>
           </Form.Item>
 
           <Form.Item
@@ -645,16 +510,7 @@ export const ConsultantPage: React.FC = () => {
         onOk={() => editForm.submit()}
         okText='Save Changes'
       >
-        <Form
-          form={editForm}
-          layout='vertical'
-          onFinish={handleEditConsultant}
-          initialValues={
-            !isMainDepartment && userDepartment
-              ? { departmentId: userDepartment.id }
-              : {}
-          }
-        >
+        <Form form={editForm} layout='vertical' onFinish={handleEditConsultant}>
           <Form.Item
             name='name'
             label='Name'
@@ -672,27 +528,6 @@ export const ConsultantPage: React.FC = () => {
             ]}
           >
             <Input />
-          </Form.Item>
-          <Form.Item
-            name='departmentId'
-            label='Department'
-            rules={[{ required: true, message: 'Please select department' }]}
-          >
-            <Select
-              placeholder='Select department'
-              disabled={!isMainDepartment}
-              value={
-                !isMainDepartment && userDepartment
-                  ? userDepartment.id
-                  : undefined
-              }
-            >
-              {departments.map(dep => (
-                <Option key={dep.id} value={dep.id}>
-                  {dep.name} {dep.isMain && ' (Main)'}
-                </Option>
-              ))}
-            </Select>
           </Form.Item>
           <Form.Item
             name='expertise'
