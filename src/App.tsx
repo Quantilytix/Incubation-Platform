@@ -111,6 +111,17 @@ import { ImpactAnalysisForm } from './routes/projectadmin/impact'
 import ParticipantFormalRegistration from './routes/registration/onboarding'
 
 // ───────────────────────────────────────────────────────────
+// 🔹 Receptionist Routes
+// ───────────────────────────────────────────────────────────
+import ReceptionistDashboardPage from '@/routes/receptionist/dashboard'
+import NewInquiry from '@/routes/receptionist/inquiries/new'
+import InquiriesList from '@/routes/receptionist/inquiries'
+import InquiryDetailPage from '@/routes/receptionist/inquiries/[id]'
+import EditInquiry from '@/routes/receptionist/inquiries/[id]/edit'
+import ContactsList from '@/routes/receptionist/contacts'
+import FollowUpsList from '@/routes/receptionist/follow-ups'
+import ReceptionistReports from '@/routes/receptionist/reports'
+// ───────────────────────────────────────────────────────────
 // 🔹 Utilities / Misc
 // ───────────────────────────────────────────────────────────
 import Chat from '@/routes/chat/chat'
@@ -225,6 +236,27 @@ const App = () => {
                         />
                         <Route path='documents' element={<DocumentHub />} />
                       </Route>
+  {/* Receptionist Routes */}
+                      <Route path='receptionist'>
+                        <Route index element={<ReceptionistDashboardPage />} />
+                        <Route path='inquiries' element={<InquiriesList />} />
+                        <Route path='inquiries/new' element={<NewInquiry />} />
+                        <Route
+                          path='inquiries/:id'
+                          element={<InquiryDetailPage />}
+                        />
+                        <Route
+                          path='inquiries/:id/edit'
+                          element={<EditInquiry />}
+                        />
+                        <Route path='contacts' element={<ContactsList />} />
+                        <Route path='follow-ups' element={<FollowUpsList />} />
+                        <Route
+                          path='reports'
+                          element={<ReceptionistReports />}
+                        />
+                      </Route>
+
                       {/* Investor Routes */}
                       <Route path='investor'>
                         <Route index element={<InvestorDashboard />} />
