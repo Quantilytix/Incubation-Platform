@@ -51,6 +51,7 @@ type UserRole =
   | 'projectadmin'
   | 'investor'
   | 'government'
+  | 'receptionist'
 
 export const CustomLayout: React.FC = () => {
   const [logoUploading, setLogoUploading] = useState(false)
@@ -113,7 +114,8 @@ export const CustomLayout: React.FC = () => {
       director: 'Director',
       incubatee: 'Incubatee',
       investor: 'Investor',
-      government: 'Government'
+      government: 'Government',
+      receptionist: 'Receptionist'
     }
 
     return `Smart Incubation : ${nameMap[role] || role} Dashboard`
@@ -372,6 +374,45 @@ export const CustomLayout: React.FC = () => {
         to: '/incubatee/documents',
         label: 'Upload Documents',
         icon: <FileDoneOutlined />
+      }
+    ],
+
+    receptionist: [
+      {
+        key: 'dashboard',
+        to: '/receptionist',
+        label: 'Dashboard',
+        icon: <DashboardOutlined />
+      },
+      {
+        key: 'inquiries',
+        to: '/receptionist/inquiries',
+        label: 'All Inquiries',
+        icon: <FileTextOutlined />
+      },
+      {
+        key: 'new-inquiry',
+        to: '/receptionist/inquiries/new',
+        label: 'New Inquiry',
+        icon: <PlusCircleOutlined />
+      },
+      {
+        key: 'contacts',
+        to: '/receptionist/contacts',
+        label: 'Contacts',
+        icon: <UserOutlined />
+      },
+      {
+        key: 'follow-ups',
+        to: '/receptionist/follow-ups',
+        label: 'Follow-ups',
+        icon: <ClockCircleOutlined />
+      },
+      {
+        key: 'reports',
+        to: '/receptionist/reports',
+        label: 'Reports',
+        icon: <ReadOutlined />
       }
     ],
 
