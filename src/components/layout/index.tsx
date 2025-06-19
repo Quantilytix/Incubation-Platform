@@ -12,6 +12,7 @@ import {
   PieChartOutlined,
   BarChartOutlined,
   FundProjectionScreenOutlined,
+  ClockCircleOutlined,
   FileTextOutlined,
   ReadOutlined,
   FileSearchOutlined,
