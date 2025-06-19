@@ -39,6 +39,106 @@ import { Helmet } from 'react-helmet'
 const { Title, Paragraph, Text } = Typography
 const { TabPane } = Tabs
 
+const eligibilityLabels = {
+  minAge: label => `Minimum age: ${label}`,
+  maxAge: label => `Maximum age: ${label}`,
+  gender: label =>
+    `Allowed gender(s): ${Array.isArray(label) ? label.join(', ') : label}`,
+  sector: label =>
+    `Sector(s): ${Array.isArray(label) ? label.join(', ') : label}`,
+  province: label =>
+    `Province(s): ${Array.isArray(label) ? label.join(', ') : label}`,
+  beeLevel: label =>
+    `Allowed BEE Level(s): ${Array.isArray(label) ? label.join(', ') : label}`,
+  minYearsOfTrading: label => `Min years of trading: ${label}`,
+  youthOwnedPercent: label => `Min youth ownership: ${label}%`,
+  femaleOwnedPercent: label => `Min female ownership: ${label}%`,
+  blackOwnedPercent: label => `Min black ownership: ${label}%`,
+  custom: label => <span style={{ fontStyle: 'italic' }}>{label}</span>
+}
+  
+  function checkEligibility (participant, criteria = {}) {
+    if (!criteria || Object.keys(criteria).length === 0) return null // Open to all
+
+    // Min/Max Age
+    if (criteria.minAge && participant.age < criteria.minAge)
+      return `Minimum age is ${criteria.minAge}`
+    if (criteria.maxAge && participant.age > criteria.maxAge)
+      return `Maximum age is ${criteria.maxAge}`
+
+    // Gender
+    if (
+      criteria.gender &&
+      criteria.gender.length &&
+      !criteria.gender.includes(participant.gender)
+    )
+      return `Eligible gender(s): ${criteria.gender.join(', ')}`
+
+    // Sector
+    if (
+      criteria.sector &&
+      criteria.sector.length &&
+      !criteria.sector.includes(participant.sector)
+    )
+      return `Sector must be one of: ${criteria.sector.join(', ')}`
+
+    // Province
+    if (
+      criteria.province &&
+      criteria.province.length &&
+      !criteria.province.includes(participant.province)
+    )
+      return `Province must be one of: ${criteria.province.join(', ')}`
+
+    // BEE Level
+    if (
+      criteria.beeLevel &&
+      criteria.beeLevel.length &&
+      !criteria.beeLevel.includes(participant.beeLevel)
+    )
+      return `Allowed BEE Levels: ${criteria.beeLevel.join(', ')}`
+
+    // Years of trading
+    if (
+      criteria.minYearsOfTrading &&
+      participant.yearsOfTrading < criteria.minYearsOfTrading
+    )
+      return `At least ${criteria.minYearsOfTrading} year(s) of trading required`
+
+    // Ownership
+    if (
+      criteria.youthOwnedPercent !== undefined &&
+      +participant.youthOwnedPercent < +criteria.youthOwnedPercent
+    )
+      return `At least ${criteria.youthOwnedPercent}% youth ownership required`
+    if (
+      criteria.blackOwnedPercent !== undefined &&
+      +participant.blackOwnedPercent < +criteria.blackOwnedPercent
+    )
+      return `At least ${criteria.blackOwnedPercent}% black ownership required`
+    if (
+      criteria.femaleOwnedPercent !== undefined &&
+      +participant.femaleOwnedPercent < +criteria.femaleOwnedPercent
+    )
+      return `At least ${criteria.femaleOwnedPercent}% female ownership required`
+
+    // Custom note (doesn't block, just show)
+    return null
+  }
+
+  function renderEligibilityCriteria (criteria) {
+    if (!criteria || Object.keys(criteria).length === 0) {
+      return <li>Open to all (no restrictions)</li>
+    }
+    return Object.entries(criteria).map(([key, value]) => (
+      <li key={key}>
+        {eligibilityLabels[key]
+          ? eligibilityLabels[key](value)
+          : `${key}: ${value}`}
+      </li>
+    ))
+  }
+
 const SMEDashboard = () => {
   const [recommended, setRecommended] = useState<any[]>([])
   const [allPrograms, setAllPrograms] = useState<any[]>([])
@@ -150,88 +250,6 @@ const SMEDashboard = () => {
     } finally {
       setLoading(false)
     }
-  }
-
-  function checkEligibility (participant, criteria = {}) {
-    if (!criteria || Object.keys(criteria).length === 0) return null // Open to all
-
-    // Min/Max Age
-    if (criteria.minAge && participant.age < criteria.minAge)
-      return `Minimum age is ${criteria.minAge}`
-    if (criteria.maxAge && participant.age > criteria.maxAge)
-      return `Maximum age is ${criteria.maxAge}`
-
-    // Gender
-    if (
-      criteria.gender &&
-      criteria.gender.length &&
-      !criteria.gender.includes(participant.gender)
-    )
-      return `Eligible gender(s): ${criteria.gender.join(', ')}`
-
-    // Sector
-    if (
-      criteria.sector &&
-      criteria.sector.length &&
-      !criteria.sector.includes(participant.sector)
-    )
-      return `Sector must be one of: ${criteria.sector.join(', ')}`
-
-    // Province
-    if (
-      criteria.province &&
-      criteria.province.length &&
-      !criteria.province.includes(participant.province)
-    )
-      return `Province must be one of: ${criteria.province.join(', ')}`
-
-    // BEE Level
-    if (
-      criteria.beeLevel &&
-      criteria.beeLevel.length &&
-      !criteria.beeLevel.includes(participant.beeLevel)
-    )
-      return `Allowed BEE Levels: ${criteria.beeLevel.join(', ')}`
-
-    // Years of trading
-    if (
-      criteria.minYearsOfTrading &&
-      participant.yearsOfTrading < criteria.minYearsOfTrading
-    )
-      return `At least ${criteria.minYearsOfTrading} year(s) of trading required`
-
-    // Ownership
-    if (
-      criteria.youthOwnedPercent !== undefined &&
-      +participant.youthOwnedPercent < +criteria.youthOwnedPercent
-    )
-      return `At least ${criteria.youthOwnedPercent}% youth ownership required`
-    if (
-      criteria.blackOwnedPercent !== undefined &&
-      +participant.blackOwnedPercent < +criteria.blackOwnedPercent
-    )
-      return `At least ${criteria.blackOwnedPercent}% black ownership required`
-    if (
-      criteria.femaleOwnedPercent !== undefined &&
-      +participant.femaleOwnedPercent < +criteria.femaleOwnedPercent
-    )
-      return `At least ${criteria.femaleOwnedPercent}% female ownership required`
-
-    // Custom note (doesn't block, just show)
-    return null
-  }
-
-  function renderEligibilityCriteria (criteria) {
-    if (!criteria || Object.keys(criteria).length === 0) {
-      return <li>Open to all (no restrictions)</li>
-    }
-    return Object.entries(criteria).map(([key, value]) => (
-      <li key={key}>
-        {eligibilityLabels[key]
-          ? eligibilityLabels[key](value)
-          : `${key}: ${value}`}
-      </li>
-    ))
   }
 
   const isNewProgram = (createdAt: Date, programId: string) => {
