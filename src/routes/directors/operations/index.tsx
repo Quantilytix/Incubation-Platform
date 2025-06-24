@@ -43,7 +43,6 @@ interface OperationsUser {
   gender: string
   phone: string
   companyCode: string
-  department?: string
   createdAt: Date
 }
 
@@ -122,7 +121,7 @@ export const OperationsOnboardingDashboard: React.FC = () => {
 
   const handleFinish = async (values: any) => {
     try {
-      const { email, password, name, department } = values
+      const { email, password, name } = values
       let userUid = ''
 
       // If editing, get user UID by email (no password update for now)
@@ -133,9 +132,6 @@ export const OperationsOnboardingDashboard: React.FC = () => {
           {
             ...editingStaff,
             ...values,
-            departmentId: department,
-            departmentName:
-              departments.find(d => d.id === department)?.name || '',
             updatedAt: new Date()
           },
           { merge: true }
@@ -147,9 +143,6 @@ export const OperationsOnboardingDashboard: React.FC = () => {
           {
             ...editingStaff,
             ...values,
-            departmentId: department,
-            departmentName:
-              departments.find(d => d.id === department)?.name || '',
             updatedAt: new Date()
           },
           { merge: true }
@@ -173,9 +166,6 @@ export const OperationsOnboardingDashboard: React.FC = () => {
           name,
           role: 'operations',
           companyCode,
-          departmentId: department,
-          departmentName:
-            departments.find(d => d.id === department)?.name || '',
           createdAt: new Date()
         })
 
@@ -185,11 +175,7 @@ export const OperationsOnboardingDashboard: React.FC = () => {
           name,
           gender: values.gender,
           phone: values.phone,
-          companyCode,
-          departmentId: department,
-          departmentName:
-            departments.find(d => d.id === department)?.name || '',
-          createdAt: new Date()
+          companyCode
         })
 
         message.success('Operations Staff added successfully!')
@@ -213,8 +199,7 @@ export const OperationsOnboardingDashboard: React.FC = () => {
   const handleEdit = (record: OperationsUser) => {
     setEditingStaff(record)
     form.setFieldsValue({
-      ...record,
-      department: record.departmentId || record.department // Use ID
+      ...record
     })
     setAddModalVisible(true)
   }
