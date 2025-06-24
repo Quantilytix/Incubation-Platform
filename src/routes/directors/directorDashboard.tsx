@@ -42,7 +42,7 @@ import {
 } from '@ant-design/icons'
 import { useEffect } from 'react'
 import { addDoc, collection, getDocs, query, where } from 'firebase/firestore'
-import { db } from '@/firebase'
+import { app, db } from '@/firebase'
 import { Helmet } from 'react-helmet'
 import dayjs from 'dayjs'
 import { getAuth } from 'firebase/auth'
@@ -422,11 +422,13 @@ export const DirectorDashboard: React.FC = () => {
       try {
         const applicationSnap = await getDocs(collection(db, 'applications'))
 
-        const now = dayjs()
-
         const pendingApps = applicationSnap.docs
           .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(app => app.applicationStatus?.toLowerCase() === 'pending')
+          .filter(
+            app =>
+              app.applicationStatus?.toLowerCase() === 'pending' &&
+              app.companyCode === companyCode
+          )
 
         setPendingApplications(pendingApps)
         setPendingApplications(pendingApps)
