@@ -62,7 +62,6 @@ export const OperationsOnboardingDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
   const [addModalVisible, setAddModalVisible] = useState(false)
-  const [departments, setDepartments] = useState<any[]>([])
   const [companyCode, setCompanyCode] = useState<string>('')
   const [form] = Form.useForm()
   const [editingStaff, setEditingStaff] = useState<OperationsUser | null>(null)
@@ -88,26 +87,6 @@ export const OperationsOnboardingDashboard: React.FC = () => {
       }
     }
   }, [identityLoading, user?.companyCode])
-
-  useEffect(() => {
-    if (companyCode) {
-      const fetchDepartments = async () => {
-        const snapshot = await getDocs(
-          query(
-            collection(db, 'departments'),
-            where('companyCode', '==', companyCode)
-          )
-        )
-        setDepartments(
-          snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }))
-        )
-      }
-      fetchDepartments()
-    }
-  }, [companyCode])
 
   const fetchOperationsStaff = async (companyCode: string) => {
     try {
@@ -281,13 +260,6 @@ export const OperationsOnboardingDashboard: React.FC = () => {
     { title: 'Phone', dataIndex: 'phone', key: 'phone' },
     { title: 'Gender', dataIndex: 'gender', key: 'gender' },
     {
-      title: 'Department',
-      dataIndex: 'department',
-      key: 'department',
-      render: (dept: string) =>
-        dept || <span style={{ color: '#bbb' }}>Not set</span>
-    },
-    {
       title: 'Actions',
       key: 'actions',
       render: (_: any, record: OperationsUser) => (
@@ -386,20 +358,6 @@ export const OperationsOnboardingDashboard: React.FC = () => {
             rules={[{ required: true, message: 'Please enter full name' }]}
           >
             <Input placeholder='Enter full name' />
-          </Form.Item>
-
-          <Form.Item
-            label='Department'
-            name='department'
-            rules={[{ required: true, message: 'Please select department' }]}
-          >
-            <Select placeholder='Select department'>
-              {departments.map(dep => (
-                <Option key={dep.id} value={dep.id}>
-                  {dep.name || dep.id}
-                </Option>
-              ))}
-            </Select>
           </Form.Item>
 
           {/* Gender */}
