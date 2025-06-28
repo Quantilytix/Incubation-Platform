@@ -11,6 +11,7 @@ import {
   Switch,
   message,
   Popconfirm,
+  Statistic,
   Tooltip,
   Typography,
   Card,
