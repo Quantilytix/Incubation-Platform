@@ -24,11 +24,13 @@ import {
 import { BranchForm } from './BranchForm'
 import { branchService } from '@/services/branchService'
 import { Branch } from '@/types/types'
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 
 const { Search } = Input
 const { Title, Text } = Typography
 
 export const BranchManagement: React.FC = () => {
+  const { user, loading: userLoading } = useFullIdentity()
   const [branches, setBranches] = useState<Branch[]>([])
   const [filteredBranches, setFilteredBranches] = useState<Branch[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,19 +39,18 @@ export const BranchManagement: React.FC = () => {
   const [currentBranch, setCurrentBranch] = useState<Branch | null>(null)
   const [searchText, setSearchText] = useState('')
   const [initializing, setInitializing] = useState(false)
+  const [newBranchId, setNewBranchId] = useState<string | null>(null)
 
-  // Fetch branches
   const fetchBranches = async () => {
+    if (!user?.companyCode) return
     try {
       setLoading(true)
-      console.log('Fetching branches...')
-      const branchData = await branchService.getAllBranches()
-      console.log('Branches fetched successfully:', branchData)
+      const branchData = await branchService.getAllBranches(user.companyCode)
       setBranches(branchData)
       setFilteredBranches(branchData)
-    } catch (error) {
-      console.error('Error fetching branches:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch branches'
+    } catch (error: any) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to fetch branches'
       message.error(errorMessage)
     } finally {
       setLoading(false)
@@ -57,19 +58,19 @@ export const BranchManagement: React.FC = () => {
   }
 
   useEffect(() => {
-    fetchBranches()
-  }, [])
+    if (!userLoading && user?.companyCode) {
+      fetchBranches()
+    }
+  }, [userLoading, user])
 
-  // Filter branches based on search text
   useEffect(() => {
     const filtered = branches.filter(branch => {
-      const locationStr = typeof branch.location === 'string' 
-        ? branch.location 
-        : `${branch.location.address} ${branch.location.city}`
-      const contactEmail = typeof branch.contact === 'object' 
-        ? branch.contact.email 
-        : ''
-      
+      const locationStr =
+        typeof branch.location === 'string'
+          ? branch.location
+          : `${branch.location.address} ${branch.location.city}`
+      const contactEmail =
+        typeof branch.contact === 'object' ? branch.contact.email : ''
       return (
         branch.name.toLowerCase().includes(searchText.toLowerCase()) ||
         locationStr.toLowerCase().includes(searchText.toLowerCase()) ||
@@ -79,7 +80,6 @@ export const BranchManagement: React.FC = () => {
     setFilteredBranches(filtered)
   }, [searchText, branches])
 
-  // Handle modal visibility
   const showModal = (edit: boolean = false, branch: Branch | null = null) => {
     setIsEditMode(edit)
     setCurrentBranch(branch)
@@ -91,17 +91,28 @@ export const BranchManagement: React.FC = () => {
     setCurrentBranch(null)
   }
 
-  // Handle form submission
   const handleSubmit = async (values: any) => {
+    if (!user?.companyCode) {
+      message.error('User company code is missing.')
+      return
+    }
+
     try {
+      let branchId = ''
       if (isEditMode && currentBranch) {
         await branchService.updateBranch(currentBranch.id, values)
+        branchId = currentBranch.id
         message.success('Branch updated successfully!')
       } else {
-        await branchService.createBranch(values)
+        const newBranch = await branchService.createBranch({
+          ...values,
+          companyCode: user.companyCode
+        })
+        branchId = newBranch.id
+        setNewBranchId(newBranch.id)
         message.success('Branch created successfully!')
       }
-      
+
       setIsModalVisible(false)
       setCurrentBranch(null)
       await fetchBranches()
@@ -110,7 +121,6 @@ export const BranchManagement: React.FC = () => {
     }
   }
 
-  // Handle branch deletion
   const handleDelete = async (branchId: string) => {
     try {
       await branchService.deleteBranch(branchId)
@@ -121,7 +131,6 @@ export const BranchManagement: React.FC = () => {
     }
   }
 
-  // Initialize branches
   const handleInitializeBranches = async () => {
     try {
       setInitializing(true)
@@ -135,7 +144,6 @@ export const BranchManagement: React.FC = () => {
     }
   }
 
-  // Table columns
   const columns = [
     {
       title: 'Branch Name',
@@ -156,10 +164,11 @@ export const BranchManagement: React.FC = () => {
     {
       title: 'Location',
       key: 'location',
-      render: (text: any, record: Branch) => {
-        const locationStr = typeof record.location === 'string' 
-          ? record.location 
-          : `${record.location.address}, ${record.location.city}`
+      render: (_: any, record: Branch) => {
+        const locationStr =
+          typeof record.location === 'string'
+            ? record.location
+            : `${record.location.address}, ${record.location.city}`
         return (
           <Space>
             <EnvironmentOutlined style={{ color: '#1890ff' }} />
@@ -172,26 +181,20 @@ export const BranchManagement: React.FC = () => {
     {
       title: 'Contact Information',
       key: 'contact',
-      render: (text: any, record: Branch) => {
-        const contactEmail = typeof record.contact === 'object' 
-          ? record.contact.email 
-          : ''
-        const contactPhone = typeof record.contact === 'object' 
-          ? record.contact.phone 
-          : ''
+      render: (_: any, record: Branch) => {
+        const contactEmail =
+          typeof record.contact === 'object' ? record.contact.email : ''
+        const contactPhone =
+          typeof record.contact === 'object' ? record.contact.phone : ''
         return (
           <div>
             <div style={{ marginBottom: 4 }}>
               <MailOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-              <Text copyable={{ text: contactEmail }}>
-                {contactEmail}
-              </Text>
+              <Text copyable={{ text: contactEmail }}>{contactEmail}</Text>
             </div>
             <div>
               <PhoneOutlined style={{ color: '#722ed1', marginRight: 8 }} />
-              <Text copyable={{ text: contactPhone }}>
-                {contactPhone}
-              </Text>
+              <Text copyable={{ text: contactPhone }}>{contactPhone}</Text>
             </div>
           </div>
         )
@@ -202,15 +205,13 @@ export const BranchManagement: React.FC = () => {
       title: 'Company',
       dataIndex: 'companyCode',
       key: 'companyCode',
-      render: (companyCode: string) => (
-        <Tag color="blue">{companyCode}</Tag>
-      ),
+      render: (companyCode: string) => <Tag color="blue">{companyCode}</Tag>,
       width: '10%'
     },
     {
       title: 'Actions',
       key: 'actions',
-      render: (text: any, record: Branch) => (
+      render: (_: any, record: Branch) => (
         <Space size="small">
           <Tooltip title="Edit Branch">
             <Button
@@ -220,7 +221,6 @@ export const BranchManagement: React.FC = () => {
               size="small"
             />
           </Tooltip>
-          
           <Popconfirm
             title="Delete Branch"
             description={
@@ -257,7 +257,8 @@ export const BranchManagement: React.FC = () => {
         <div style={{ marginBottom: 16 }}>
           <Title level={3}>Branch Management</Title>
           <Text type="secondary">
-            Manage branches and their information. Directors can create, edit, and manage all branches.
+            Manage branches and their information. Directors can create, edit,
+            and manage all branches.
           </Text>
         </div>
 
@@ -279,23 +280,22 @@ export const BranchManagement: React.FC = () => {
             >
               Add Branch
             </Button>
-            
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={fetchBranches}
-              loading={loading}
-            >
+
+            <Button icon={<ReloadOutlined />} onClick={fetchBranches} loading={loading}>
               Refresh
             </Button>
 
             {branches.length === 0 && !loading && (
-              <Button
-                type="dashed"
-                loading={initializing}
-                onClick={handleInitializeBranches}
+              <Popconfirm
+                title="Initialize Sample Branches?"
+                onConfirm={handleInitializeBranches}
+                okText="Initialize"
+                cancelText="Cancel"
               >
-                Initialize Branches
-              </Button>
+                <Button type="dashed" loading={initializing}>
+                  Initialize Branches
+                </Button>
+              </Popconfirm>
             )}
           </Space>
 
@@ -320,12 +320,14 @@ export const BranchManagement: React.FC = () => {
             pageSizeOptions: ['10', '20', '50'],
             showTotal: total => `Total ${total} branches`
           }}
+          rowClassName={record =>
+            record.id === newBranchId ? 'highlighted-row' : ''
+          }
           scroll={{ x: 800 }}
         />
 
-        {/* Branch Create/Edit Modal */}
         <Modal
-          title={isEditMode ? 'Edit Branch' : 'Create New Branch'}
+          title={isEditMode ? `Edit Branch: ${currentBranch?.name}` : 'Create New Branch'}
           open={isModalVisible}
           onCancel={handleCancel}
           footer={null}
@@ -340,6 +342,17 @@ export const BranchManagement: React.FC = () => {
           />
         </Modal>
       </Card>
+
+      <style>{`
+        .highlighted-row {
+          background-color: #e6fffb !important;
+          animation: fadeOut 8s forwards;
+        }
+        @keyframes fadeOut {
+          0% { background-color: #e6fffb; }
+          100% { background-color: white; }
+        }
+      `}</style>
     </div>
   )
-} 
+}
