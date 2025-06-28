@@ -11,8 +11,7 @@ import {
   Switch,
   message,
   Popconfirm,
-  Tooltip,
-  Input as AntdInput
+  Tooltip
 } from 'antd'
 import {
   UserAddOutlined,
@@ -25,19 +24,18 @@ import {
 import {
   collection,
   query,
+  where,
   onSnapshot,
   doc,
   setDoc,
-  updateDoc,
-  deleteDoc
+  updateDoc
 } from 'firebase/firestore'
 import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail
 } from 'firebase/auth'
-import { db, auth } from '@/firebase'
+import { db, auth, functions } from '@/firebase'
 import { httpsCallable } from 'firebase/functions'
-import { functions } from '@/firebase' // your Firebase functions config
 
 const { Search } = Input
 
@@ -50,7 +48,6 @@ interface User {
   createdAt?: string
 }
 
-// Predefined roles to choose from
 const AVAILABLE_ROLES = [
   'Director',
   'Admin',
@@ -61,7 +58,7 @@ const AVAILABLE_ROLES = [
   'Mentor'
 ]
 
-export const UserManagement: React.FC = () => {
+export const UserManagement: React.FC<{ companyCode: string }> = ({ companyCode }) => {
   const [users, setUsers] = useState<User[]>([])
   const [filteredUsers, setFilteredUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
@@ -69,77 +66,63 @@ export const UserManagement: React.FC = () => {
   const [isEditMode, setIsEditMode] = useState(false)
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [searchText, setSearchText] = useState('')
-  const [resetPasswordModalVisible, setResetPasswordModalVisible] =
-    useState(false)
+  const [resetPasswordModalVisible, setResetPasswordModalVisible] = useState(false)
   const [resetPasswordEmail, setResetPasswordEmail] = useState('')
   const [form] = Form.useForm()
 
-  // Fetch users from Firestore with real-time updates
   useEffect(() => {
-    const q = query(collection(db, 'users'))
+    if (!companyCode) return
+
+    const q = query(collection(db, 'users'), where('companyCode', '==', companyCode))
 
     setLoading(true)
     const unsubscribe = onSnapshot(
       q,
-      querySnapshot => {
-        try {
-          const usersData = querySnapshot.docs.map(doc => {
-            const data = doc.data()
-            // Ensure createdAt has a default value if missing or invalid
-            let createdAt = data.createdAt || new Date().toISOString()
-            try {
-              // Validate the date
-              if (new Date(createdAt).toString() === 'Invalid Date') {
-                createdAt = new Date().toISOString()
-              }
-            } catch (error) {
-              createdAt = new Date().toISOString()
-            }
+      snapshot => {
+        const userList = snapshot.docs.map(doc => {
+          const data = doc.data()
+          let createdAt = data.createdAt || new Date().toISOString()
+          if (new Date(createdAt).toString() === 'Invalid Date') {
+            createdAt = new Date().toISOString()
+          }
 
-            return {
-              id: doc.id,
-              ...data,
-              createdAt,
-              status: data.status || 'Active' // Default to Active if not set
-            } as User
-          })
+          return {
+            id: doc.id,
+            ...data,
+            createdAt,
+            status: data.status || 'Active'
+          } as User
+        })
 
-          setUsers(usersData)
-          setFilteredUsers(usersData)
-          setLoading(false)
-        } catch (error) {
-          console.error('Error processing user data:', error)
-          message.error('Failed to process user data. Please try again.')
-          setLoading(false)
-        }
+        setUsers(userList)
+        setFilteredUsers(userList)
+        setLoading(false)
       },
       error => {
-        console.error('Error fetching users:', error)
-        message.error('Failed to load users. Please try again.')
+        console.error(error)
+        message.error('Failed to load users.')
         setLoading(false)
       }
     )
 
     return () => unsubscribe()
-  }, [])
+  }, [companyCode])
 
-  // Update filtered users when search text changes
   useEffect(() => {
     if (searchText) {
-      const filtered = users.filter(
-        user =>
-          user.name.toLowerCase().includes(searchText.toLowerCase()) ||
-          user.email.toLowerCase().includes(searchText.toLowerCase()) ||
-          user.role.toLowerCase().includes(searchText.toLowerCase())
+      setFilteredUsers(
+        users.filter(u =>
+          [u.name, u.email, u.role].some(field =>
+            field.toLowerCase().includes(searchText.toLowerCase())
+          )
+        )
       )
-      setFilteredUsers(filtered)
     } else {
       setFilteredUsers(users)
     }
   }, [searchText, users])
 
-  // Handle modal visibility
-  const showModal = (edit: boolean = false, user: User | null = null) => {
+  const showModal = (edit = false, user: User | null = null) => {
     setIsEditMode(edit)
     setCurrentUser(user)
     setIsModalVisible(true)
@@ -153,18 +136,13 @@ export const UserManagement: React.FC = () => {
       })
     } else {
       form.resetFields()
-      // Set default values for new user
-      form.setFieldsValue({
-        status: true // Active by default
-      })
+      form.setFieldsValue({ status: true })
     }
   }
 
-  // Handle form submission
   const handleSubmit = async (values: any) => {
     try {
       if (isEditMode && currentUser) {
-        // Update existing user
         await updateDoc(doc(db, 'users', currentUser.id), {
           name: values.name,
           role: values.role,
@@ -172,287 +150,114 @@ export const UserManagement: React.FC = () => {
           updatedAt: new Date().toISOString()
         })
 
-        if (values.email !== currentUser.email) {
-          message.info(
-            'Email changes require the user to log in again for security reasons.'
-          )
-        }
-
-        message.success('User updated successfully!')
+        message.success('User updated!')
       } else {
-        // Create new user in Firebase Auth
-        try {
-          const userCredential = await createUserWithEmailAndPassword(
-            auth,
-            values.email,
-            values.password
-          )
+        const userCredential = await createUserWithEmailAndPassword(
+          auth,
+          values.email,
+          values.password
+        )
 
-          const user = userCredential.user
+        const newUser = userCredential.user
 
-          // Create corresponding Firestore document
-          await setDoc(doc(db, 'users', user.uid), {
-            uid: user.uid,
-            name: values.name,
-            email: values.email,
-            role: values.role,
-            status: values.status ? 'Active' : 'Inactive',
-            company: '',
-            companyCode: '',
-            firstLoginComplete:
-              values.role.toLowerCase() === 'director' ? false : true,
-            createdAt: new Date().toISOString()
-          })
+        await setDoc(doc(db, 'users', newUser.uid), {
+          uid: newUser.uid,
+          name: values.name,
+          email: values.email,
+          role: values.role,
+          status: values.status ? 'Active' : 'Inactive',
+          companyCode,
+          createdAt: new Date().toISOString(),
+          firstLoginComplete: values.role === 'Director' ? false : true
+        })
 
-          message.success('User created successfully!')
-        } catch (authError: any) {
-          console.error('Auth error:', authError)
-          message.error(
-            `Failed to create user: ${authError.message || 'Unknown error'}`
-          )
-          return // Prevent closing modal if failed
-        }
+        message.success('User created!')
       }
 
       setIsModalVisible(false)
       form.resetFields()
     } catch (error: any) {
-      console.error('Error saving user:', error)
-      message.error(error.message || 'Failed to save user. Please try again.')
+      console.error(error)
+      message.error(error.message || 'Operation failed')
     }
   }
 
-  // Handle user deletion
-  const handleDelete = async (userId: string) => {
+  const handleDelete = async (id: string) => {
     try {
-      const deleteUserAccount = httpsCallable(functions, 'deleteUserAccount')
-      await deleteUserAccount({ uid: userId })
-
-      message.success('✅ User deleted from Auth and Firestore!')
+      const fn = httpsCallable(functions, 'deleteUserAccount')
+      await fn({ uid: id })
+      message.success('User deleted')
     } catch (error: any) {
-      console.error('Cloud function delete error:', error)
-      message.error(error.message || 'Failed to delete user.')
+      console.error(error)
+      message.error(error.message || 'Failed to delete')
     }
   }
-  const handleAdminPasswordReset = async (userId: string) => {
-    const newPassword = prompt('Enter new password for user:')
+
+  const handleAdminPasswordReset = async (id: string) => {
+    const newPassword = prompt('Enter new password:')
     if (!newPassword) return
-
     try {
-      const adminResetUserPassword = httpsCallable(
-        functions,
-        'adminResetUserPassword'
-      )
-      await adminResetUserPassword({ uid: userId, newPassword })
-
-      message.success('✅ Password reset successfully.')
-    } catch (error: any) {
-      console.error('Password reset error:', error)
-      message.error(error.message || 'Failed to reset password.')
+      const resetFn = httpsCallable(functions, 'adminResetUserPassword')
+      await resetFn({ uid: id, newPassword })
+      message.success('Password reset!')
+    } catch (err: any) {
+      message.error(err.message || 'Failed to reset password')
     }
   }
 
-  // Show password reset confirmation
-  const showResetPasswordModal = (email: string) => {
-    setResetPasswordEmail(email)
-    setResetPasswordModalVisible(true)
-  }
-
-  // Handle password reset
-  const handlePasswordReset = async () => {
-    try {
-      await sendPasswordResetEmail(auth, resetPasswordEmail)
-      message.success(`Password reset email sent to ${resetPasswordEmail}`)
-      setResetPasswordModalVisible(false)
-    } catch (error: any) {
-      console.error('Error sending password reset:', error)
-      message.error(
-        `Failed to send password reset: ${error.message || 'Unknown error'}`
-      )
-    }
-  }
-
-  // Handle status change
-  const toggleUserStatus = async (user: User) => {
-    try {
-      const newStatus = user.status === 'Active' ? 'Inactive' : 'Active'
-      await updateDoc(doc(db, 'users', user.id), {
-        status: newStatus,
-        updatedAt: new Date().toISOString()
-      })
-      message.success(`User status changed to ${newStatus}`)
-    } catch (error: any) {
-      console.error('Error updating status:', error)
-      message.error(
-        `Failed to update status: ${error.message || 'Unknown error'}`
-      )
-    }
-  }
-
-  // Format date safely
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return 'N/A'
-
-    try {
-      const date = new Date(dateString)
-      if (date.toString() === 'Invalid Date') return 'N/A'
-      return date.toLocaleDateString()
-    } catch (error) {
-      return 'N/A'
-    }
-  }
-
-  // Handle refresh
-  const handleRefresh = () => {
-    setLoading(true)
-    // The snapshot listener will automatically refresh the data
-    // This just triggers the loading state to give feedback to the user
-    setTimeout(() => {
-      setLoading(false)
-    }, 1000)
-  }
-
-  // Table columns configuration
   const columns = [
     {
       title: 'Name',
       dataIndex: 'name',
-      key: 'name',
-      sorter: (a: User, b: User) => a.name.localeCompare(b.name),
-      width: '20%'
+      key: 'name'
     },
     {
       title: 'Email',
       dataIndex: 'email',
-      key: 'email',
-      width: '25%'
+      key: 'email'
     },
     {
       title: 'Role',
       dataIndex: 'role',
       key: 'role',
-      filters: AVAILABLE_ROLES.map(role => ({ text: role, value: role })),
-      onFilter: (value: any, record: User) => record.role === value,
-      render: (role: string) => (
-        <Tag
-          color={
-            role === 'Director'
-              ? 'purple'
-              : role === 'Admin'
-              ? 'blue'
-              : role === 'Operations'
-              ? 'green'
-              : role === 'Incubatee'
-              ? 'orange'
-              : role === 'Funder'
-              ? 'gold'
-              : role === 'Consultant'
-              ? 'cyan'
-              : 'default'
-          }
-        >
-          {role}
-        </Tag>
-      ),
-      width: '15%'
+      render: (role: string) => <Tag>{role}</Tag>
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      filters: [
-        { text: 'Active', value: 'Active' },
-        { text: 'Inactive', value: 'Inactive' }
-      ],
-      onFilter: (value: any, record: User) => record.status === value,
-      render: (status: string, record: User) => (
-        <Popconfirm
-          title={`Change user status to ${
-            status === 'Active' ? 'Inactive' : 'Active'
-          }?`}
-          onConfirm={() => toggleUserStatus(record)}
-          okText='Yes'
-          cancelText='No'
-        >
-          <Tag
-            color={status === 'Active' ? 'success' : 'error'}
-            style={{ cursor: 'pointer' }}
-          >
-            {status}
-          </Tag>
-        </Popconfirm>
-      ),
-      width: '10%'
-    },
-    {
-      title: 'Created',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      render: (date: string) => formatDate(date),
-      sorter: (a: User, b: User) => {
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0
-        return dateA - dateB
-      },
-      width: '15%'
+      render: (status: string) => (
+        <Tag color={status === 'Active' ? 'green' : 'red'}>{status}</Tag>
+      )
     },
     {
       title: 'Actions',
       key: 'actions',
       render: (_: any, record: User) => (
-        <Space size='small'>
-          <Tooltip title='Edit User'>
-            <Button
-              type='text'
-              icon={<EditOutlined />}
-              onClick={() => showModal(true, record)}
-              size='small'
-            />
-          </Tooltip>
-
-          <Tooltip title='Reset Password'>
-            <Button
-              type='text'
-              icon={<LockOutlined />}
-              onClick={() => showResetPasswordModal(record.email)}
-              size='small'
-            />
-          </Tooltip>
-
-          <Tooltip title='Reset Password (Admin)'>
-            <Button
-              type='text'
-              icon={<LockOutlined />}
-              onClick={() => handleAdminPasswordReset(record.id)}
-              size='small'
-            />
-          </Tooltip>
-
+        <Space>
+          <Button
+            icon={<EditOutlined />}
+            onClick={() => showModal(true, record)}
+            type="text"
+          />
+          <Button
+            icon={<LockOutlined />}
+            onClick={() => handleAdminPasswordReset(record.id)}
+            type="text"
+          />
           <Popconfirm
-            title='Are you sure you want to delete this user?'
-            description='This action cannot be undone.'
+            title="Are you sure?"
             onConfirm={() => handleDelete(record.id)}
-            okText='Yes'
-            cancelText='No'
-            okButtonProps={{ danger: true }}
           >
-            <Tooltip title='Delete User'>
-              <Button
-                type='text'
-                icon={<DeleteOutlined />}
-                danger
-                size='small'
-              />
-            </Tooltip>
+            <Button icon={<DeleteOutlined />} type="text" danger />
           </Popconfirm>
         </Space>
-      ),
-      width: '15%'
+      )
     }
   ]
 
   return (
-    <div>
+    <>
       <div
         style={{
           marginBottom: 16,
@@ -461,93 +266,55 @@ export const UserManagement: React.FC = () => {
           alignItems: 'center'
         }}
       >
-        <Button
-          type='primary'
-          icon={<UserAddOutlined />}
-          onClick={() => showModal()}
-        >
+        <Button type="primary" icon={<UserAddOutlined />} onClick={() => showModal()}>
           Add User
         </Button>
-
-        <Space>
-          <Search
-            placeholder='Search users by name, email or role'
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            onSearch={value => setSearchText(value)}
-            style={{ width: 300 }}
-            allowClear
-          />
-
-          <Button icon={<ReloadOutlined />} onClick={handleRefresh}>
-            Refresh
-          </Button>
-        </Space>
+        <Search
+          placeholder="Search users"
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+          onSearch={value => setSearchText(value)}
+          allowClear
+          style={{ width: 300 }}
+        />
       </div>
 
       <Table
         dataSource={filteredUsers}
         columns={columns}
-        rowKey='id'
+        rowKey="id"
         loading={loading}
-        pagination={{
-          pageSize: 10,
-          showSizeChanger: true,
-          pageSizeOptions: ['10', '20', '50'],
-          showTotal: total => `Total ${total} users`
-        }}
+        pagination={{ pageSize: 10 }}
       />
 
-      {/* User Create/Edit Modal */}
       <Modal
-        title={isEditMode ? 'Edit User' : 'Create New User'}
         open={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
         footer={null}
-        maskClosable={false}
+        title={isEditMode ? 'Edit User' : 'Add User'}
       >
-        <Form form={form} layout='vertical' onFinish={handleSubmit}>
-          <Form.Item
-            name='name'
-            label='Name'
-            rules={[{ required: true, message: "Please enter user's name" }]}
-          >
-            <Input placeholder='Enter full name' />
+        <Form layout="vertical" form={form} onFinish={handleSubmit}>
+          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+            <Input />
           </Form.Item>
-
           <Form.Item
-            name='email'
-            label='Email'
-            rules={[
-              { required: true, message: "Please enter user's email" },
-              { type: 'email', message: 'Please enter a valid email' }
-            ]}
+            name="email"
+            label="Email"
+            rules={[{ required: true, type: 'email' }]}
           >
-            <Input
-              placeholder='Enter email address'
-              disabled={isEditMode} // Cannot change email for existing users through this interface
-            />
+            <Input disabled={isEditMode} />
           </Form.Item>
-
           {!isEditMode && (
             <Form.Item
-              name='password'
-              label='Password'
-              rules={[
-                { required: true, message: 'Please enter a password' },
-                { min: 6, message: 'Password must be at least 6 characters' }
-              ]}
+              name="password"
+              label="Password"
+              rules={[{ required: true, min: 6 }]}
             >
-              <Input.Password placeholder='Enter password' />
+              <Input.Password />
             </Form.Item>
           )}
-
-          <Form.Item
-            name='role'
-            label='Role'
-            rules={[{ required: true, message: 'Please select a role' }]}
-          >
-            <Select placeholder='Select role'>
+          <Form.Item name="role" label="Role" rules={[{ required: true }]}>
+            <Select>
               {AVAILABLE_ROLES.map(role => (
                 <Select.Option key={role} value={role}>
                   {role}
@@ -555,14 +322,12 @@ export const UserManagement: React.FC = () => {
               ))}
             </Select>
           </Form.Item>
-
-          <Form.Item name='status' label='Status' valuePropName='checked'>
-            <Switch checkedChildren='Active' unCheckedChildren='Inactive' />
+          <Form.Item name="status" label="Status" valuePropName="checked">
+            <Switch checkedChildren="Active" unCheckedChildren="Inactive" />
           </Form.Item>
-
           <Form.Item>
             <Space>
-              <Button type='primary' htmlType='submit'>
+              <Button type="primary" htmlType="submit">
                 {isEditMode ? 'Update' : 'Create'}
               </Button>
               <Button onClick={() => setIsModalVisible(false)}>Cancel</Button>
@@ -570,23 +335,6 @@ export const UserManagement: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
-
-      {/* Password Reset Confirmation Modal */}
-      <Modal
-        title='Reset Password'
-        open={resetPasswordModalVisible}
-        onCancel={() => setResetPasswordModalVisible(false)}
-        onOk={handlePasswordReset}
-        okText='Send Reset Email'
-        cancelText='Cancel'
-      >
-        <p>Are you sure you want to send a password reset email to:</p>
-        <p style={{ fontWeight: 'bold' }}>{resetPasswordEmail}</p>
-        <p>
-          The user will receive an email with instructions to reset their
-          password.
-        </p>
-      </Modal>
-    </div>
+    </>
   )
 }
