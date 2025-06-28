@@ -52,7 +52,7 @@ export const BranchForm: React.FC<BranchFormProps> = ({
       layout="vertical"
       onFinish={handleSubmit}
       autoComplete="off"
-      initialValues={isEditMode ? getFormValues() : { companyCode: 'LEPHARO' }}
+      initialValues={isEditMode ? getFormValues() : { companyCode: 'ETC' }}
     >
       <Form.Item
         name="name"
@@ -84,7 +84,7 @@ export const BranchForm: React.FC<BranchFormProps> = ({
           { type: 'email', message: 'Please enter a valid email address' }
         ]}
       >
-        <Input placeholder="e.g., springs@lepharo.co.za" />
+        <Input placeholder="e.g., springs@company.co.za" />
       </Form.Item>
 
       <Form.Item
@@ -96,16 +96,6 @@ export const BranchForm: React.FC<BranchFormProps> = ({
         ]}
       >
         <Input placeholder="e.g., +27 11 000 0000" />
-      </Form.Item>
-
-      <Form.Item
-        name="companyCode"
-        label="Company Code"
-        rules={[
-          { required: true, message: 'Please enter company code' }
-        ]}
-      >
-        <Input placeholder="LEPHARO" />
       </Form.Item>
 
       <Form.Item>
