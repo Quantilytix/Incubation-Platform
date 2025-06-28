@@ -121,6 +121,7 @@ import EditInquiry from '@/routes/receptionist/inquiries/[id]/edit'
 import ContactsList from '@/routes/receptionist/contacts'
 import FollowUpsList from '@/routes/receptionist/follow-ups'
 import ReceptionistReports from '@/routes/receptionist/reports'
+import { BranchManagement } from '@/components/branch-management/BranchManagement'
 // ───────────────────────────────────────────────────────────
 // 🔹 Utilities / Misc
 // ───────────────────────────────────────────────────────────
@@ -205,6 +206,7 @@ const App = () => {
                       {/* Director Routes */}
                       <Route path='director'>
                         <Route index element={<DirectorDashboard />} />
+                         <Route path='branches' element={<BranchManagement />} />
                         <Route
                           path='operators'
                           element={<OperationsOnboardingDashboard />}
