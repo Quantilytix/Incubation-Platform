@@ -307,6 +307,12 @@ export const CustomLayout: React.FC = () => {
         label: 'Dashboard',
         icon: <DashboardOutlined />
       },
+       {
+        key: 'branch-management',
+        to: '/director/branches',
+        label: 'Branch Management',
+        icon: <BankOutlined />
+      },
       {
         key: 'operators',
         to: '/director/operators',
