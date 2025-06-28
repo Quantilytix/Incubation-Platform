@@ -308,6 +308,12 @@ export const CustomLayout: React.FC = () => {
         icon: <DashboardOutlined />
       },
        {
+        key: 'user-management',
+        to: '/admin',
+        label: 'User Management',
+        icon: <UserOutlined />
+      },
+       {
         key: 'branch-management',
         to: '/director/branches',
         label: 'Branch Management',
