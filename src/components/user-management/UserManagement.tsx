@@ -11,14 +11,17 @@ import {
   Switch,
   message,
   Popconfirm,
-  Tooltip
+  Tooltip,
+  Typography,
+  Card,
+  Row,
+  Col
 } from 'antd'
 import {
   UserAddOutlined,
   EditOutlined,
   DeleteOutlined,
   LockOutlined,
-  SearchOutlined,
   ReloadOutlined
 } from '@ant-design/icons'
 import {
@@ -31,13 +34,13 @@ import {
   updateDoc
 } from 'firebase/firestore'
 import {
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail
+  createUserWithEmailAndPassword
 } from 'firebase/auth'
 import { db, auth, functions } from '@/firebase'
 import { httpsCallable } from 'firebase/functions'
 
 const { Search } = Input
+const { Title, Text } = Typography
 
 interface User {
   id: string
@@ -66,46 +69,52 @@ export const UserManagement: React.FC<{ companyCode: string }> = ({ companyCode 
   const [isEditMode, setIsEditMode] = useState(false)
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [searchText, setSearchText] = useState('')
-  const [resetPasswordModalVisible, setResetPasswordModalVisible] = useState(false)
-  const [resetPasswordEmail, setResetPasswordEmail] = useState('')
   const [form] = Form.useForm()
 
-useEffect(() => {
-  if (!companyCode) return // 🛑 do nothing if not ready
+  const log = (...args: any[]) => console.log('[UserManagement]', ...args)
 
-  const q = query(collection(db, 'users'), where('companyCode', '==', companyCode))
-
-  setLoading(true)
-  const unsubscribe = onSnapshot(
-    q,
-    snapshot => {
-      const userList = snapshot.docs.map(doc => {
-        const data = doc.data()
-        const createdAt = new Date(data.createdAt || Date.now()).toISOString()
-
-        return {
-          id: doc.id,
-          ...data,
-          createdAt,
-          status: data.status || 'Active'
-        } as User
-      })
-
-      setUsers(userList)
-      setFilteredUsers(userList)
-      setLoading(false)
-    },
-    error => {
-      console.error(error)
-      message.error('Failed to load users.')
-      setLoading(false)
+  // Load users from Firestore filtered by companyCode
+  useEffect(() => {
+    if (!companyCode) {
+      log('⚠️ No companyCode provided. Skipping fetch.')
+      return
     }
-  )
 
-  return () => unsubscribe()
-}, [companyCode])
+    log('🔍 Querying users for companyCode:', companyCode)
+    const q = query(collection(db, 'users'), where('companyCode', '==', companyCode))
 
+    setLoading(true)
+    const unsubscribe = onSnapshot(
+      q,
+      snapshot => {
+        const userList = snapshot.docs.map(doc => {
+          const data = doc.data()
+          const createdAt = new Date(data.createdAt || Date.now()).toISOString()
 
+          return {
+            id: doc.id,
+            ...data,
+            createdAt,
+            status: data.status || 'Active'
+          } as User
+        })
+
+        log('✅ Users loaded:', userList)
+        setUsers(userList)
+        setFilteredUsers(userList)
+        setLoading(false)
+      },
+      error => {
+        log('❌ Error loading users:', error)
+        message.error('Failed to load users.')
+        setLoading(false)
+      }
+    )
+
+    return () => unsubscribe()
+  }, [companyCode])
+
+  // Filter users based on search text
   useEffect(() => {
     if (searchText) {
       setFilteredUsers(
@@ -175,7 +184,7 @@ useEffect(() => {
       setIsModalVisible(false)
       form.resetFields()
     } catch (error: any) {
-      console.error(error)
+      log('❌ Error creating/updating user:', error)
       message.error(error.message || 'Operation failed')
     }
   }
@@ -186,7 +195,7 @@ useEffect(() => {
       await fn({ uid: id })
       message.success('User deleted')
     } catch (error: any) {
-      console.error(error)
+      log('❌ Delete user error:', error)
       message.error(error.message || 'Failed to delete')
     }
   }
@@ -202,6 +211,15 @@ useEffect(() => {
       message.error(err.message || 'Failed to reset password')
     }
   }
+
+  // 🔢 Metrics
+  const total = users.length
+  const active = users.filter(u => u.status === 'Active').length
+  const inactive = users.filter(u => u.status === 'Inactive').length
+  const roleCounts = AVAILABLE_ROLES.map(role => ({
+    role,
+    count: users.filter(u => u.role === role).length
+  }))
 
   const columns = [
     {
@@ -256,6 +274,31 @@ useEffect(() => {
 
   return (
     <>
+      <Card style={{ marginBottom: 24 }}>
+        <Title level={4}>User Metrics</Title>
+        <Row gutter={16}>
+          <Col span={6}>
+            <Statistic title="Total Users" value={total} />
+          </Col>
+          <Col span={6}>
+            <Statistic title="Active Users" value={active} />
+          </Col>
+          <Col span={6}>
+            <Statistic title="Inactive Users" value={inactive} />
+          </Col>
+          <Col span={6}>
+            <Text strong>Roles:</Text>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+              {roleCounts.map(({ role, count }) => (
+                <li key={role}>
+                  {role}: <strong>{count}</strong>
+                </li>
+              ))}
+            </ul>
+          </Col>
+        </Row>
+      </Card>
+
       <div
         style={{
           marginBottom: 16,
