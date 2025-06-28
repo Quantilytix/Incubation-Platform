@@ -121,12 +121,12 @@ export const BranchManagement: React.FC = () => {
     }
   }
 
-  // Initialize Lepharo branches
+  // Initialize branches
   const handleInitializeBranches = async () => {
     try {
       setInitializing(true)
-      await branchService.initializeLepharoBranches()
-      message.success('Lepharo branches initialized successfully!')
+      await branchService.initializeBranches()
+      message.success('Branches initialized successfully!')
       await fetchBranches()
     } catch (error: any) {
       message.error(error.message || 'Failed to initialize branches')
@@ -294,7 +294,7 @@ export const BranchManagement: React.FC = () => {
                 loading={initializing}
                 onClick={handleInitializeBranches}
               >
-                Initialize Lepharo Branches
+                Initialize Branches
               </Button>
             )}
           </Space>
