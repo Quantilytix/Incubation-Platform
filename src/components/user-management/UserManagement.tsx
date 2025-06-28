@@ -70,43 +70,41 @@ export const UserManagement: React.FC<{ companyCode: string }> = ({ companyCode 
   const [resetPasswordEmail, setResetPasswordEmail] = useState('')
   const [form] = Form.useForm()
 
-  useEffect(() => {
-    if (!companyCode) return
+useEffect(() => {
+  if (!companyCode) return // 🛑 do nothing if not ready
 
-    const q = query(collection(db, 'users'), where('companyCode', '==', companyCode))
+  const q = query(collection(db, 'users'), where('companyCode', '==', companyCode))
 
-    setLoading(true)
-    const unsubscribe = onSnapshot(
-      q,
-      snapshot => {
-        const userList = snapshot.docs.map(doc => {
-          const data = doc.data()
-          let createdAt = data.createdAt || new Date().toISOString()
-          if (new Date(createdAt).toString() === 'Invalid Date') {
-            createdAt = new Date().toISOString()
-          }
+  setLoading(true)
+  const unsubscribe = onSnapshot(
+    q,
+    snapshot => {
+      const userList = snapshot.docs.map(doc => {
+        const data = doc.data()
+        const createdAt = new Date(data.createdAt || Date.now()).toISOString()
 
-          return {
-            id: doc.id,
-            ...data,
-            createdAt,
-            status: data.status || 'Active'
-          } as User
-        })
+        return {
+          id: doc.id,
+          ...data,
+          createdAt,
+          status: data.status || 'Active'
+        } as User
+      })
 
-        setUsers(userList)
-        setFilteredUsers(userList)
-        setLoading(false)
-      },
-      error => {
-        console.error(error)
-        message.error('Failed to load users.')
-        setLoading(false)
-      }
-    )
+      setUsers(userList)
+      setFilteredUsers(userList)
+      setLoading(false)
+    },
+    error => {
+      console.error(error)
+      message.error('Failed to load users.')
+      setLoading(false)
+    }
+  )
 
-    return () => unsubscribe()
-  }, [companyCode])
+  return () => unsubscribe()
+}, [companyCode])
+
 
   useEffect(() => {
     if (searchText) {
