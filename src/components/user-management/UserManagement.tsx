@@ -39,6 +39,7 @@ import {
 } from 'firebase/auth'
 import { db, auth, functions } from '@/firebase'
 import { httpsCallable } from 'firebase/functions'
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 
 const { Search } = Input
 const { Title, Text } = Typography
@@ -62,7 +63,10 @@ const AVAILABLE_ROLES = [
   'Mentor'
 ]
 
-export const UserManagement: React.FC<{ companyCode: string }> = ({ companyCode }) => {
+export const UserManagement: React.FC = () => {
+  const { user } = useFullIdentity()
+  const companyCode = user?.companyCode
+
   const [users, setUsers] = useState<User[]>([])
   const [filteredUsers, setFilteredUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
@@ -74,7 +78,6 @@ export const UserManagement: React.FC<{ companyCode: string }> = ({ companyCode 
 
   const log = (...args: any[]) => console.log('[UserManagement]', ...args)
 
-  // Load users from Firestore filtered by companyCode
   useEffect(() => {
     if (!companyCode) {
       log('⚠️ No companyCode provided. Skipping fetch.')
@@ -115,7 +118,6 @@ export const UserManagement: React.FC<{ companyCode: string }> = ({ companyCode 
     return () => unsubscribe()
   }, [companyCode])
 
-  // Filter users based on search text
   useEffect(() => {
     if (searchText) {
       setFilteredUsers(
@@ -213,7 +215,6 @@ export const UserManagement: React.FC<{ companyCode: string }> = ({ companyCode 
     }
   }
 
-  // 🔢 Metrics
   const total = users.length
   const active = users.filter(u => u.status === 'Active').length
   const inactive = users.filter(u => u.status === 'Inactive').length
