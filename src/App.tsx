@@ -68,6 +68,7 @@ import { ConsultantPage } from './routes/operations/consultants'
 // ───────────────────────────────────────────────────────────
 import { FunderDashboard } from '@/routes/funder/funderDashboard'
 import { FunderAnalytics } from '@/routes/funder/analytics/funderAnalytics'
+import { UserManagement } from '@/components/user-management'
 // ───────────────────────────────────────────────────────────
 // 🔹 Funder Routes
 // ───────────────────────────────────────────────────────────
@@ -189,6 +190,7 @@ const App = () => {
                       <Route path='admin'>
                         <Route index element={<AdminDashboard />} />
                         <Route path='forms' element={<FormManagement />} />
+                          <Route path='users' element={<UserManagement />} />
                       </Route>
                       {/* Project Admin Routes */}
                       <Route path='projectadmin'>
