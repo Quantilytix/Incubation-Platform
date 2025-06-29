@@ -309,7 +309,7 @@ export const CustomLayout: React.FC = () => {
       },
        {
         key: 'user-management',
-        to: '/admin',
+        to: '/admin/users',
         label: 'User Management',
         icon: <UserOutlined />
       },
