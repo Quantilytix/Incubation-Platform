@@ -90,9 +90,7 @@ export const UserManagement: React.FC = () => {
     const unsubscribe = onSnapshot(
       q,
       snapshot => {
-       const userList = snapshot.docs.map(doc => {
-  const data = doc.data()
-  const userList = snapshot.docs.map(doc => {
+ const userList = snapshot.docs.map(doc => {
   const data = doc.data()
   const createdAt = data.createdAt?.toDate
     ? data.createdAt.toDate().toISOString()
@@ -101,12 +99,11 @@ export const UserManagement: React.FC = () => {
   return {
     id: doc.id,
     ...data,
-    role: data.role?.toLowerCase?.() || 'unknown', // 🟢 Normalize role
+    role: data.role?.toLowerCase?.() || 'unknown',
     createdAt,
     status: data.status || 'Active'
   } as User
 })
-
 
         log('✅ Users loaded:', userList)
         setUsers(userList)
