@@ -91,9 +91,12 @@ export const UserManagement: React.FC = () => {
     const unsubscribe = onSnapshot(
       q,
       snapshot => {
-        const userList = snapshot.docs.map(doc => {
-          const data = doc.data()
-          const createdAt = new Date(data.createdAt || Date.now()).toISOString()
+       const userList = snapshot.docs.map(doc => {
+  const data = doc.data()
+  const createdAt = data.createdAt?.toDate
+    ? data.createdAt.toDate().toISOString()
+    : new Date().toISOString()
+
 
           return {
             id: doc.id,
