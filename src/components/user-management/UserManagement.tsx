@@ -60,7 +60,6 @@ const AVAILABLE_ROLES = [
   'Incubatee',
   'Funder',
   'Consultant',
-  'Mentor'
 ]
 
 export const UserManagement: React.FC = () => {
@@ -93,18 +92,21 @@ export const UserManagement: React.FC = () => {
       snapshot => {
        const userList = snapshot.docs.map(doc => {
   const data = doc.data()
+  const userList = snapshot.docs.map(doc => {
+  const data = doc.data()
   const createdAt = data.createdAt?.toDate
     ? data.createdAt.toDate().toISOString()
     : new Date().toISOString()
 
+  return {
+    id: doc.id,
+    ...data,
+    role: data.role?.toLowerCase?.() || 'unknown', // 🟢 Normalize role
+    createdAt,
+    status: data.status || 'Active'
+  } as User
+})
 
-          return {
-            id: doc.id,
-            ...data,
-            createdAt,
-            status: data.status || 'Active'
-          } as User
-        })
 
         log('✅ Users loaded:', userList)
         setUsers(userList)
@@ -156,12 +158,12 @@ export const UserManagement: React.FC = () => {
   const handleSubmit = async (values: any) => {
     try {
       if (isEditMode && currentUser) {
-        await updateDoc(doc(db, 'users', currentUser.id), {
-          name: values.name,
-          role: values.role,
-          status: values.status ? 'Active' : 'Inactive',
-          updatedAt: new Date().toISOString()
-        })
+       await updateDoc(doc(db, 'users', currentUser.id), {
+  name: values.name,
+  role: values.role.toLowerCase(), // 🟢 Normalize here
+  status: values.status ? 'Active' : 'Inactive',
+  updatedAt: new Date().toISOString()
+})
 
         message.success('User updated!')
       } else {
@@ -173,16 +175,17 @@ export const UserManagement: React.FC = () => {
 
         const newUser = userCredential.user
 
-        await setDoc(doc(db, 'users', newUser.uid), {
-          uid: newUser.uid,
-          name: values.name,
-          email: values.email,
-          role: values.role,
-          status: values.status ? 'Active' : 'Inactive',
-          companyCode,
-          createdAt: new Date().toISOString(),
-          firstLoginComplete: values.role === 'Director' ? false : true
-        })
+       await setDoc(doc(db, 'users', newUser.uid), {
+  uid: newUser.uid,
+  name: values.name,
+  email: values.email,
+  role: values.role.toLowerCase(), // 🟢 Normalize here
+  status: values.status ? 'Active' : 'Inactive',
+  companyCode,
+  createdAt: new Date().toISOString(),
+  firstLoginComplete: values.role.toLowerCase() === 'director' ? false : true
+})
+
 
         message.success('User created!')
       }
@@ -221,10 +224,14 @@ export const UserManagement: React.FC = () => {
   const total = users.length
   const active = users.filter(u => u.status === 'Active').length
   const inactive = users.filter(u => u.status === 'Inactive').length
-  const roleCounts = AVAILABLE_ROLES.map(role => ({
+ const roleCounts = AVAILABLE_ROLES.map(role => {
+  const normalized = role.toLowerCase()
+  return {
     role,
-    count: users.filter(u => u.role === role).length
-  }))
+    count: users.filter(u => u.role === normalized).length // 🟢 Normalize comparison
+  }
+})
+
 
   const columns = [
     {
@@ -241,7 +248,7 @@ export const UserManagement: React.FC = () => {
       title: 'Role',
       dataIndex: 'role',
       key: 'role',
-      render: (role: string) => <Tag>{role}</Tag>
+    render: (role: string) => <Tag>{role.charAt(0).toUpperCase() + role.slice(1)}</Tag>
     },
     {
       title: 'Status',
