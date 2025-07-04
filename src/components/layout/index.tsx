@@ -554,85 +554,32 @@ export const CustomLayout: React.FC = () => {
           }}
       >
         {/* Logo */}
-        <Upload
-          showUploadList={false}
-          customRequest={async ({ file, onSuccess, onError }) => {
-            if (!identity?.id) return
-            try {
-              setLogoUploading(true)
-
-              // Upload file to Firebase Storage
-              const storageRef = ref(storage, `logos/${file.name}`)
-              await uploadBytes(storageRef, file as File)
-              const downloadURL = await getDownloadURL(storageRef)
-
-              // Save URL to Firestore
-              const userRef = doc(db, 'users', String(identity.id))
-              const userSnap = await getDoc(userRef)
-              const participantId = userSnap.data()?.participantId
-
-              if (participantId) {
-                const participantRef = doc(db, 'participants', participantId)
-                await updateDoc(participantRef, { logoUrl: downloadURL })
-                setLogoUrl(downloadURL)
-                message.success('Logo updated')
-                onSuccess?.('ok')
-              } else {
-                throw new Error('No participant ID found.')
-              }
-            } catch (err) {
-              console.error(err)
-              message.error('Logo upload failed')
-              onError?.(err)
-            } finally {
-              setLogoUploading(false)
-            }
+<div
+          style={{
+            position: 'relative',
+            height: headerHeight,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '8px',
+            boxSizing: 'border-box',
+            borderBottom: '1px solid #f0f0f0',
+            cursor: 'pointer'
           }}
         >
-          <div
+          <img
+            src={logoUrl || '/assets/images/lepharo.png'}
+            alt='Logo'
             style={{
-              position: 'relative',
-              height: headerHeight,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '8px',
-              boxSizing: 'border-box',
-              borderBottom: '1px solid #f0f0f0',
-              cursor: 'pointer'
+              maxHeight: '100%',
+              maxWidth: '100%',
+              height: 'auto',
+              width: collapsed ? '40px' : '120px',
+              transition: 'width 0.2s ease-in-out',
+              objectFit: 'contain'
             }}
-          >
-            <img
-              src={logoUrl || '/assets/images/impala.png'}
-              alt='Logo'
-              style={{
-                maxHeight: '100%',
-                maxWidth: '100%',
-                height: 'auto',
-                width: collapsed ? '40px' : '120px',
-                transition: 'width 0.2s ease-in-out',
-                objectFit: 'contain'
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                top: 4,
-                right: 4,
-                background: '#fff',
-                borderRadius: '50%',
-                padding: 4,
-                boxShadow: '0 0 4px rgba(0,0,0,0.2)'
-              }}
-            >
-              {logoUploading ? (
-                <LoadingOutlined spin />
-              ) : (
-                <EditOutlined style={{ fontSize: 16 }} />
-              )}
-            </div>
-          </div>
-        </Upload>
+          />
+        </div>
 
         {/* Menu */}
         <Menu
