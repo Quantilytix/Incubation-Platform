@@ -286,24 +286,37 @@ const ApplicationsPage: React.FC = () => {
         return <Tag color={color}>{status}</Tag>
       }
     },
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (_: any, record: any) => (
-        <Space>
-          <Button
-            size='small'
-            icon={<FileOutlined />}
-            onClick={() => {
-              setSelectedApplication(record)
-              setDocumentsModalVisible(true)
-            }}
-          >
-            Documents
-          </Button>
-        </Space>
-      )
-    }
+  {
+  title: 'Actions',
+  key: 'actions',
+  render: (_: any, record: any) => (
+    <Space>
+      <Button
+        size='small'
+        icon={<FileOutlined />}
+        onClick={() => {
+          setSelectedApplication(record)
+          setDocumentsModalVisible(true)
+        }}
+      >
+        Documents
+      </Button>
+
+      {record.growthPlanDocUrl && (
+        <Button
+          size='small'
+          type='link'
+          icon={<DownloadOutlined />}
+          href={record.growthPlanDocUrl}
+          target='_blank'
+          rel='noopener noreferrer'
+        >
+          Growth Plan
+        </Button>
+      )}
+    </Space>
+  )
+}
   ]
 
   // CSV export function
