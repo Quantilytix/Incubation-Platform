@@ -80,31 +80,39 @@ export const CustomLayout: React.FC = () => {
   }, [identity])
 
   useEffect(() => {
-    const fetchUserDetails = async () => {
-      if (!identity?.id) return
+  const fetchUserDetails = async () => {
+    if (!identity?.id) return
 
-      const userRef = doc(db, 'users', String(identity.id))
-      const userSnap = await getDoc(userRef)
+    const userRef = doc(db, 'users', String(identity.id))
+    const userSnap = await getDoc(userRef)
 
-      if (!userSnap.exists()) return
+    if (!userSnap.exists()) return
 
-      const userData = userSnap.data()
-      const cleanRole = userData.role?.toLowerCase()?.replace(/\s+/g, '')
-      setRole(cleanRole)
+    const userData = userSnap.data()
+    const cleanRole = userData.role?.toLowerCase()?.replace(/\s+/g, '')
+    setRole(cleanRole)
 
-      // If participant, fetch participant-specific logo
-      if (cleanRole === 'incubatee' && userData.participantId) {
-        const participantRef = doc(db, 'participants', userData.participantId)
-        const participantSnap = await getDoc(participantRef)
-        if (participantSnap.exists()) {
-          const participantData = participantSnap.data()
-          setLogoUrl(participantData.logoUrl || null)
-        }
-      }
+    const companyCode = userData.companyCode
+    if (companyCode) {
+      const { getCompanyLogoUrl } = await import('@/utilities/firebaseLogo')
+      const url = await getCompanyLogoUrl(companyCode)
+      setLogoUrl(url)
     }
 
-    fetchUserDetails()
-  }, [identity])
+    // Incubatees override company logo
+    if (cleanRole === 'incubatee' && userData.participantId) {
+      const participantRef = doc(db, 'participants', userData.participantId)
+      const participantSnap = await getDoc(participantRef)
+      if (participantSnap.exists()) {
+        const participantData = participantSnap.data()
+        setLogoUrl(participantData.logoUrl || null)
+      }
+    }
+  }
+
+  fetchUserDetails()
+}, [identity])
+
 
   const getDashboardTitle = (role: UserRole | null) => {
     if (!role) return ''
