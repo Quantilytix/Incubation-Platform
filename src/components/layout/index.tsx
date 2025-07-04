@@ -38,6 +38,8 @@ import {
 import { Upload, message } from 'antd'
 import { EditOutlined, LoadingOutlined } from '@ant-design/icons'
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { CompanyLogo } from './CompanyLogo'
+
 
 const { Header, Sider, Content } = Layout
 const { Title } = Typography
@@ -554,32 +556,8 @@ export const CustomLayout: React.FC = () => {
           }}
       >
         {/* Logo */}
-<div
-          style={{
-            position: 'relative',
-            height: headerHeight,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '8px',
-            boxSizing: 'border-box',
-            borderBottom: '1px solid #f0f0f0',
-            cursor: 'pointer'
-          }}
-        >
-          <img
-            src={logoUrl || '/assets/images/lepharo.png'}
-            alt='Logo'
-            style={{
-              maxHeight: '100%',
-              maxWidth: '100%',
-              height: 'auto',
-              width: collapsed ? '40px' : '120px',
-              transition: 'width 0.2s ease-in-out',
-              objectFit: 'contain'
-            }}
-          />
-        </div>
+       <CompanyLogo collapsed={collapsed} />
+
 
         {/* Menu */}
         <Menu
