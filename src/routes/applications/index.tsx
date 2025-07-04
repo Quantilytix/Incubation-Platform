@@ -12,7 +12,8 @@ import {
   Typography,
   Select,
   message,
-  Skeleton
+  Skeleton,
+  Grid
 } from 'antd'
 import { db, auth } from '@/firebase'
 import { collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore'
@@ -29,6 +30,7 @@ import Highcharts from 'highcharts'
 
 const { Title, Text } = Typography
 const { Option } = Select
+const { useBreakpoint } = Grid
 
 function toCSV(rows, columns) {
   const csvRows = [columns.map(col => `"${col.title}"`).join(',')]
@@ -53,6 +55,7 @@ const ApplicationsPage: React.FC = () => {
   const [genderFilter, setGenderFilter] = useState<string | undefined>()
   const [ageGroupFilter, setAgeGroupFilter] = useState<string | undefined>()
   const [companyCode, setCompanyCode] = useState<string | null>(null)
+  const screens = useBreakpoint()
 
   // 1. Get companyCode for current user
   useEffect(() => {
@@ -194,7 +197,10 @@ const ApplicationsPage: React.FC = () => {
   }, {} as Record<string, number>)
 
   const genderChartOptions = {
-    chart: { type: 'pie', height: 200 },
+    chart: { 
+      type: 'pie', 
+      height: screens.xs ? 250 : 200 
+    },
     title: { text: 'Gender Distribution', style: { fontSize: '14px' } },
     plotOptions: {
       series: {
@@ -221,7 +227,10 @@ const ApplicationsPage: React.FC = () => {
     : 'Unassigned'
 
   const ageChartOptions = {
-    chart: { type: 'pie', height: 200 },
+    chart: { 
+      type: 'pie', 
+      height: screens.xs ? 250 : 200 
+    },
     title: { text: 'Age Group Distribution', style: { fontSize: '14px' } },
     plotOptions: {
       series: {
@@ -251,12 +260,14 @@ const ApplicationsPage: React.FC = () => {
     {
       title: 'Owner Gender',
       dataIndex: 'gender',
-      key: 'gender'
+      key: 'gender',
+      responsive: ['md']
     },
     {
       title: 'Owner Age Group',
       dataIndex: 'ageGroup',
-      key: 'ageGroup'
+      key: 'ageGroup',
+      responsive: ['md']
     },
     {
       title: 'AI Score',
@@ -268,7 +279,8 @@ const ApplicationsPage: React.FC = () => {
         return bScore - aScore
       },
       defaultSortOrder: 'descend',
-      render: score => score ?? 'N/A'
+      render: score => score ?? 'N/A',
+      responsive: ['sm']
     },
     {
       title: 'Decision',
@@ -286,37 +298,37 @@ const ApplicationsPage: React.FC = () => {
         return <Tag color={color}>{status}</Tag>
       }
     },
-  {
-  title: 'Actions',
-  key: 'actions',
-  render: (_: any, record: any) => (
-    <Space>
-      <Button
-        size='small'
-        icon={<FileOutlined />}
-        onClick={() => {
-          setSelectedApplication(record)
-          setDocumentsModalVisible(true)
-        }}
-      >
-        Documents
-      </Button>
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_: any, record: any) => (
+        <Space>
+          <Button
+            size='small'
+            icon={<FileOutlined />}
+            onClick={() => {
+              setSelectedApplication(record)
+              setDocumentsModalVisible(true)
+            }}
+          >
+            {screens.xs ? '' : 'Documents'}
+          </Button>
 
-      {record.growthPlanDocUrl && (
-        <Button
-          size='small'
-          type='link'
-          icon={<DownloadOutlined />}
-          href={record.growthPlanDocUrl}
-          target='_blank'
-          rel='noopener noreferrer'
-        >
-          Growth Plan
-        </Button>
-      )}
-    </Space>
-  )
-}
+          {record.growthPlanDocUrl && (
+            <Button
+              size='small'
+              type='link'
+              icon={<DownloadOutlined />}
+              href={record.growthPlanDocUrl}
+              target='_blank'
+              rel='noopener noreferrer'
+            >
+              {screens.xs ? '' : 'Growth Plan'}
+            </Button>
+          )}
+        </Space>
+      )
+    }
   ]
 
   // CSV export function
@@ -332,35 +344,50 @@ const ApplicationsPage: React.FC = () => {
     URL.revokeObjectURL(url)
   }
 
-   return (
-    <div style={{ padding: 24 }}>
+  return (
+    <div style={{ padding: screens.xs ? 12 : 24 }}>
       <Helmet>
         <title>Applications Overview</title>
       </Helmet>
 
       {/* Top Metrics */}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} md={8}>
+      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+        <Col xs={24} sm={8}>
           <Card loading={loading}>
             <Statistic
-              title={<Space><FileTextOutlined style={{ color: '#1890ff' }} />Total Applications</Space>}
+              title={
+                <Space>
+                  <FileTextOutlined style={{ color: '#1890ff' }} />
+                  Total Applications
+                </Space>
+              }
               value={totalApplications}
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={8}>
+        <Col xs={24} sm={8}>
           <Card loading={loading}>
             <Statistic
-              title={<Space><CheckCircleOutlined style={{ color: '#52c41a' }} />Accepted</Space>}
+              title={
+                <Space>
+                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                  Accepted
+                </Space>
+              }
               value={accepted}
               valueStyle={{ color: '#52c41a' }}
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={8}>
+        <Col xs={24} sm={8}>
           <Card loading={loading}>
             <Statistic
-              title={<Space><CloseCircleOutlined style={{ color: '#ff4d4f' }} />Rejected</Space>}
+              title={
+                <Space>
+                  <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
+                  Rejected
+                </Space>
+              }
               value={rejected}
               valueStyle={{ color: '#ff4d4f' }}
             />
@@ -370,39 +397,54 @@ const ApplicationsPage: React.FC = () => {
 
       {/* Pie Charts */}
       <Skeleton loading={loading} paragraph={false}>
-        <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
+        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
           <Col xs={24} md={12}>
-            <HighchartsReact highcharts={Highcharts} options={genderChartOptions} />
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={genderChartOptions}
+            />
           </Col>
           <Col xs={24} md={12}>
-            <HighchartsReact highcharts={Highcharts} options={ageChartOptions} />
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={ageChartOptions}
+            />
           </Col>
         </Row>
       </Skeleton>
 
       {/* Filters & Export */}
-      <Row gutter={[8, 8]} style={{ margin: '16px 0' }} wrap>
-        <Col xs={24} sm={12} md={6}>
-          <Select placeholder='Filter by Gender' allowClear onChange={handleGenderFilter} style={{ width: '100%' }}>
-            <Option value='Male'>Male</Option>
-            <Option value='Female'>Female</Option>
-          </Select>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Select placeholder='Filter by Age Group' allowClear onChange={handleAgeGroupFilter} style={{ width: '100%' }}>
-            <Option value='Youth'>Youth</Option>
-            <Option value='Adult'>Adult</Option>
-            <Option value='Senior'>Senior</Option>
-          </Select>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Button type='primary' icon={<DownloadOutlined />} onClick={handleExportCSV} block>
-            Export CSV
-          </Button>
-        </Col>
-      </Row>
+      <Space style={{ marginBottom: 16 }} wrap>
+        <Select
+          placeholder='Filter by Gender'
+          allowClear
+          onChange={handleGenderFilter}
+          style={{ width: screens.xs ? '100%' : 200 }}
+        >
+          <Option value='Male'>Male</Option>
+          <Option value='Female'>Female</Option>
+        </Select>
+        <Select
+          placeholder='Filter by Age Group'
+          allowClear
+          onChange={handleAgeGroupFilter}
+          style={{ width: screens.xs ? '100%' : 200 }}
+        >
+          <Option value='Youth'>Youth</Option>
+          <Option value='Adult'>Adult</Option>
+          <Option value='Senior'>Senior</Option>
+        </Select>
+        <Button
+          type='primary'
+          icon={<DownloadOutlined />}
+          onClick={handleExportCSV}
+          style={{ width: screens.xs ? '100%' : 'auto' }}
+        >
+          Export CSV
+        </Button>
+      </Space>
 
-      {/* Table & Details */}
+      {/* Table & Detail Card */}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}>
           <Card>
@@ -411,21 +453,149 @@ const ApplicationsPage: React.FC = () => {
               dataSource={filteredApplications}
               rowKey='id'
               pagination={{ pageSize: 8 }}
-              onRow={record => ({ onClick: () => setSelectedApplication(record) })}
+              onRow={record => ({
+                onClick: () => setSelectedApplication(record)
+              })}
+              scroll={{ x: true }}
             />
           </Card>
         </Col>
         <Col xs={24} lg={10}>
-          <Card title='Applicant Details' style={{ height: '100%' }}>
+          <Card
+            title={
+              selectedApplication ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  <div style={{ maxWidth: '70%' }}>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text strong>Current Status: </Text>
+                      <Tag
+                        color={
+                          readableStatus === 'Accepted'
+                            ? 'green'
+                            : readableStatus === 'Rejected'
+                            ? 'red'
+                            : 'gold'
+                        }
+                      >
+                        {readableStatus}
+                      </Tag>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text type='secondary'>
+                        <strong>AI Recommendation:</strong>{' '}
+                        {selectedApplication.aiRecommendation || 'N/A'}
+                      </Text>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text>
+                        <strong>Score:</strong>{' '}
+                        {selectedApplication.aiScore ?? 'N/A'}
+                      </Text>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text>
+                        <strong>Justification:</strong>{' '}
+                        <Button
+                          type='link'
+                          size='small'
+                          onClick={() => setAiModalVisible(true)}
+                          style={{ paddingLeft: 8 }}
+                        >
+                          View
+                        </Button>
+                      </Text>
+                    </div>
+                  </div>
+                  <div>
+                    <Text>
+                      <strong>Alter Decision:</strong>{' '}
+                    </Text>
+                    <Select
+                      style={{ width: screens.xs ? '100%' : 160, marginBottom: 5 }}
+                      placeholder='Set Status'
+                      value={selectedApplication.applicationStatus || undefined}
+                      onChange={async value => {
+                        try {
+                          await updateStatus(value, selectedApplication.id)
+                          message.success(`Status updated to ${value}`)
+                          setApplications(prev =>
+                            prev.map(app =>
+                              app.id === selectedApplication.id
+                                ? { ...app, applicationStatus: value }
+                                : app
+                            )
+                          )
+                          setFilteredApplications(prev =>
+                            prev.map(app =>
+                              app.id === selectedApplication.id
+                                ? { ...app, applicationStatus: value }
+                                : app
+                            )
+                          )
+                          setSelectedApplication(prev =>
+                            prev ? { ...prev, applicationStatus: value } : prev
+                          )
+                        } catch (err) {
+                          message.error('Failed to update status')
+                        }
+                      }}
+                    >
+                      <Option value='Accepted'>Accept</Option>
+                      <Option value='Rejected'>Reject</Option>
+                      <Option value='Pending'>Pending</Option>
+                    </Select>
+                  </div>
+                </div>
+              ) : (
+                'Applicant Details'
+              )
+            }
+            style={{
+              width: '100%',
+              height: '100%',
+              padding: '12px',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+            }}
+          >
             {selectedApplication ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <Text strong>Enterprise:</Text> <div>{selectedApplication.beneficiaryName}</div>
-                <Text strong>Email:</Text> <div>{selectedApplication.email}</div>
-                <Text strong>Gender:</Text> <div>{selectedApplication.gender}</div>
-                <Text strong>Stage:</Text> <div>{selectedApplication.stage}</div>
-                <Text strong>Hub:</Text> <div>{selectedApplication.hub}</div>
-                <Text strong>Motivation:</Text> <div>{selectedApplication.motivation}</div>
-                <Text strong>Challenges:</Text> <div>{selectedApplication.challenges}</div>
+              <div style={{ padding: '8px 16px' }}>
+                <>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Enterprise:</Text>
+                    <div>{selectedApplication.beneficiaryName || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Email:</Text>
+                    <div>{selectedApplication.email || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Gender:</Text>
+                    <div>{selectedApplication.gender || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Stage:</Text>
+                    <div>{selectedApplication.stage || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Hub:</Text>
+                    <div>{selectedApplication.hub || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Motivation:</Text>
+                    <div>{selectedApplication.motivation || 'N/A'}</div>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text strong>Challenges:</Text>
+                    <div>{selectedApplication.challenges || 'N/A'}</div>
+                  </div>
+                </>
               </div>
             ) : (
               <Text type='secondary'>Click a row to view details</Text>
@@ -440,6 +610,7 @@ const ApplicationsPage: React.FC = () => {
         open={aiModalVisible}
         footer={null}
         onCancel={() => setAiModalVisible(false)}
+        width={screens.xs ? '90%' : '60%'}
       >
         {selectedApplication && (
           <Space direction='vertical'>
@@ -467,6 +638,7 @@ const ApplicationsPage: React.FC = () => {
         open={documentsModalVisible}
         footer={null}
         onCancel={() => setDocumentsModalVisible(false)}
+        width={screens.xs ? '90%' : '60%'}
       >
         {selectedApplication?.documents?.length ? (
           <ul>
