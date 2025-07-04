@@ -332,50 +332,35 @@ const ApplicationsPage: React.FC = () => {
     URL.revokeObjectURL(url)
   }
 
-  return (
+   return (
     <div style={{ padding: 24 }}>
       <Helmet>
         <title>Applications Overview</title>
       </Helmet>
 
       {/* Top Metrics */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        <Col span={8}>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={12} md={8}>
           <Card loading={loading}>
             <Statistic
-              title={
-                <Space>
-                  <FileTextOutlined style={{ color: '#1890ff' }} />
-                  Total Applications
-                </Space>
-              }
+              title={<Space><FileTextOutlined style={{ color: '#1890ff' }} />Total Applications</Space>}
               value={totalApplications}
             />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Card loading={loading}>
             <Statistic
-              title={
-                <Space>
-                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                  Accepted
-                </Space>
-              }
+              title={<Space><CheckCircleOutlined style={{ color: '#52c41a' }} />Accepted</Space>}
               value={accepted}
               valueStyle={{ color: '#52c41a' }}
             />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} md={8}>
           <Card loading={loading}>
             <Statistic
-              title={
-                <Space>
-                  <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
-                  Rejected
-                </Space>
-              }
+              title={<Space><CloseCircleOutlined style={{ color: '#ff4d4f' }} />Rejected</Space>}
               value={rejected}
               valueStyle={{ color: '#ff4d4f' }}
             />
@@ -385,203 +370,62 @@ const ApplicationsPage: React.FC = () => {
 
       {/* Pie Charts */}
       <Skeleton loading={loading} paragraph={false}>
-        <Row gutter={16} style={{ marginBottom: 24 }}>
-          <Col span={12}>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={genderChartOptions}
-            />
+        <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
+          <Col xs={24} md={12}>
+            <HighchartsReact highcharts={Highcharts} options={genderChartOptions} />
           </Col>
-          <Col span={12}>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={ageChartOptions}
-            />
+          <Col xs={24} md={12}>
+            <HighchartsReact highcharts={Highcharts} options={ageChartOptions} />
           </Col>
         </Row>
       </Skeleton>
 
       {/* Filters & Export */}
-      <Space style={{ marginBottom: 16 }}>
-        <Select
-          placeholder='Filter by Gender'
-          allowClear
-          onChange={handleGenderFilter}
-          style={{ width: 200 }}
-        >
-          <Option value='Male'>Male</Option>
-          <Option value='Female'>Female</Option>
-        </Select>
-        <Select
-          placeholder='Filter by Age Group'
-          allowClear
-          onChange={handleAgeGroupFilter}
-          style={{ width: 200 }}
-        >
-          <Option value='Youth'>Youth</Option>
-          <Option value='Adult'>Adult</Option>
-          <Option value='Senior'>Senior</Option>
-        </Select>
-        <Button
-          type='primary'
-          icon={<DownloadOutlined />}
-          onClick={handleExportCSV}
-        >
-          Export CSV
-        </Button>
-      </Space>
+      <Row gutter={[8, 8]} style={{ margin: '16px 0' }} wrap>
+        <Col xs={24} sm={12} md={6}>
+          <Select placeholder='Filter by Gender' allowClear onChange={handleGenderFilter} style={{ width: '100%' }}>
+            <Option value='Male'>Male</Option>
+            <Option value='Female'>Female</Option>
+          </Select>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Select placeholder='Filter by Age Group' allowClear onChange={handleAgeGroupFilter} style={{ width: '100%' }}>
+            <Option value='Youth'>Youth</Option>
+            <Option value='Adult'>Adult</Option>
+            <Option value='Senior'>Senior</Option>
+          </Select>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Button type='primary' icon={<DownloadOutlined />} onClick={handleExportCSV} block>
+            Export CSV
+          </Button>
+        </Col>
+      </Row>
 
-      {/* Table & Detail Card */}
-      <Row gutter={16}>
-        <Col xs={24} md={14}>
+      {/* Table & Details */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={14}>
           <Card>
             <Table
               columns={columns}
               dataSource={filteredApplications}
               rowKey='id'
               pagination={{ pageSize: 8 }}
-              onRow={record => ({
-                onClick: () => setSelectedApplication(record)
-              })}
+              onRow={record => ({ onClick: () => setSelectedApplication(record) })}
             />
           </Card>
         </Col>
-        <Col xs={24} md={10}>
-          <Card
-            title={
-              selectedApplication ? (
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    flexWrap: 'wrap'
-                  }}
-                >
-                  <div style={{ maxWidth: '70%' }}>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text strong>Current Status: </Text>
-                      <Tag
-                        color={
-                          readableStatus === 'Accepted'
-                            ? 'green'
-                            : readableStatus === 'Rejected'
-                            ? 'red'
-                            : 'gold'
-                        }
-                      >
-                        {readableStatus}
-                      </Tag>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text type='secondary'>
-                        <strong>AI Recommendation:</strong>{' '}
-                        {selectedApplication.aiRecommendation || 'N/A'}
-                      </Text>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text>
-                        <strong>Score:</strong>{' '}
-                        {selectedApplication.aiScore ?? 'N/A'}
-                      </Text>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text>
-                        <strong>Justification:</strong>{' '}
-                        <Button
-                          type='link'
-                          size='small'
-                          onClick={() => setAiModalVisible(true)}
-                          style={{ paddingLeft: 8 }}
-                        >
-                          View
-                        </Button>
-                      </Text>
-                    </div>
-                  </div>
-                  <div>
-                    <Text>
-                      <strong>Alter Decision:</strong>{' '}
-                    </Text>
-                    <Select
-                      style={{ width: 160, marginBottom: 5 }}
-                      placeholder='Set Status'
-                      value={selectedApplication.applicationStatus || undefined}
-                      onChange={async value => {
-                        try {
-                          await updateStatus(value, selectedApplication.id)
-                          message.success(`Status updated to ${value}`)
-                          setApplications(prev =>
-                            prev.map(app =>
-                              app.id === selectedApplication.id
-                                ? { ...app, applicationStatus: value }
-                                : app
-                            )
-                          )
-                          setFilteredApplications(prev =>
-                            prev.map(app =>
-                              app.id === selectedApplication.id
-                                ? { ...app, applicationStatus: value }
-                                : app
-                            )
-                          )
-                          setSelectedApplication(prev =>
-                            prev ? { ...prev, applicationStatus: value } : prev
-                          )
-                        } catch (err) {
-                          message.error('Failed to update status')
-                        }
-                      }}
-                    >
-                      <Option value='Accepted'>Accept</Option>
-                      <Option value='Rejected'>Reject</Option>
-                      <Option value='Pending'>Pending</Option>
-                    </Select>
-                  </div>
-                </div>
-              ) : (
-                'Applicant Details'
-              )
-            }
-            style={{
-              width: '100%',
-              height: '100%',
-              padding: '12px',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
-            }}
-          >
+        <Col xs={24} lg={10}>
+          <Card title='Applicant Details' style={{ height: '100%' }}>
             {selectedApplication ? (
-              <div style={{ padding: '8px 16px' }}>
-                <>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Enterprise:</Text>
-                    <div>{selectedApplication.beneficiaryName || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Email:</Text>
-                    <div>{selectedApplication.email || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Gender:</Text>
-                    <div>{selectedApplication.gender || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Stage:</Text>
-                    <div>{selectedApplication.stage || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Hub:</Text>
-                    <div>{selectedApplication.hub || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Motivation:</Text>
-                    <div>{selectedApplication.motivation || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Challenges:</Text>
-                    <div>{selectedApplication.challenges || 'N/A'}</div>
-                  </div>
-                </>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <Text strong>Enterprise:</Text> <div>{selectedApplication.beneficiaryName}</div>
+                <Text strong>Email:</Text> <div>{selectedApplication.email}</div>
+                <Text strong>Gender:</Text> <div>{selectedApplication.gender}</div>
+                <Text strong>Stage:</Text> <div>{selectedApplication.stage}</div>
+                <Text strong>Hub:</Text> <div>{selectedApplication.hub}</div>
+                <Text strong>Motivation:</Text> <div>{selectedApplication.motivation}</div>
+                <Text strong>Challenges:</Text> <div>{selectedApplication.challenges}</div>
               </div>
             ) : (
               <Text type='secondary'>Click a row to view details</Text>
