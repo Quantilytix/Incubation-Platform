@@ -12,7 +12,6 @@ import {
   PieChartOutlined,
   BarChartOutlined,
   FundProjectionScreenOutlined,
-  ClockCircleOutlined,
   FileTextOutlined,
   ReadOutlined,
   FileSearchOutlined,
@@ -33,13 +32,14 @@ import {
   AuditOutlined,
   ProfileOutlined,
   DollarOutlined,
-  LineChartOutlined
+  LineChartOutlined,
+  ClockCircleOutlined,
+  BookOutlined
 } from '@ant-design/icons'
 import { Upload, message } from 'antd'
 import { EditOutlined, LoadingOutlined } from '@ant-design/icons'
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { CompanyLogo } from './CompanyLogo'
-
+import { CompanyLogo } from '../CompanyLogo'
 
 const { Header, Sider, Content } = Layout
 const { Title } = Typography
@@ -54,7 +54,6 @@ type UserRole =
   | 'projectadmin'
   | 'investor'
   | 'government'
-  | 'receptionist'
 
 export const CustomLayout: React.FC = () => {
   const [logoUploading, setLogoUploading] = useState(false)
@@ -80,39 +79,31 @@ export const CustomLayout: React.FC = () => {
   }, [identity])
 
   useEffect(() => {
-  const fetchUserDetails = async () => {
-    if (!identity?.id) return
+    const fetchUserDetails = async () => {
+      if (!identity?.id) return
 
-    const userRef = doc(db, 'users', String(identity.id))
-    const userSnap = await getDoc(userRef)
+      const userRef = doc(db, 'users', String(identity.id))
+      const userSnap = await getDoc(userRef)
 
-    if (!userSnap.exists()) return
+      if (!userSnap.exists()) return
 
-    const userData = userSnap.data()
-    const cleanRole = userData.role?.toLowerCase()?.replace(/\s+/g, '')
-    setRole(cleanRole)
+      const userData = userSnap.data()
+      const cleanRole = userData.role?.toLowerCase()?.replace(/\s+/g, '')
+      setRole(cleanRole)
 
-    const companyCode = userData.companyCode
-    if (companyCode) {
-      const { getCompanyLogoUrl } = await import('@/utilities/firebaseLogo')
-      const url = await getCompanyLogoUrl(companyCode)
-      setLogoUrl(url)
-    }
-
-    // Incubatees override company logo
-    if (cleanRole === 'incubatee' && userData.participantId) {
-      const participantRef = doc(db, 'participants', userData.participantId)
-      const participantSnap = await getDoc(participantRef)
-      if (participantSnap.exists()) {
-        const participantData = participantSnap.data()
-        setLogoUrl(participantData.logoUrl || null)
+      // If participant, fetch participant-specific logo
+      if (cleanRole === 'incubatee' && userData.participantId) {
+        const participantRef = doc(db, 'participants', userData.participantId)
+        const participantSnap = await getDoc(participantRef)
+        if (participantSnap.exists()) {
+          const participantData = participantSnap.data()
+          setLogoUrl(participantData.logoUrl || null)
+        }
       }
     }
-  }
 
-  fetchUserDetails()
-}, [identity])
-
+    fetchUserDetails()
+  }, [identity])
 
   const getDashboardTitle = (role: UserRole | null) => {
     if (!role) return ''
@@ -125,12 +116,28 @@ export const CustomLayout: React.FC = () => {
       director: 'Director',
       incubatee: 'Incubatee',
       investor: 'Investor',
-      government: 'Government',
-      receptionist: 'Receptionist'
+      government: 'Government'
     }
 
     return `Smart Incubation : ${nameMap[role] || role} Dashboard`
   }
+
+  const generateMenu = (items: any[]) =>
+    items.map(({ key, label, to, icon, children }) => {
+      if (children) {
+        return {
+          key,
+          icon,
+          label,
+          children: generateMenu(children) // recursion
+        }
+      }
+      return {
+        key,
+        icon,
+        label: <Link to={to}>{label}</Link>
+      }
+    })
 
   const allMenus = {
     admin: [
@@ -230,7 +237,7 @@ export const CustomLayout: React.FC = () => {
         label: 'Dashboard',
         icon: <DashboardOutlined />
       },
-       {
+      {
         key: 'applications',
         to: '/applications',
         label: 'Applications',
@@ -292,9 +299,32 @@ export const CustomLayout: React.FC = () => {
       },
       {
         key: 'allocated',
-        to: '/consultant/allocated',
         label: 'Interventions',
-        icon: <FileProtectOutlined />
+        icon: <FileProtectOutlined />,
+        children: [
+          {
+            key: 'allocated-active',
+            label: 'Active',
+            to: '/consultant/allocated'
+          },
+          {
+            key: 'allocated-history',
+            label: 'History',
+            to: '/consultant/allocated/history'
+          }
+        ]
+      },
+      {
+        key: 'tasksEvents',
+        to: '/tasksEvents',
+        label: 'Tasks & Events',
+        icon: <BookOutlined />
+      },
+      {
+        key: 'appointments',
+        to: '/consultant/appointments',
+        label: 'Appointments',
+        icon: <ClockCircleOutlined />
       },
       {
         key: 'feedback',
@@ -316,18 +346,6 @@ export const CustomLayout: React.FC = () => {
         to: '/director',
         label: 'Dashboard',
         icon: <DashboardOutlined />
-      },
-       {
-        key: 'user-management',
-        to: '/admin/users',
-        label: 'User Management',
-        icon: <UserOutlined />
-      },
-       {
-        key: 'branch-management',
-        to: '/director/branches',
-        label: 'Branch Management',
-        icon: <BankOutlined />
       },
       {
         key: 'operators',
@@ -397,45 +415,6 @@ export const CustomLayout: React.FC = () => {
         to: '/incubatee/documents',
         label: 'Upload Documents',
         icon: <FileDoneOutlined />
-      }
-    ],
-
-    receptionist: [
-      {
-        key: 'dashboard',
-        to: '/receptionist',
-        label: 'Dashboard',
-        icon: <DashboardOutlined />
-      },
-      {
-        key: 'inquiries',
-        to: '/receptionist/inquiries',
-        label: 'All Inquiries',
-        icon: <FileTextOutlined />
-      },
-      {
-        key: 'new-inquiry',
-        to: '/receptionist/inquiries/new',
-        label: 'New Inquiry',
-        icon: <PlusCircleOutlined />
-      },
-      {
-        key: 'contacts',
-        to: '/receptionist/contacts',
-        label: 'Contacts',
-        icon: <UserOutlined />
-      },
-      {
-        key: 'follow-ups',
-        to: '/receptionist/follow-ups',
-        label: 'Follow-ups',
-        icon: <ClockCircleOutlined />
-      },
-      {
-        key: 'reports',
-        to: '/receptionist/reports',
-        label: 'Reports',
-        icon: <ReadOutlined />
       }
     ],
 
@@ -512,11 +491,7 @@ export const CustomLayout: React.FC = () => {
   const menuItems = useMemo(() => {
     if (!role) return []
     return [
-      ...(allMenus[role] || []).map(({ key, to, label, icon }) => ({
-        key,
-        icon,
-        label: <Link to={to}>{label}</Link>
-      })),
+      ...generateMenu(allMenus[role] || []),
       {
         key: 'chat',
         label: <Link to='/chat'>Chat</Link>,
@@ -554,18 +529,17 @@ export const CustomLayout: React.FC = () => {
         width={siderWidth}
         trigger={null}
         style={{
-            background: '#ffffff',
-            height: '100vh',
-            position: 'fixed',
-            left: 0,
-            top: 0,
-            zIndex: 100,
-            boxShadow: '2px 0 5px rgba(0,0,0,0.06)'
-          }}
+          background: '#ffffff',
+          height: '100vh',
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          zIndex: 100,
+          boxShadow: '2px 0 5px rgba(0,0,0,0.06)'
+        }}
       >
         {/* Logo */}
-       <CompanyLogo collapsed={collapsed} />
-
+        <CompanyLogo collapsed={collapsed} />
 
         {/* Menu */}
         <Menu
