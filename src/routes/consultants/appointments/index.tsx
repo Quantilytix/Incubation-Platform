@@ -62,29 +62,58 @@ const AppointmentForm = () => {
   useEffect(() => {
     const fetchData = async () => {
       const user = auth.currentUser
-      if (!user) return
-      setConsultantId(user.uid)
+      if (!user?.email) return
 
-      const interventionQuery = query(
-        collection(db, 'assignedInterventions'),
-        where('consultantId', '==', user.uid)
-      )
-      const snapshot = await getDocs(interventionQuery)
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      setInterventions(data)
-
-      const appointmentsSnap = await getDocs(
-        query(
-          collection(db, 'appointments'),
-          where('consultantId', '==', user.uid)
+      setLoading(true)
+      try {
+        // 1. First get the consultant doc using the user's email
+        const consultantsQuery = query(
+          collection(db, 'consultants'),
+          where('email', '==', user.email)
         )
-      )
-      const appts = appointmentsSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
-      setAppointments(appts)
+        const consultantSnapshot = await getDocs(consultantsQuery)
+
+        if (consultantSnapshot.empty) {
+          message.warning('No consultant profile found for your email')
+          return
+        }
+
+        const consultantData = consultantSnapshot.docs[0]
+        const consultantId = consultantData.id
+        setConsultantId(consultantId)
+
+        // 2. Now fetch interventions assigned to this consultant
+        const interventionQuery = query(
+          collection(db, 'assignedInterventions'),
+          where('consultantId', '==', consultantId),
+          where('status', '==', 'assigned')
+        )
+        const interventionSnapshot = await getDocs(interventionQuery)
+        const interventionsData = interventionSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        setInterventions(interventionsData)
+
+        // 3. Fetch appointments for this consultant
+        const appointmentsQuery = query(
+          collection(db, 'appointments'),
+          where('consultantId', '==', consultantId)
+        )
+        const appointmentsSnapshot = await getDocs(appointmentsQuery)
+        const appointmentsData = appointmentsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        setAppointments(appointmentsData)
+      } catch (error) {
+        console.error('Error fetching data:', error)
+        message.error('Failed to load data')
+      } finally {
+        setLoading(false)
+      }
     }
+
     fetchData()
   }, [])
 
