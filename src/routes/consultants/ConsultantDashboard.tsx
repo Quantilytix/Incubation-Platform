@@ -21,7 +21,9 @@ import {
   CloseOutlined,
   FileSearchOutlined,
   MessageOutlined,
-  BarChartOutlined
+  BarChartOutlined,
+  CalendarOutlined,
+  ClockCircleOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { auth, db } from '@/firebase'
@@ -38,6 +40,7 @@ import {
 } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { Helmet } from 'react-helmet'
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 
 const { Title } = Typography
 
@@ -64,9 +67,10 @@ interface Feedback {
 }
 
 export const ConsultantDashboard: React.FC = () => {
-  const navigate = useNavigate()
+  const { user } = useFullIdentity()
   const [dashboardReady, setDashboardReady] = useState(false)
-
+  const [events, setEvents] = useState<any[]>([])
+  const [appointments, setAppointments] = useState<any[]>([])
   const [interventions, setInterventions] = useState<Intervention[]>([])
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([])
   const [modalVisible, setModalVisible] = useState(false)
@@ -122,6 +126,58 @@ export const ConsultantDashboard: React.FC = () => {
     return () => unsubscribe()
   }, [])
 
+  //   Fetch Events
+  useEffect(() => {
+    if (!companyCode) return
+
+    const fetchEvents = async () => {
+      try {
+        const snapshot = await getDocs(
+          query(
+            collection(db, 'events'),
+            where('companyCode', '==', companyCode)
+          )
+        )
+        const eventList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        setEvents(eventList)
+      } catch (err) {
+        console.error('Failed to load events:', err)
+      }
+    }
+
+    fetchEvents()
+  }, [companyCode])
+
+  //   Fetch Appointments
+  useEffect(() => {
+    if (!companyCode) return
+
+    const fetchEvents = async () => {
+      try {
+        const snapshot = await getDocs(
+          query(
+            collection(db, 'appointments'),
+            where('companyCode', '==', companyCode),
+            where('email', '==', user.email)
+          )
+        )
+        const eventList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        setEvents(eventList)
+      } catch (err) {
+        console.error('Failed to load appointments:', err)
+      }
+    }
+
+    fetchEvents()
+  }, [companyCode])
+
+  //   Fetch Assigned Interventions
   useEffect(() => {
     const fetchData = async () => {
       if (!consultantId) {
@@ -216,9 +272,9 @@ export const ConsultantDashboard: React.FC = () => {
     fetchData()
   }, [consultantId])
 
+  //   Fetch Notifications
   useEffect(() => {
     if (currentRole) {
-      console.log('Triggering fetchNotifications with role:', currentRole)
       fetchNotifications()
     }
   }, [currentRole])
@@ -434,7 +490,7 @@ export const ConsultantDashboard: React.FC = () => {
           <div
             style={{
               padding: 24,
-              height: '100vh',
+              minHeight: '100vh',
               overflow: 'auto'
             }}
           >
@@ -458,7 +514,7 @@ export const ConsultantDashboard: React.FC = () => {
             ) : (
               <Row gutter={[16, 16]}>
                 {/* Top Stats */}
-                <Col xs={24} md={8}>
+                <Col xs={24} md={6}>
                   <Card>
                     <Statistic
                       title='Total Feedbacks'
@@ -468,7 +524,7 @@ export const ConsultantDashboard: React.FC = () => {
                   </Card>
                 </Col>
 
-                <Col xs={24} md={8}>
+                <Col xs={24} md={6}>
                   <Card>
                     <Statistic
                       title='Pending Interventions'
@@ -478,12 +534,74 @@ export const ConsultantDashboard: React.FC = () => {
                   </Card>
                 </Col>
 
-                <Col xs={24} md={8}>
+                <Col xs={24} md={6}>
                   <Card>
                     <Statistic
                       title='Ongoing Interventions'
                       value={ongoingCount}
                       prefix={<BarChartOutlined />}
+                    />
+                  </Card>
+                </Col>
+
+                <Col xs={24} md={6}>
+                  <Card>
+                    <Statistic
+                      title='Upcoming Appointments'
+                      value={events.length || 0}
+                      prefix={<CalendarOutlined />}
+                    />
+                  </Card>
+                </Col>
+
+                {/* Event Details List */}
+                <Col xs={24} md={12}>
+                  <Card title='Upcoming Events'>
+                    <List
+                      itemLayout='horizontal'
+                      dataSource={events.slice(0, 5)} // show top 5
+                      renderItem={event => (
+                        <List.Item>
+                          <List.Item.Meta
+                            title={event.title || 'Untitled'}
+                            description={`Date: ${
+                              event.date || 'N/A'
+                            } | Time: ${
+                              event.time?.toDate
+                                ? new Date(
+                                    event.time.toDate()
+                                  ).toLocaleTimeString()
+                                : 'N/A'
+                            } | Type: ${event.type}`}
+                          />
+                        </List.Item>
+                      )}
+                    />
+                  </Card>
+                </Col>
+
+                {/* Appointments Details List */}
+                <Col xs={24} md={12}>
+                  <Card title='Upcoming Appointments'>
+                    <List
+                      itemLayout='horizontal'
+                      dataSource={appointments.slice(0, 5)} // show top 5
+                      renderItem={appointment => (
+                        <List.Item>
+                          <List.Item.Meta
+                            title={appointment.title || 'Untitled'}
+                            description={`Date: ${
+                              appointment.date || 'N/A'
+                            } | Time: ${
+                              appointment.time?.toDate
+                                ? new Date(
+                                    appointment.time.toDate()
+                                  ).toLocaleTimeString()
+                                : 'N/A'
+                            } | Type: ${appointment.type}`}
+                          />
+                        </List.Item>
+                      )}
                     />
                   </Card>
                 </Col>

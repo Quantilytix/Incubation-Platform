@@ -13,11 +13,21 @@ import {
 import { UploadOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '@/firebase'
-import { doc, updateDoc, getDoc, addDoc, collection } from 'firebase/firestore'
+import {
+  doc,
+  updateDoc,
+  getDoc,
+  addDoc,
+  collection,
+  getDocs,
+  query,
+  where
+} from 'firebase/firestore'
 import { Modal } from 'antd'
 import { Helmet } from 'react-helmet'
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { SHA256 } from 'crypto-js'
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 
 const { Title, Paragraph } = Typography
 const { TextArea } = Input
@@ -35,6 +45,7 @@ export const InterventionTrack: React.FC = () => {
   const [companyName, setCompanyName] = useState('')
   const [showCompletionModal, setShowCompletionModal] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const { user } = useFullIdentity()
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -76,11 +87,6 @@ export const InterventionTrack: React.FC = () => {
 
     fetchDetails()
   }, [id])
-
-  const handleUpload = () => {
-    setUploaded(true)
-    message.success('File uploaded')
-  }
 
   const handleUpdateProgress = async () => {
     if (currentHours == null || currentProgress == null) {
@@ -132,16 +138,16 @@ export const InterventionTrack: React.FC = () => {
 
       const data = interventionSnap.data()
 
-      // 🔼 Upload to Firebase Storage
+      // Upload file to Storage
       const storage = getStorage()
       const storageRef = ref(storage, `interventions/${id}/${uploadFile.name}`)
       const snapshot = await uploadBytes(storageRef, uploadFile)
       const downloadURL = await getDownloadURL(snapshot.ref)
 
-      // ✅ Update Firestore with completion and POE link
+      // Update assignedInterventions
       await updateDoc(interventionRef, {
         consultantCompletionStatus: 'done',
-        status: 'pending', // Awaiting confirmation
+        status: 'pending',
         notes,
         timeSpent: totalTimeSpent,
         progress: 100,
@@ -154,38 +160,65 @@ export const InterventionTrack: React.FC = () => {
         ]
       })
 
-      // ✅ Save to interventionsDatabase
-      // You may want to fetch more data for program, company, participant, etc.
-      let participantData = {}
+      // Look up supporting data
+      const interventionId = data.interventionId // Use this for interventionsDatabase
+      let areaOfSupport = ''
+      if (interventionId) {
+        const intSnap = await getDoc(doc(db, 'interventions', interventionId))
+        if (intSnap.exists()) {
+          const intData = intSnap.data()
+          areaOfSupport = intData.area || ''
+        }
+      }
+
+      const companyCode = user?.companyCode || ''
+      let participantData: any = {}
+      let programId = ''
+
       if (data.participantId) {
         const participantSnap = await getDoc(
           doc(db, 'participants', data.participantId)
         )
-        if (participantSnap.exists()) participantData = participantSnap.data()
+        if (participantSnap.exists()) {
+          participantData = participantSnap.data()
+
+          if (participantData.email) {
+            const appsSnap = await getDocs(
+              query(
+                collection(db, 'applications'),
+                where('email', '==', participantData.email)
+              )
+            )
+            if (!appsSnap.empty) {
+              const appData = appsSnap.docs[0].data()
+              programId = appData.programId || ''
+            }
+          }
+        }
       }
 
+      // Save to interventionsDatabase
       await addDoc(collection(db, 'interventionsDatabase'), {
-        programId: data.programId || '',
-        companyCode: data.companyCode || '',
-        interventionId: id,
+        programId,
+        companyCode,
+        interventionId, // from the field, not the doc ID
         interventionTitle: data.interventionTitle || '',
-        areaOfSupport: data.areaOfSupport || '',
+        areaOfSupport,
         participantId: data.participantId,
         beneficiaryName: participantData.beneficiaryName || '',
         hub: participantData.hub || '',
         province: participantData.province || '',
         quarter: 'Q' + (Math.floor(new Date().getMonth() / 3) + 1),
-        consultantIds: [data.consultantId],
+        consultantId: data.consultantId,
         timeSpent: totalTimeSpent,
-        interventionType: data.interventionType || '',
+        interventionType: data.type || '',
         targetMetric: data.targetMetric || '',
         targetType: data.targetType || '',
         targetValue: data.targetValue || 0,
-        feedback: data.feedback || null,
         confirmedAt: new Date(),
         createdAt: participantData.createdAt || new Date(),
         updatedAt: new Date(),
-        interventionKey: SHA256((participantData.email || '') + id)
+        interventionKey: SHA256((participantData.email || '') + interventionId)
           .toString()
           .substring(0, 12),
         resources: [
@@ -197,10 +230,10 @@ export const InterventionTrack: React.FC = () => {
         ]
       })
 
-      // 🔔 Send notification
+      // Notify stakeholders
       await addDoc(collection(db, 'notifications'), {
         type: 'intervention-submitted',
-        interventionId: id,
+        interventionId,
         participantId: data.participantId,
         consultantId: data.consultantId,
         interventionTitle: data.interventionTitle,
