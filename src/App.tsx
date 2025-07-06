@@ -60,7 +60,6 @@ import OperationsResourceManagement from '@/routes/operations/resources'
 import OperationsCompliance from './routes/operations/compliance'
 import OperationsReports from './routes/operations/reports'
 import { ConsultantAssignments } from './routes/operations/assignments'
-import ParticipantOnboardingForm from './routes/operations/participants/new/ParticipantOnboardingForm'
 import ParticipantSuccess from './routes/operations/participants/success'
 import { ConsultantPage } from './routes/operations/consultants'
 // ───────────────────────────────────────────────────────────
@@ -68,7 +67,6 @@ import { ConsultantPage } from './routes/operations/consultants'
 // ───────────────────────────────────────────────────────────
 import { FunderDashboard } from '@/routes/funder/funderDashboard'
 import { FunderAnalytics } from '@/routes/funder/analytics/funderAnalytics'
-import { UserManagement } from '@/components/user-management'
 // ───────────────────────────────────────────────────────────
 // 🔹 Funder Routes
 // ───────────────────────────────────────────────────────────
@@ -112,18 +110,6 @@ import { ImpactAnalysisForm } from './routes/projectadmin/impact'
 import ParticipantFormalRegistration from './routes/registration/onboarding'
 
 // ───────────────────────────────────────────────────────────
-// 🔹 Receptionist Routes
-// ───────────────────────────────────────────────────────────
-import ReceptionistDashboardPage from '@/routes/receptionist/dashboard'
-import NewInquiry from '@/routes/receptionist/inquiries/new'
-import InquiriesList from '@/routes/receptionist/inquiries'
-import InquiryDetailPage from '@/routes/receptionist/inquiries/[id]'
-import EditInquiry from '@/routes/receptionist/inquiries/[id]/edit'
-import ContactsList from '@/routes/receptionist/contacts'
-import FollowUpsList from '@/routes/receptionist/follow-ups'
-import ReceptionistReports from '@/routes/receptionist/reports'
-import { BranchManagement } from '@/components/branch-management/BranchManagement'
-// ───────────────────────────────────────────────────────────
 // 🔹 Utilities / Misc
 // ───────────────────────────────────────────────────────────
 import Chat from '@/routes/chat/chat'
@@ -146,6 +132,9 @@ import IncubateeLayout from './components/IncubateeLayout'
 import IncubateeAnalytics from './routes/incubatee/analytics'
 import ProfileForm from './routes/incubatee/profile'
 import GrowthPlanPage from './routes/incubatee/diagnostic'
+import { TasksEventsPage } from './routes/tasksEvents'
+import AppointmentsManager from './routes/consultants/appointments'
+import AllocatedHistory from './routes/consultants/allocated/history'
 
 const queryClient = new QueryClient()
 
@@ -190,7 +179,6 @@ const App = () => {
                       <Route path='admin'>
                         <Route index element={<AdminDashboard />} />
                         <Route path='forms' element={<FormManagement />} />
-                          <Route path='users' element={<UserManagement />} />
                       </Route>
                       {/* Project Admin Routes */}
                       <Route path='projectadmin'>
@@ -208,7 +196,6 @@ const App = () => {
                       {/* Director Routes */}
                       <Route path='director'>
                         <Route index element={<DirectorDashboard />} />
-                         <Route path='branches' element={<BranchManagement />} />
                         <Route
                           path='operators'
                           element={<OperationsOnboardingDashboard />}
@@ -240,27 +227,6 @@ const App = () => {
                         />
                         <Route path='documents' element={<DocumentHub />} />
                       </Route>
-  {/* Receptionist Routes */}
-                      <Route path='receptionist'>
-                        <Route index element={<ReceptionistDashboardPage />} />
-                        <Route path='inquiries' element={<InquiriesList />} />
-                        <Route path='inquiries/new' element={<NewInquiry />} />
-                        <Route
-                          path='inquiries/:id'
-                          element={<InquiryDetailPage />}
-                        />
-                        <Route
-                          path='inquiries/:id/edit'
-                          element={<EditInquiry />}
-                        />
-                        <Route path='contacts' element={<ContactsList />} />
-                        <Route path='follow-ups' element={<FollowUpsList />} />
-                        <Route
-                          path='reports'
-                          element={<ReceptionistReports />}
-                        />
-                      </Route>
-
                       {/* Investor Routes */}
                       <Route path='investor'>
                         <Route index element={<InvestorDashboard />} />
@@ -284,12 +250,20 @@ const App = () => {
                       <Route path='consultant'>
                         <Route index element={<ConsultantDashboard />} />
                         <Route
+                          path='appointments'
+                          element={<AppointmentsManager />}
+                        />
+                        <Route
                           path='feedback'
                           element={<FeedbackWorkspace />}
                         />
                         <Route
                           path='analytics'
                           element={<ProjectAnalytics />}
+                        />
+                        <Route
+                          path='allocated/history'
+                          element={<AllocatedHistory />}
                         />
                         <Route path='allocated'>
                           <Route index element={<AssignedInterventions />} />
@@ -360,6 +334,7 @@ const App = () => {
                         path='interventions'
                         element={<InterventionDatabaseView />}
                       />
+                      <Route path='tasksEvents' element={<TasksEventsPage />} />
                       <Route path='chat' element={<Chat />} />
                       <Route
                         path='expenses'
