@@ -73,6 +73,7 @@ const defaultExpertise = [
 export const ConsultantPage: React.FC = () => {
   const [consultants, setConsultants] = useState<Consultant[]>([])
   const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
   const [addModalVisible, setAddModalVisible] = useState(false)
   const [editModalVisible, setEditModalVisible] = useState(false)
   const [form] = Form.useForm()
@@ -84,6 +85,7 @@ export const ConsultantPage: React.FC = () => {
   const [searchText, setSearchText] = useState('')
   const { user, loading: identityLoading } = useFullIdentity()
   const [companyCode, setCompanyCode] = useState<string>('')
+  const [addLoading, setAddLoading] = useState(false)
 
   useEffect(() => {
     if (!identityLoading) {
@@ -135,10 +137,10 @@ export const ConsultantPage: React.FC = () => {
   }, [identityLoading, user?.companyCode])
 
   const handleAddConsultant = async (values: any) => {
+    setAddLoading(true) // 🔥 START LOADING
     try {
       const { email, name, expertise, rate } = values
 
-      // Create Firebase Auth account
       const userCred = await createUserWithEmailAndPassword(
         auth,
         email,
@@ -159,6 +161,7 @@ export const ConsultantPage: React.FC = () => {
         createdAt: new Date().toISOString()
       }
       await addDoc(collection(db, 'consultants'), newConsultant)
+      setNewConsultantId(uid) // after adding
 
       const newUser = {
         name,
@@ -176,11 +179,14 @@ export const ConsultantPage: React.FC = () => {
     } catch (error: any) {
       console.error(error)
       message.error(error?.message || 'Failed to register consultant.')
+    } finally {
+      setAddLoading(false) // 🔥 STOP LOADING
     }
   }
 
   const handleEditConsultant = async (values: any) => {
     if (!editingConsultant) return
+    setEditing(true)
     try {
       const updated = {
         ...values
@@ -193,6 +199,8 @@ export const ConsultantPage: React.FC = () => {
     } catch (error) {
       console.error('Error updating consultant:', error)
       message.error('Failed to update consultant.')
+    } finally {
+      setEditing(false)
     }
   }
 
@@ -357,12 +365,31 @@ export const ConsultantPage: React.FC = () => {
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={8}>
-          <Card loading={loading}>
+          <Card
+            loading={loading}
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8
+            }}
+          >
             <Statistic
               title={
                 <Space>
-                  <UserOutlined />
-                  Total Consultants
+                  <div
+                    style={{
+                      background: '#e6f7ff',
+                      padding: 8,
+                      borderRadius: '50%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <UserOutlined style={{ fontSize: 18, color: '#1890ff' }} />
+                  </div>
+                  <span>Total Consultants</span>
                 </Space>
               }
               value={totalConsultants}
@@ -371,12 +398,33 @@ export const ConsultantPage: React.FC = () => {
         </Col>
 
         <Col xs={24} sm={8}>
-          <Card loading={loading}>
+          <Card
+            loading={loading}
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8
+            }}
+          >
             <Statistic
               title={
                 <Space>
-                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                  Active Consultants
+                  <div
+                    style={{
+                      background: '#f6ffed',
+                      padding: 8,
+                      borderRadius: '50%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <CheckCircleOutlined
+                      style={{ fontSize: 18, color: '#52c41a' }}
+                    />
+                  </div>
+                  <span>Active Consultants</span>
                 </Space>
               }
               value={activeCount}
@@ -386,12 +434,31 @@ export const ConsultantPage: React.FC = () => {
         </Col>
 
         <Col xs={24} sm={8}>
-          <Card loading={loading}>
+          <Card
+            loading={loading}
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8
+            }}
+          >
             <Statistic
               title={
                 <Space>
-                  <StarOutlined style={{ color: '#fadb14' }} />
-                  Average Rating
+                  <div
+                    style={{
+                      background: '#fffbe6',
+                      padding: 8,
+                      borderRadius: '50%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <StarOutlined style={{ fontSize: 18, color: '#faad14' }} />
+                  </div>
+                  <span>Average Rating</span>
                 </Space>
               }
               valueRender={() => (
@@ -405,33 +472,51 @@ export const ConsultantPage: React.FC = () => {
           </Card>
         </Col>
       </Row>
-      <Col style={{ marginBottom: 10 }}>
-        <Space>
-          <Input.Search
-            placeholder='Search by name or email'
-            onSearch={value => setSearchText(value)}
-            allowClear
-            style={{ width: 250 }}
-          />
-          <Button
-            type='primary'
-            icon={<PlusOutlined />}
-            onClick={() => setAddModalVisible(true)}
-          >
-            Add Consultant
-          </Button>
-          <Button icon={<DownloadOutlined />} type='default'>
-            <CSVLink
-              filename='consultants.csv'
-              data={consultants}
-              style={{ color: 'inherit' }}
+      <Card
+        hoverable
+        style={{
+          boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+          transition: 'all 0.3s ease',
+          borderRadius: 8,
+          marginBottom: 10
+        }}
+      >
+        <Col style={{ marginBottom: 10 }}>
+          <Space>
+            <Input.Search
+              placeholder='Search by name or email'
+              onSearch={value => setSearchText(value)}
+              allowClear
+              style={{ width: 250 }}
+            />
+            <Button
+              type='primary'
+              icon={<PlusOutlined />}
+              onClick={() => setAddModalVisible(true)}
             >
-              Export
-            </CSVLink>
-          </Button>
-        </Space>
-      </Col>
-      <Card>
+              Add Consultant
+            </Button>
+            <Button icon={<DownloadOutlined />} type='default'>
+              <CSVLink
+                filename='consultants.csv'
+                data={consultants}
+                style={{ color: 'inherit' }}
+              >
+                Export
+              </CSVLink>
+            </Button>
+          </Space>
+        </Col>
+      </Card>
+
+      <Card
+        hoverable
+        style={{
+          boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+          transition: 'all 0.3s ease',
+          borderRadius: 8
+        }}
+      >
         <Skeleton active loading={loading}>
           <Table
             columns={columns}
@@ -449,11 +534,15 @@ export const ConsultantPage: React.FC = () => {
       <Modal
         title='Add New Consultant'
         open={addModalVisible}
-        onCancel={() => setAddModalVisible(false)}
+        onCancel={() => {
+          form.resetFields()
+          setAddModalVisible(false)
+        }}
         onOk={() => form.submit()}
         okText='Add Consultant'
+        confirmLoading={addLoading} // 🔥 HERE
         centered
-        bodyStyle={{ maxHeight: '70vh', overflowY: 'auto' }} // 👉 limit height nicely
+        bodyStyle={{ maxHeight: '70vh', overflowY: 'auto' }}
       >
         <Form form={form} layout='vertical' onFinish={handleAddConsultant}>
           <Form.Item
@@ -509,6 +598,7 @@ export const ConsultantPage: React.FC = () => {
         onCancel={() => setEditModalVisible(false)}
         onOk={() => editForm.submit()}
         okText='Save Changes'
+        confirmLoading={editing}
       >
         <Form form={editForm} layout='vertical' onFinish={handleEditConsultant}>
           <Form.Item
