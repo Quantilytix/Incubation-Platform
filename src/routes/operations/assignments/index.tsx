@@ -593,23 +593,20 @@ export const ConsultantAssignments: React.FC = () => {
     return `${assigned.length} / ${required.length}`
   }
 
-  const getDepartmentName = intervention => {
-    const dep = departments.find(d => d.id === intervention.departmentId)
-    return dep ? dep.name : 'Unknown'
-  }
-
   const progressMetrics = [
     {
       title: 'Assigned / Required',
       value: `${totalAssigned} / ${totalRequired}`,
       color: '#1890ff',
-      icon: <CheckCircleOutlined />
+      icon: <CheckCircleOutlined />,
+      bgColor: '#e6f7ff'
     },
     {
       title: 'Completed / Assigned',
-      value: <Space>{`${totalCompleted} / ${totalAssigned}`}</Space>,
+      value: `${totalCompleted} / ${totalAssigned}`,
       color: '#52c41a',
-      icon: <CalendarOutlined />
+      icon: <CalendarOutlined />,
+      bgColor: '#f6ffed'
     },
     {
       title: 'Completion Rate',
@@ -625,7 +622,9 @@ export const ConsultantAssignments: React.FC = () => {
           }
         />
       ),
-      icon: <CommentOutlined />
+      color: '#faad14',
+      icon: <CommentOutlined />,
+      bgColor: '#fffbe6'
     }
   ]
 
@@ -683,11 +682,6 @@ export const ConsultantAssignments: React.FC = () => {
       title: 'Intervention Title',
       dataIndex: 'interventionTitle',
       key: 'interventionTitle'
-    },
-    {
-      title: 'Department',
-      key: 'department',
-      render: (_: any, record: any) => getDepartmentName(record)
     },
     {
       title: 'Consultant',
@@ -761,77 +755,115 @@ export const ConsultantAssignments: React.FC = () => {
         <title>Consultant Assignments | Incubation Platform</title>
       </Helmet>
 
-      {/* 🔘 Header + Button */}
-      <div
+      <Row gutter={[16, 16]} style={{ marginBottom: 15 }}>
+        {progressMetrics.map(
+          ({ title, value, icon, customRender, color, bgColor }) => (
+            <Col xs={24} sm={12} md={8} key={title}>
+              <Card
+                loading={loading}
+                hoverable
+                style={{
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+                  transition: 'all 0.3s ease',
+                  borderRadius: 8
+                }}
+              >
+                <Statistic
+                  title={
+                    <Space>
+                      <div
+                        style={{
+                          background: bgColor,
+                          padding: 8,
+                          borderRadius: '50%',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        {React.cloneElement(icon, {
+                          style: {
+                            fontSize: 18,
+                            color: color
+                          }
+                        })}
+                      </div>
+                      <span>{title}</span>
+                    </Space>
+                  }
+                  valueRender={() => customRender ?? <span>{value}</span>}
+                />
+              </Card>
+            </Col>
+          )
+        )}
+      </Row>
+
+      <Card
+        hoverable
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          marginBottom: 24
+          boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+          transition: 'all 0.3s ease',
+          borderRadius: 8,
+          marginBottom: 10
         }}
       >
-        <Title level={4}>Consultant Assignments</Title>
-        <Button
-          type='primary'
-          icon={<CheckCircleOutlined />}
-          onClick={() => setAssignmentModalVisible(true)}
-        >
-          Assign New Intervention
-        </Button>
-      </div>
-
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        {progressMetrics.map(({ title, value, icon, customRender, color }) => (
-          <Col xs={24} sm={12} md={8} key={title}>
-            <Card loading={loading}>
-              <Statistic
-                title={
-                  <Space>
-                    <span style={{ color, fontSize: 18 }}>{icon}</span>
-                    {title}
-                  </Space>
-                }
-                valueRender={() => customRender ?? <span>{value}</span>}
-              />
-            </Card>
+        <Row justify='space-between' style={{ marginBottom: 16 }}>
+          <Col>
+            <Input.Search
+              placeholder='Search beneficiary...'
+              allowClear
+              onSearch={value => setSearchText(value)}
+              style={{ width: 250 }}
+            />
           </Col>
-        ))}
-      </Row>
 
-      <Row justify='space-between' style={{ marginBottom: 16 }}>
-        <Col>
-          <Input.Search
-            placeholder='Search beneficiary...'
-            allowClear
-            onSearch={value => setSearchText(value)}
-            style={{ width: 250 }}
-          />
-        </Col>
+          <Col>
+            <Select
+              placeholder='Filter by program'
+              allowClear
+              style={{ width: 250 }}
+              value={selectedProgram}
+              onChange={value => setSelectedProgram(value)}
+            >
+              {[...new Set(participants.map(p => p.programName))].map(
+                program => (
+                  <Select.Option key={program} value={program}>
+                    {program}
+                  </Select.Option>
+                )
+              )}
+            </Select>
 
-        <Col>
-          <Select
-            placeholder='Filter by program'
-            allowClear
-            style={{ width: 250 }}
-            value={selectedProgram}
-            onChange={value => setSelectedProgram(value)}
-          >
-            {[...new Set(participants.map(p => p.programName))].map(program => (
-              <Select.Option key={program} value={program}>
-                {program}
-              </Select.Option>
-            ))}
-          </Select>
-        </Col>
-      </Row>
+            <Button
+              type='primary'
+              icon={<CheckCircleOutlined />}
+              onClick={() => setAssignmentModalVisible(true)}
+              style={{ marginLeft: 10 }}
+            >
+              Assign New Intervention
+            </Button>
+          </Col>
+        </Row>
+      </Card>
 
       {/* 🔁 Assignment Table */}
-      <Table
-        columns={columns}
-        dataSource={filteredParticipants}
-        rowKey='id'
-        pagination={{ pageSize: 10 }}
-        loading={loading}
-      />
+      <Card
+        hoverable
+        style={{
+          boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+          transition: 'all 0.3s ease',
+          borderRadius: 8
+        }}
+      >
+        <Table
+          columns={columns}
+          dataSource={filteredParticipants}
+          rowKey='id'
+          pagination={{ pageSize: 10 }}
+          loading={loading}
+        />
+      </Card>
 
       {/* 📝 Assignments Modal */}
       <Modal
