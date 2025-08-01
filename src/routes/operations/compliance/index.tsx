@@ -257,6 +257,16 @@ const OperationsCompliance: React.FC = () => {
     }
     setIsModalVisible(true)
   }
+  const calculateComplianceScore = (docs: ComplianceDocument[]): number => {
+    const total = docs.length
+    if (total === 0) return 0
+
+    const validCount = docs.filter(
+      doc => doc.status === 'valid' || doc.verificationStatus === 'verified'
+    ).length
+
+    return Math.round((validCount / total) * 100)
+  }
 
   const continueSaving = async (url: string) => {
     try {
@@ -309,8 +319,11 @@ const OperationsCompliance: React.FC = () => {
         updatedDocs = [...complianceDocuments, newDoc]
       }
 
+      const updatedScore = calculateComplianceScore(updatedDocs)
+
       await updateDoc(doc(db, 'applications', applicationId), {
-        complianceDocuments: updatedDocs
+        complianceDocuments: updatedDocs,
+        complianceScore: updatedScore // ⬅️ update score here
       })
 
       setDocuments(prev =>
@@ -405,7 +418,12 @@ const OperationsCompliance: React.FC = () => {
           : doc
       )
 
-      await updateDoc(docRef, { complianceDocuments: updatedDocs })
+      const updatedScore = calculateComplianceScore(updatedDocs)
+
+      await updateDoc(docRef, {
+        complianceDocuments: updatedDocs,
+        complianceScore: updatedScore
+      })
 
       setDocuments(prev =>
         prev.map(doc =>
@@ -428,37 +446,6 @@ const OperationsCompliance: React.FC = () => {
     } catch (err) {
       console.error('❌ Verification failed', err)
       message.error('Failed to verify document')
-    }
-  }
-
-  // Handle document verification
-  const handleVerifyDocument = async (documentId: string) => {
-    try {
-      const docRef = doc(db, 'complianceDocuments', documentId)
-
-      await updateDoc(docRef, {
-        status: 'valid',
-        lastVerifiedBy: 'Current User', // Replace with real user in production
-        lastVerifiedAt: new Date().toISOString().split('T')[0]
-      })
-
-      const updatedDocuments = documents.map(doc => {
-        if (doc.id === documentId) {
-          return {
-            ...doc,
-            status: 'valid',
-            lastVerifiedBy: 'Current User',
-            lastVerifiedAt: new Date().toISOString().split('T')[0]
-          }
-        }
-        return doc
-      })
-
-      setDocuments(updatedDocuments)
-      message.success('Document verified successfully')
-    } catch (error) {
-      console.error('Error verifying document:', error)
-      message.error('Failed to verify document.')
     }
   }
 
@@ -580,40 +567,41 @@ const OperationsCompliance: React.FC = () => {
               record.status.toLowerCase()
             ) &&
               contact && (
-                <Tooltip title='Contact Participant'>
-                  <Button
-                    icon={<UserOutlined />}
-                    type='text'
-                    onClick={() => {
-                      Modal.info({
-                        title: `Contact ${contact.name}`,
-                        content: (
-                          <div>
-                            <p>
-                              <strong>Email:</strong> {contact.email}
-                            </p>
-                            <p>
-                              <strong>Phone:</strong> {contact.phone || 'N/A'}
-                            </p>
-                          </div>
-                        ),
-                        okText: 'Close'
-                      })
-                    }}
-                  />
-                </Tooltip>
-              ) && (
-                <Tooltip title='Verify / Query'>
-                  <Button
-                    icon={<FileProtectOutlined />}
-                    onClick={() => {
-                      setVerifyingDocument(record)
-                      setVerificationComment('')
-                      setVerificationModalVisible(true)
-                    }}
-                    type='text'
-                  />
-                </Tooltip>
+                <>
+                  <Tooltip title='Contact Participant'>
+                    <Button
+                      icon={<UserOutlined />}
+                      type='text'
+                      onClick={() => {
+                        Modal.info({
+                          title: `Contact ${contact.name}`,
+                          content: (
+                            <div>
+                              <p>
+                                <strong>Email:</strong> {contact.email}
+                              </p>
+                              <p>
+                                <strong>Phone:</strong> {contact.phone || 'N/A'}
+                              </p>
+                            </div>
+                          ),
+                          okText: 'Close'
+                        })
+                      }}
+                    />
+                  </Tooltip>
+                  <Tooltip title='Verify / Query'>
+                    <Button
+                      icon={<FileProtectOutlined />}
+                      onClick={() => {
+                        setVerifyingDocument(record)
+                        setVerificationComment('')
+                        setVerificationModalVisible(true)
+                      }}
+                      type='text'
+                    />
+                  </Tooltip>
+                </>
               )}
           </Space>
         )
@@ -858,14 +846,14 @@ const OperationsCompliance: React.FC = () => {
                   )}
                   <Tag
                     color={
-                      doc.verificationStatus === 'verified'
+                      record.verificationStatus === 'verified'
                         ? 'green'
-                        : doc.verificationStatus === 'queried'
+                        : record.verificationStatus === 'queried'
                         ? 'red'
                         : 'default'
                     }
                   >
-                    {doc.verificationStatus || 'unverified'}
+                    {record.verificationStatus || 'unverified'}
                   </Tag>
                 </div>
               )
