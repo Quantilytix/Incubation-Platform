@@ -413,7 +413,8 @@ const OperationsCompliance: React.FC = () => {
               verificationStatus: status,
               verificationComment: comment || '',
               lastVerifiedBy: user?.name || 'Unknown',
-              lastVerifiedAt: new Date().toISOString().split('T')[0]
+              lastVerifiedAt: new Date().toISOString().split('T')[0],
+              status: status === 'queried' ? 'invalid' : doc.status // ✅ override to invalid
             }
           : doc
       )
@@ -433,14 +434,15 @@ const OperationsCompliance: React.FC = () => {
                 verificationStatus: status,
                 verificationComment: comment || '',
                 lastVerifiedBy: user?.name || 'Unknown',
-                lastVerifiedAt: new Date().toISOString().split('T')[0]
+                lastVerifiedAt: new Date().toISOString().split('T')[0],
+                status: status === 'queried' ? 'invalid' : doc.status
               }
             : doc
         )
       )
 
       message.success(
-        status === 'verified' ? 'Document verified' : 'Document queried'
+        status === 'verified' ? '✅ Document verified' : '❌ Document queried'
       )
       setVerificationModalVisible(false)
     } catch (err) {
@@ -516,6 +518,26 @@ const OperationsCompliance: React.FC = () => {
         record.type === value
     },
     {
+      title: 'Verification',
+      dataIndex: 'verificationStatus',
+      key: 'verificationStatus',
+      render: (status: string) => {
+        let color = 'default'
+        if (status === 'verified') color = 'green'
+        else if (status === 'queried') color = 'red'
+        else if (status === 'unverified') color = 'orange'
+
+        return <Tag color={color}>{status}</Tag>
+      },
+      filters: [
+        { text: 'Verified', value: 'verified' },
+        { text: 'Queried', value: 'queried' },
+        { text: 'Unverified', value: 'unverified' }
+      ],
+      onFilter: (value: any, record: ComplianceDocument) =>
+        record.verificationStatus === value
+    },
+    {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
@@ -554,7 +576,8 @@ const OperationsCompliance: React.FC = () => {
 
         return (
           <Space size='middle'>
-            {record.url && (
+            {/* 👁️ View Document */}
+            {record.url && record.status.toLowerCase() !== 'missing' && (
               <Tooltip title='View Document'>
                 <Button
                   icon={<EyeOutlined />}
@@ -563,45 +586,50 @@ const OperationsCompliance: React.FC = () => {
                 />
               </Tooltip>
             )}
-            {['missing', 'expired', 'pending'].includes(
-              record.status.toLowerCase()
-            ) &&
+
+            {/* 📞 Contact Participant */}
+            {(record.status.toLowerCase() === 'missing' ||
+              record.status.toLowerCase() === 'expired' ||
+              record.verificationStatus?.toLowerCase() === 'queried') &&
               contact && (
-                <>
-                  <Tooltip title='Contact Participant'>
-                    <Button
-                      icon={<UserOutlined />}
-                      type='text'
-                      onClick={() => {
-                        Modal.info({
-                          title: `Contact ${contact.name}`,
-                          content: (
-                            <div>
-                              <p>
-                                <strong>Email:</strong> {contact.email}
-                              </p>
-                              <p>
-                                <strong>Phone:</strong> {contact.phone || 'N/A'}
-                              </p>
-                            </div>
-                          ),
-                          okText: 'Close'
-                        })
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip title='Verify / Query'>
-                    <Button
-                      icon={<FileProtectOutlined />}
-                      onClick={() => {
-                        setVerifyingDocument(record)
-                        setVerificationComment('')
-                        setVerificationModalVisible(true)
-                      }}
-                      type='text'
-                    />
-                  </Tooltip>
-                </>
+                <Tooltip title='Contact Participant'>
+                  <Button
+                    icon={<UserOutlined />}
+                    type='text'
+                    onClick={() => {
+                      Modal.info({
+                        title: `Contact ${contact.name}`,
+                        content: (
+                          <div>
+                            <p>
+                              <strong>Email:</strong> {contact.email}
+                            </p>
+                            <p>
+                              <strong>Phone:</strong> {contact.phone || 'N/A'}
+                            </p>
+                          </div>
+                        ),
+                        okText: 'Close'
+                      })
+                    }}
+                  />
+                </Tooltip>
+              )}
+
+            {/* ✅ Verify / Query */}
+            {record.url &&
+              record.verificationStatus?.toLowerCase() === 'unverified' && (
+                <Tooltip title='Verify / Query'>
+                  <Button
+                    icon={<FileProtectOutlined />}
+                    onClick={() => {
+                      setVerifyingDocument(record)
+                      setVerificationComment('')
+                      setVerificationModalVisible(true)
+                    }}
+                    type='text'
+                  />
+                </Tooltip>
               )}
           </Space>
         )
