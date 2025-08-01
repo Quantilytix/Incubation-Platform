@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { Children, useEffect, useMemo, useState } from 'react'
 import { Layout, Menu, Typography, Spin, Button } from 'antd'
 import { useGetIdentity, useLogout } from '@refinedev/core'
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
@@ -34,7 +34,9 @@ import {
   DollarOutlined,
   LineChartOutlined,
   ClockCircleOutlined,
-  BookOutlined
+  BookOutlined,
+  DatabaseOutlined,
+  OneToOneOutlined
 } from '@ant-design/icons'
 import { Upload, message } from 'antd'
 import { EditOutlined, LoadingOutlined } from '@ant-design/icons'
@@ -426,16 +428,30 @@ export const CustomLayout: React.FC = () => {
         icon: <DashboardOutlined />
       },
       {
-        key: 'programs',
-        to: '/programs',
-        label: 'Programs Onboarding',
-        icon: <LaptopOutlined />
-      },
-      {
-        key: 'assignments',
-        to: '/operations/assignments',
-        label: 'Assignments',
-        icon: <FileProtectOutlined />
+        key: 'consultants',
+        to: '/operations/consultants',
+        label: 'Consultants',
+        icon: <SolutionOutlined />,
+        children: [
+          {
+            key: 'consultants-db',
+            to: '/operations/consultants',
+            label: 'Manage',
+            icon: <DatabaseOutlined />
+          },
+          {
+            key: 'consultants-assignments',
+            to: '/operations/assignments',
+            label: 'Assignments',
+            icon: <FileProtectOutlined />
+          },
+          {
+            key: 'consultants-tasks',
+            to: '/operations/tasks',
+            label: 'Tasks',
+            icon: <OneToOneOutlined />
+          }
+        ]
       },
       {
         key: 'interventions',
@@ -443,35 +459,43 @@ export const CustomLayout: React.FC = () => {
         label: 'Interventions Database',
         icon: <FileSearchOutlined />
       },
-      {
-        key: 'consultants',
-        to: '/operations/consultants',
-        label: 'Consultants',
-        icon: <TeamOutlined />
-      },
+
       {
         key: 'participants',
-        to: '/operations/participants',
-        label: 'Participants',
-        icon: <UserOutlined />
+        label: 'Incubatees',
+        icon: <TeamOutlined />,
+        children: [
+          {
+            key: 'participants-db',
+            to: '/operations/participants',
+            label: 'View All',
+            icon: <DatabaseOutlined />
+          },
+          {
+            key: 'applications',
+            to: '/applications',
+            label: 'Applications',
+            icon: <FormOutlined />
+          },
+          {
+            key: 'compliance',
+            to: '/operations/compliance',
+            label: 'Compliance',
+            icon: <CheckSquareOutlined />
+          }
+        ]
       },
       {
-        key: 'compliance',
-        to: '/operations/compliance',
-        label: 'Compliance',
-        icon: <CheckSquareOutlined />
+        key: 'programs',
+        to: '/programs',
+        label: 'Programs Onboarding',
+        icon: <LaptopOutlined />
       },
       {
         key: 'resources',
         to: '/operations/resources',
         label: 'Resources',
         icon: <FundProjectionScreenOutlined />
-      },
-      {
-        key: 'applications',
-        to: '/applications',
-        label: 'Applications',
-        icon: <FormOutlined />
       },
       {
         key: 'system',
