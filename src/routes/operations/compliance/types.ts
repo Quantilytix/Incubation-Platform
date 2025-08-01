@@ -5,7 +5,7 @@ export interface ComplianceDocument {
     documentType: string
     documentName: string
     type: string
-    status: 'valid' | 'expiring' | 'expired' | 'missing' | 'pending';
+    status: 'valid' | 'expiring' | 'expired' | 'missing' | 'invalid';
     issueDate?: string
     expiryDate?: string
     notes?: string
