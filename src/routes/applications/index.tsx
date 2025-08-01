@@ -1,65 +1,60 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import {
   Card,
+  Button,
+  Badge,
+  Table,
+  Select,
+  Input,
+  Modal,
+  Tabs,
+  Statistic,
   Row,
   Col,
-  Statistic,
-  Table,
+  Divider,
   Tag,
-  Modal,
-  Button,
-  Space,
-  Typography,
-  Select,
   message,
   Skeleton,
-  Grid
+  Typography,
+  Space,
+  Alert
 } from 'antd'
-import { db, auth } from '@/firebase'
-import { collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore'
 import {
   FileTextOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
-  FileOutlined,
-  DownloadOutlined
+  DownloadOutlined,
+  SearchOutlined,
+  FilterOutlined,
+  EyeOutlined,
+  UserOutlined,
+  PieChartOutlined,
+  RiseOutlined,
+  FileOutlined
 } from '@ant-design/icons'
-import { Helmet } from 'react-helmet'
-import HighchartsReact from 'highcharts-react-official'
-import Highcharts from 'highcharts'
+import { db, auth } from '@/firebase'
+import { collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore'
+import { motion } from 'framer-motion'
 
-const { Title, Text } = Typography
+const { TabPane } = Tabs
 const { Option } = Select
-const { useBreakpoint } = Grid
+const { Text } = Typography
 
-function toCSV(rows, columns) {
-  const csvRows = [columns.map(col => `"${col.title}"`).join(',')]
-  for (let row of rows) {
-    const values = columns.map(col => {
-      let val = row[col.dataIndex]
-      if (typeof val === 'undefined' || val === null) return ''
-      return `"${String(val).replace(/"/g, '""')}"`
-    })
-    csvRows.push(values.join(','))
-  }
-  return csvRows.join('\n')
-}
-
-const ApplicationsPage: React.FC = () => {
+const ApplicationsDashboard = () => {
   const [loading, setLoading] = useState(false)
   const [applications, setApplications] = useState<any[]>([])
-  const [filteredApplications, setFilteredApplications] = useState<any[]>([])
   const [selectedApplication, setSelectedApplication] = useState<any>(null)
-  const [aiModalVisible, setAiModalVisible] = useState(false)
-  const [documentsModalVisible, setDocumentsModalVisible] = useState(false)
-  const [genderFilter, setGenderFilter] = useState<string | undefined>()
-  const [ageGroupFilter, setAgeGroupFilter] = useState<string | undefined>()
+  const [isModalVisible, setIsModalVisible] = useState(false)
+  const [selectedDocApp, setSelectedDocApp] = useState<any>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [genderFilter, setGenderFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [ageGroupFilter, setAgeGroupFilter] = useState<string>('all')
   const [companyCode, setCompanyCode] = useState<string | null>(null)
-  const screens = useBreakpoint()
 
-  // 1. Get companyCode for current user
+  // Get companyCode for current user
   useEffect(() => {
-    async function getUserCompanyCode() {
+    async function getUserCompanyCode () {
       const user = auth.currentUser
       if (!user) return
       const userRef = doc(db, 'users', user.uid)
@@ -69,7 +64,7 @@ const ApplicationsPage: React.FC = () => {
     getUserCompanyCode()
   }, [])
 
-  // 2. Fetch & filter applications by companyCode
+  // Fetch applications
   const fetchApplications = async () => {
     if (!companyCode) return
     setLoading(true)
@@ -83,6 +78,7 @@ const ApplicationsPage: React.FC = () => {
           'AI Score': 'N/A',
           Justification: 'No justification provided.'
         }
+
         try {
           if (typeof aiEvaluation?.raw_response === 'string') {
             const cleaned = aiEvaluation.raw_response
@@ -110,6 +106,7 @@ const ApplicationsPage: React.FC = () => {
             ai['Justification'] = aiEvaluation.raw_response
           }
         }
+
         return {
           id: doc.id,
           ...data,
@@ -126,7 +123,8 @@ const ApplicationsPage: React.FC = () => {
           aiScore: ai['AI Score'] || 'N/A',
           aiJustification: ai['Justification'] || 'N/A',
           documents: data.complianceDocuments || [],
-          applicationStatus: data.applicationStatus || 'Pending'
+          applicationStatus: data.applicationStatus || 'Pending',
+          growthPlanDocUrl: data.growthPlanDocUrl || null
         }
       })
 
@@ -141,7 +139,6 @@ const ApplicationsPage: React.FC = () => {
       })
 
       setApplications(apps)
-      setFilteredApplications(apps)
     } catch (error) {
       console.error('Error fetching applications:', error)
       message.error('Failed to fetch applications')
@@ -152,119 +149,152 @@ const ApplicationsPage: React.FC = () => {
 
   useEffect(() => {
     if (companyCode) fetchApplications()
-    // eslint-disable-next-line
   }, [companyCode])
 
+  // Update application status
   const updateStatus = async (newStatus: string, docId: string) => {
-    const ref = doc(db, 'applications', docId)
-    await updateDoc(ref, { applicationStatus: newStatus })
-    fetchApplications()
-  }
+    try {
+      const ref = doc(db, 'applications', docId)
+      await updateDoc(ref, { applicationStatus: newStatus })
+      message.success('Status updated successfully')
 
-  const handleGenderFilter = (value: string | undefined) => {
-    setGenderFilter(value)
-    filterApplications(value, ageGroupFilter)
-  }
+      // Fetch fresh data
+      await fetchApplications()
 
-  const handleAgeGroupFilter = (value: string | undefined) => {
-    setAgeGroupFilter(value)
-    filterApplications(genderFilter, value)
-  }
-
-  const filterApplications = (gender?: string, ageGroup?: string) => {
-    let filtered = [...applications]
-    if (gender) filtered = filtered.filter(app => app.gender === gender)
-    if (ageGroup) filtered = filtered.filter(app => app.ageGroup === ageGroup)
-    setFilteredApplications(filtered)
-  }
-
-  const totalApplications = applications.length
-  const accepted = applications.filter(
-    app => app.applicationStatus.toLowerCase() === 'accepted'
-  ).length
-  const rejected = applications.filter(
-    app => app.applicationStatus.toLowerCase() === 'rejected'
-  ).length
-
-  const genderDistribution = applications.reduce((acc, p) => {
-    acc[p.gender] = (acc[p.gender] || 0) + 1
-    return acc
-  }, {} as Record<string, number>)
-
-  const ageGroupDistribution = applications.reduce((acc, p) => {
-    acc[p.ageGroup] = (acc[p.ageGroup] || 0) + 1
-    return acc
-  }, {} as Record<string, number>)
-
-  const genderChartOptions = {
-    chart: { 
-      type: 'pie', 
-      height: screens.xs ? 250 : 200 
-    },
-    title: { text: 'Gender Distribution', style: { fontSize: '14px' } },
-    plotOptions: {
-      series: {
-        dataLabels: {
-          enabled: true,
-          format: '{point.y}'
-        }
+      // Update selected application with the new data
+      const updatedApp = applications.find(app => app.id === docId)
+      if (updatedApp) {
+        setSelectedApplication(updatedApp)
       }
-    },
-    series: [
-      {
-        name: 'Participants',
-        data: Object.entries(genderDistribution).map(([key, value]) => ({
-          name: key,
-          y: value
-        }))
-      }
+    } catch (error) {
+      console.error('Error updating status:', error)
+      message.error('Failed to update status')
+    }
+  }
+
+  // Filter applications based on search and filters
+  const filteredApplications = useMemo(() => {
+    return applications.filter(app => {
+      const matchesSearch =
+        app.beneficiaryName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        app.email.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesGender =
+        genderFilter === 'all' || app.gender === genderFilter
+      const matchesStatus =
+        statusFilter === 'all' || app.applicationStatus === statusFilter
+      const matchesAgeGroup =
+        ageGroupFilter === 'all' || app.ageGroup === ageGroupFilter
+
+      return matchesSearch && matchesGender && matchesStatus && matchesAgeGroup
+    })
+  }, [applications, searchTerm, genderFilter, statusFilter, ageGroupFilter])
+
+  // Calculate statistics
+  const stats = useMemo(() => {
+    const total = applications.length
+    const accepted = applications.filter(
+      app => app.applicationStatus === 'accepted'
+    ).length
+    const rejected = applications.filter(
+      app => app.applicationStatus === 'rejected'
+    ).length
+    const pending = applications.filter(
+      app => app.applicationStatus === 'pending'
+    ).length
+
+    return { total, accepted, rejected, pending }
+  }, [applications])
+
+  const genderDistribution = useMemo(() => {
+    const distribution = applications.reduce((acc, app) => {
+      acc[app.gender] = (acc[app.gender] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
+    return Object.entries(distribution)
+  }, [applications])
+
+  const ageGroupDistribution = useMemo(() => {
+    const distribution = applications.reduce((acc, app) => {
+      acc[app.ageGroup] = (acc[app.ageGroup] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
+    return Object.entries(distribution)
+  }, [applications])
+
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'accept':
+        return 'success'
+      case 'reject':
+        return 'error'
+      case 'accepted':
+        return 'success'
+      case 'rejected':
+        return 'error'
+      case 'pending':
+        return 'warning'
+      default:
+        return 'default'
+    }
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'accepted':
+        return <CheckCircleOutlined />
+      case 'rejected':
+        return <CloseCircleOutlined />
+      default:
+        return <FileTextOutlined />
+    }
+  }
+
+  const exportCSV = () => {
+    const headers = [
+      'Enterprise Name',
+      'Email',
+      'Gender',
+      'Age Group',
+      'Stage',
+      'Hub',
+      'Status',
+      'AI Score'
     ]
-  }
+    const rows = filteredApplications.map(app => [
+      app.beneficiaryName,
+      app.email,
+      app.gender,
+      app.ageGroup,
+      app.stage,
+      app.hub,
+      app.applicationStatus,
+      app.aiScore
+    ])
 
-  const readableStatus = selectedApplication?.applicationStatus
-    ? selectedApplication.applicationStatus.charAt(0).toUpperCase() +
-      selectedApplication.applicationStatus.slice(1).toLowerCase()
-    : 'Unassigned'
-
-  const ageChartOptions = {
-    chart: { 
-      type: 'pie', 
-      height: screens.xs ? 250 : 200 
-    },
-    title: { text: 'Age Group Distribution', style: { fontSize: '14px' } },
-    plotOptions: {
-      series: {
-        dataLabels: {
-          enabled: true,
-          format: '{point.y}'
-        }
-      }
-    },
-    series: [
-      {
-        name: 'Participants',
-        data: Object.entries(ageGroupDistribution).map(([key, value]) => ({
-          name: key,
-          y: value
-        }))
-      }
-    ]
+    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'applications.csv'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const columns = [
     {
-      title: 'Enterprise Name',
+      title: 'Enterprise',
       dataIndex: 'beneficiaryName',
       key: 'beneficiaryName'
     },
     {
-      title: 'Owner Gender',
+      title: 'Gender',
       dataIndex: 'gender',
       key: 'gender',
       responsive: ['md']
     },
     {
-      title: 'Owner Age Group',
+      title: 'Age Group',
       dataIndex: 'ageGroup',
       key: 'ageGroup',
       responsive: ['md']
@@ -273,389 +303,768 @@ const ApplicationsPage: React.FC = () => {
       title: 'AI Score',
       dataIndex: 'aiScore',
       key: 'aiScore',
-      sorter: (a, b) => {
-        const aScore = isNaN(Number(a.aiScore)) ? -Infinity : Number(a.aiScore)
-        const bScore = isNaN(Number(b.aiScore)) ? -Infinity : Number(b.aiScore)
-        return bScore - aScore
-      },
-      defaultSortOrder: 'descend',
-      render: score => score ?? 'N/A',
-      responsive: ['sm']
+      render: (score: number) => (
+        <Badge count={score} style={{ backgroundColor: '#faad14' }} />
+      )
     },
     {
-      title: 'Decision',
-      key: 'applicationStatus',
-      render: (record: any) => {
-        const statusRaw = record.applicationStatus || 'Pending'
-        const status =
-          statusRaw.charAt(0).toUpperCase() + statusRaw.slice(1).toLowerCase()
-        const color =
-          status === 'Accepted'
-            ? 'green'
-            : status === 'Rejected'
-            ? 'red'
-            : 'gold'
-        return <Tag color={color}>{status}</Tag>
-      }
+      title: 'Status',
+      dataIndex: 'applicationStatus',
+      key: 'status',
+      render: (status: string) => (
+        <Badge
+          status={getStatusColor(status)}
+          text={
+            <span>
+              {getStatusIcon(status)}{' '}
+              {status.charAt(0).toUpperCase() + status.slice(1)}
+            </span>
+          }
+        />
+      )
     },
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: any, record: any) => (
+      render: (text: string, record: any) => (
         <Space>
           <Button
-            size='small'
-            icon={<FileOutlined />}
+            type='text'
+            icon={<EyeOutlined />}
             onClick={() => {
-              setSelectedApplication(record)
-              setDocumentsModalVisible(true)
+              setSelectedDocApp(record)
+              setIsModalVisible(true)
             }}
-          >
-            {screens.xs ? '' : 'Documents'}
-          </Button>
-
+          />
           {record.growthPlanDocUrl && (
             <Button
-              size='small'
-              type='link'
+              type='text'
               icon={<DownloadOutlined />}
               href={record.growthPlanDocUrl}
               target='_blank'
-              rel='noopener noreferrer'
-            >
-              {screens.xs ? '' : 'Growth Plan'}
-            </Button>
+            />
           )}
         </Space>
       )
     }
   ]
 
-  // CSV export function
-  const handleExportCSV = () => {
-    const exportCols = columns.filter(col => col.dataIndex)
-    const csv = toCSV(filteredApplications, exportCols)
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.setAttribute('download', 'applications.csv')
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
   return (
-    <div style={{ padding: screens.xs ? 12 : 24 }}>
-      <Helmet>
-        <title>Applications Overview</title>
-      </Helmet>
+    <div style={{ minHeight: '100vh', padding: 24 }}>
+      {/* Statistics Cards */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        {[
+          {
+            title: 'Total Applications',
+            value: stats.total,
+            icon: <FileTextOutlined />,
+            color: '#1890ff',
+            bgColor: '#e6f7ff'
+          },
+          {
+            title: 'Accepted',
+            value: stats.accepted,
+            icon: <CheckCircleOutlined />,
+            color: '#52c41a',
+            bgColor: '#f6ffed'
+          },
+          {
+            title: 'Rejected',
+            value: stats.rejected,
+            icon: <CloseCircleOutlined />,
+            color: '#f5222d',
+            bgColor: '#fff2f0'
+          },
+          {
+            title: 'Pending',
+            value: stats.pending,
+            icon: <RiseOutlined />,
+            color: '#faad14',
+            bgColor: '#fffbe6'
+          }
+        ].map((metric, index) => (
+          <Col span={24} md={12} lg={6} key={metric.title}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.4,
+                delay: index * 0.1,
+                ease: 'easeOut'
+              }}
+              whileHover={{
+                y: -3,
+                boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+                transition: { duration: 0.2 }
+              }}
+            >
+              <Card
+                bordered={false}
+                style={{
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                  transition: 'all 0.3s ease',
+                  borderRadius: 8,
+                  border: '1px solid #d6e4ff'
+                }}
+                hoverable
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    marginBottom: 8
+                  }}
+                >
+                  <div
+                    style={{
+                      background: metric.bgColor,
+                      padding: 8,
+                      borderRadius: '50%',
+                      marginRight: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    {React.cloneElement(metric.icon, {
+                      style: {
+                        fontSize: 18,
+                        color: metric.color
+                      }
+                    })}
+                  </div>
+                  <Text strong style={{ fontSize: 14 }}>
+                    {metric.title}
+                  </Text>
+                </div>
+                <Statistic
+                  value={metric.value}
+                  valueStyle={{
+                    color: metric.color,
+                    fontSize: 24,
+                    fontWeight: 500
+                  }}
+                />
+              </Card>
+            </motion.div>
+          </Col>
+        ))}
+      </Row>
 
-      {/* Top Metrics */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        <Col xs={24} sm={8}>
-          <Card loading={loading}>
-            <Statistic
+      {/* Charts */}
+
+      <Row gutter={16} style={{ marginBottom: 24 }}>
+        <Col span={24} lg={12}>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              delay: 0.1,
+              ease: 'easeOut'
+            }}
+            whileHover={{
+              y: -3,
+              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+              transition: { duration: 0.2 }
+            }}
+          >
+            <Card
               title={
-                <Space>
-                  <FileTextOutlined style={{ color: '#1890ff' }} />
-                  Total Applications
-                </Space>
+                <span>
+                  <UserOutlined style={{ marginRight: 8 }} />
+                  Gender Distribution
+                </span>
               }
-              value={totalApplications}
-            />
-          </Card>
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                border: '1px solid #d6e4ff',
+                background: '#fff'
+              }}
+            >
+              <div
+                style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
+              >
+                {genderDistribution.map(([gender, count]) => (
+                  <div
+                    key={gender}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <span style={{ fontWeight: 500 }}>{gender}</span>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 160,
+                          height: 8,
+                          background: '#f0f0f0',
+                          borderRadius: 4,
+                          overflow: 'hidden'
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: '100%',
+                            background: '#1890ff',
+                            borderRadius: 4,
+                            width: `${(count / stats.total) * 100}%`
+                          }}
+                        />
+                      </div>
+                      <span style={{ color: 'rgba(0, 0, 0, 0.45)', width: 32 }}>
+                        {count}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </motion.div>
         </Col>
-        <Col xs={24} sm={8}>
-          <Card loading={loading}>
-            <Statistic
+        <Col span={24} lg={12}>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              delay: 0.1,
+              ease: 'easeOut'
+            }}
+            whileHover={{
+              y: -3,
+              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+              transition: { duration: 0.2 }
+            }}
+          >
+            <Card
               title={
-                <Space>
-                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                  Accepted
-                </Space>
+                <span>
+                  <PieChartOutlined style={{ marginRight: 8 }} />
+                  Age Group Distribution
+                </span>
               }
-              value={accepted}
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card loading={loading}>
-            <Statistic
-              title={
-                <Space>
-                  <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
-                  Rejected
-                </Space>
-              }
-              value={rejected}
-              valueStyle={{ color: '#ff4d4f' }}
-            />
-          </Card>
+              bordered={false}
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff'
+              }}
+            >
+              <Skeleton loading={loading} active paragraph={{ rows: 4 }}>
+                <div
+                  style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
+                >
+                  {ageGroupDistribution.map(([ageGroup, count]) => (
+                    <div
+                      key={ageGroup}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      <span style={{ fontWeight: 500 }}>{ageGroup}</span>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 160,
+                            height: 8,
+                            background: '#f0f0f0',
+                            borderRadius: 4,
+                            overflow: 'hidden'
+                          }}
+                        >
+                          <div
+                            style={{
+                              height: '100%',
+                              background: '#13c2c2',
+                              borderRadius: 4,
+                              width: `${(count / stats.total) * 100}%`
+                            }}
+                          />
+                        </div>
+                        <span
+                          style={{ color: 'rgba(0, 0, 0, 0.45)', width: 32 }}
+                        >
+                          {count}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Skeleton>
+            </Card>
+          </motion.div>
         </Col>
       </Row>
 
-      {/* Pie Charts */}
-      <Skeleton loading={loading} paragraph={false}>
-        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-          <Col xs={24} md={12}>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={genderChartOptions}
-            />
-          </Col>
-          <Col xs={24} md={12}>
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={ageChartOptions}
-            />
-          </Col>
-        </Row>
-      </Skeleton>
+      {/* Filters and Search */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          duration: 0.4,
+          delay: 0.1,
+          ease: 'easeOut'
+        }}
+        whileHover={{
+          y: -3,
+          boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+          transition: { duration: 0.2 }
+        }}
+      >
+        <Card
+          title={
+            <span>
+              <FilterOutlined style={{ marginRight: 8 }} />
+              Filters & Search
+            </span>
+          }
+          bordered={false}
+          style={{
+            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+            transition: 'all 0.3s ease',
+            borderRadius: 8,
+            marginBottom: 16,
+            border: '1px solid #d6e4ff'
+          }}
+        >
+          <Row gutter={16}>
+            <Col span={24} md={12} lg={6}>
+              <Input
+                placeholder='Search enterprises...'
+                prefix={<SearchOutlined />}
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </Col>
+            <Col span={24} md={12} lg={6}>
+              <Select
+                style={{ width: '100%' }}
+                value={genderFilter}
+                onChange={setGenderFilter}
+                placeholder='Filter by Gender'
+              >
+                <Option value='all'>All Genders</Option>
+                <Option value='Male'>Male</Option>
+                <Option value='Female'>Female</Option>
+              </Select>
+            </Col>
+            <Col span={24} md={12} lg={6}>
+              <Select
+                style={{ width: '100%' }}
+                value={ageGroupFilter}
+                onChange={setAgeGroupFilter}
+                placeholder='Filter by Age Group'
+              >
+                <Option value='all'>All Age Groups</Option>
+                <Option value='Youth'>Youth</Option>
+                <Option value='Adult'>Adult</Option>
+                <Option value='Senior'>Senior</Option>
+              </Select>
+            </Col>
+            <Col span={24} md={12} lg={6}>
+              <Select
+                style={{ width: '100%' }}
+                value={statusFilter}
+                onChange={setStatusFilter}
+                placeholder='Filter by Status'
+              >
+                <Option value='all'>All Statuses</Option>
+                <Option value='accepted'>Accepted</Option>
+                <Option value='rejected'>Rejected</Option>
+                <Option value='pending'>Pending</Option>
+              </Select>
+            </Col>
+          </Row>
+          <Divider />
+          <Button
+            type='default'
+            onClick={() => {
+              setSearchTerm('')
+              setGenderFilter('all')
+              setAgeGroupFilter('all')
+              setStatusFilter('all')
+            }}
+          >
+            Clear Filters
+          </Button>
+          <Button
+            type='default'
+            icon={<DownloadOutlined />}
+            onClick={exportCSV}
+            style={{ alignSelf: 'flex-end', marginLeft: 10 }}
+          >
+            Export CSV
+          </Button>
+        </Card>
+      </motion.div>
 
-      {/* Filters & Export */}
-      <Space style={{ marginBottom: 16 }} wrap>
-        <Select
-          placeholder='Filter by Gender'
-          allowClear
-          onChange={handleGenderFilter}
-          style={{ width: screens.xs ? '100%' : 200 }}
-        >
-          <Option value='Male'>Male</Option>
-          <Option value='Female'>Female</Option>
-        </Select>
-        <Select
-          placeholder='Filter by Age Group'
-          allowClear
-          onChange={handleAgeGroupFilter}
-          style={{ width: screens.xs ? '100%' : 200 }}
-        >
-          <Option value='Youth'>Youth</Option>
-          <Option value='Adult'>Adult</Option>
-          <Option value='Senior'>Senior</Option>
-        </Select>
-        <Button
-          type='primary'
-          icon={<DownloadOutlined />}
-          onClick={handleExportCSV}
-          style={{ width: screens.xs ? '100%' : 'auto' }}
-        >
-          Export CSV
-        </Button>
-      </Space>
-
-      {/* Table & Detail Card */}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={14}>
-          <Card>
-            <Table
-              columns={columns}
-              dataSource={filteredApplications}
-              rowKey='id'
-              pagination={{ pageSize: 8 }}
-              onRow={record => ({
-                onClick: () => setSelectedApplication(record)
-              })}
-              scroll={{ x: true }}
-            />
-          </Card>
+      {/* Applications Table and Detail */}
+      <Row gutter={16}>
+        <Col span={24} lg={16}>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              delay: 0.1,
+              ease: 'easeOut'
+            }}
+            whileHover={{
+              y: -3,
+              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+              transition: { duration: 0.2 }
+            }}
+          >
+            <Card
+              title={`Applications (${filteredApplications.length})`}
+              bordered={false}
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                marginBottom: 16,
+                border: '1px solid #d6e4ff'
+              }}
+            >
+              <Table
+                columns={columns}
+                dataSource={filteredApplications}
+                rowKey='id'
+                loading={loading}
+                onRow={record => ({
+                  onClick: () => setSelectedApplication(record),
+                  style: { cursor: 'pointer' }
+                })}
+              />
+            </Card>
+          </motion.div>
         </Col>
-        <Col xs={24} lg={10}>
-          <Card
-            title={
-              selectedApplication ? (
+        <Col span={24} lg={8}>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              delay: 0.1,
+              ease: 'easeOut'
+            }}
+            whileHover={{
+              y: -3,
+              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+              transition: { duration: 0.2 }
+            }}
+          >
+            <Card
+              title='Application Details'
+              bordered={false}
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff'
+              }}
+            >
+              {selectedApplication ? (
+                <Tabs defaultActiveKey='overview'>
+                  <TabPane tab='Overview' key='overview'>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 16
+                      }}
+                    >
+                      <div>
+                        <h3 style={{ fontSize: 16, fontWeight: 'bold' }}>
+                          {selectedApplication.beneficiaryName}
+                        </h3>
+                        <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
+                          {selectedApplication.email}
+                        </p>
+                      </div>
+
+                      <Row gutter={16}>
+                        <Col span={12}>
+                          <p style={{ fontWeight: 500 }}>Gender</p>
+                          <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
+                            {selectedApplication.gender}
+                          </p>
+                        </Col>
+                        <Col span={12}>
+                          <p style={{ fontWeight: 500 }}>Age Group</p>
+                          <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
+                            {selectedApplication.ageGroup}
+                          </p>
+                        </Col>
+                        <Col span={12}>
+                          <p style={{ fontWeight: 500 }}>Stage</p>
+                          <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
+                            {selectedApplication.stage}
+                          </p>
+                        </Col>
+                        <Col span={12}>
+                          <p style={{ fontWeight: 500 }}>Hub</p>
+                          <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
+                            {selectedApplication.hub}
+                          </p>
+                        </Col>
+                      </Row>
+
+                      <div>
+                        <p style={{ fontWeight: 500, marginBottom: 8 }}>
+                          Motivation
+                        </p>
+                        <Text
+                          style={{
+                            color: 'rgba(0, 0, 0, 0.45)',
+                            whiteSpace: 'pre-line'
+                          }}
+                        >
+                          {selectedApplication.motivation || 'N/A'}
+                        </Text>
+                      </div>
+
+                      <div>
+                        <p style={{ fontWeight: 500, marginBottom: 8 }}>
+                          Challenges
+                        </p>
+                        <Text
+                          style={{
+                            color: 'rgba(0, 0, 0, 0.45)',
+                            whiteSpace: 'pre-line'
+                          }}
+                        >
+                          {selectedApplication.challenges || 'N/A'}
+                        </Text>
+                      </div>
+                    </div>
+                  </TabPane>
+                  <TabPane tab='AI Analysis' key='ai'>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 16
+                      }}
+                    >
+                      <Card>
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            marginBottom: 8
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 16
+                            }}
+                          >
+                            <p style={{ fontWeight: 500, margin: 0 }}>
+                              Current Status (Alterable)
+                            </p>
+                            <Select
+                              style={{ width: '100%' }}
+                              value={selectedApplication.applicationStatus}
+                              placeholder='Update Status'
+                              onChange={value =>
+                                updateStatus(value, selectedApplication.id)
+                              }
+                            >
+                              <Option value='accepted'>Accept</Option>
+                              <Option value='rejected'>Reject</Option>
+                              <Option value='pending'>Pending</Option>
+                            </Select>
+
+                            <div
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 8
+                              }}
+                            >
+                              <p style={{ fontWeight: 500, margin: 0 }}>
+                                AI Recommendation
+                              </p>
+                              <Tag
+                                color={getStatusColor(
+                                  selectedApplication.aiRecommendation.toLowerCase()
+                                )}
+                              >
+                                {selectedApplication.aiRecommendation}
+                              </Tag>
+                            </div>
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            marginBottom: 16
+                          }}
+                        >
+                          <p style={{ fontWeight: 500 }}>AI Score</p>
+                          <Badge
+                            count={selectedApplication.aiScore}
+                            style={{ backgroundColor: '#faad14' }}
+                          />
+                        </div>
+                        <div>
+                          <p style={{ fontWeight: 500, marginBottom: 8 }}>
+                            Justification
+                          </p>
+                          <Text
+                            style={{
+                              color: 'rgba(0, 0, 0, 0.45)',
+                              whiteSpace: 'pre-line'
+                            }}
+                          >
+                            {selectedApplication.aiJustification || 'N/A'}
+                          </Text>
+                        </div>
+                      </Card>
+                    </div>
+                  </TabPane>
+                  <TabPane tab='Documents' key='documents'>
+                    {selectedApplication.documents.length > 0 ? (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 8
+                        }}
+                      >
+                        {selectedApplication.documents.map(
+                          (doc: any, idx: number) => (
+                            <Card key={idx} size='small'>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center'
+                                }}
+                              >
+                                <div>
+                                  <p style={{ fontWeight: 500 }}>{doc.type}</p>
+                                  <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
+                                    {doc.fileName}
+                                  </p>
+                                </div>
+                                <Button
+                                  type='text'
+                                  icon={<DownloadOutlined />}
+                                  href={doc.url}
+                                  target='_blank'
+                                />
+                              </div>
+                            </Card>
+                          )
+                        )}
+                        {selectedApplication.growthPlanDocUrl && (
+                          <Card size='small'>
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <div>
+                                <p style={{ fontWeight: 500 }}>Growth Plan</p>
+                                <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
+                                  growth_plan.pdf
+                                </p>
+                              </div>
+                              <Button
+                                type='text'
+                                icon={<DownloadOutlined />}
+                                href={selectedApplication.growthPlanDocUrl}
+                                target='_blank'
+                              />
+                            </div>
+                          </Card>
+                        )}
+                      </div>
+                    ) : (
+                      <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
+                        No documents uploaded
+                      </p>
+                    )}
+                  </TabPane>
+                </Tabs>
+              ) : (
+                <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
+                  Select an application to view details
+                </p>
+              )}
+            </Card>
+          </motion.div>
+        </Col>
+      </Row>
+
+      {/* Documents Modal */}
+      <Modal
+        title='Application Documents'
+        visible={isModalVisible}
+        onCancel={() => setIsModalVisible(false)}
+        footer={null}
+        width={800}
+      >
+        {selectedDocApp?.documents?.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {selectedDocApp.documents.map((doc: any, idx: number) => (
+              <Card key={idx} size='small'>
                 <div
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    flexWrap: 'wrap'
+                    alignItems: 'center'
                   }}
                 >
-                  <div style={{ maxWidth: '70%' }}>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text strong>Current Status: </Text>
-                      <Tag
-                        color={
-                          readableStatus === 'Accepted'
-                            ? 'green'
-                            : readableStatus === 'Rejected'
-                            ? 'red'
-                            : 'gold'
-                        }
-                      >
-                        {readableStatus}
-                      </Tag>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text type='secondary'>
-                        <strong>AI Recommendation:</strong>{' '}
-                        {selectedApplication.aiRecommendation || 'N/A'}
-                      </Text>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text>
-                        <strong>Score:</strong>{' '}
-                        {selectedApplication.aiScore ?? 'N/A'}
-                      </Text>
-                    </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Text>
-                        <strong>Justification:</strong>{' '}
-                        <Button
-                          type='link'
-                          size='small'
-                          onClick={() => setAiModalVisible(true)}
-                          style={{ paddingLeft: 8 }}
-                        >
-                          View
-                        </Button>
-                      </Text>
-                    </div>
-                  </div>
                   <div>
-                    <Text>
-                      <strong>Alter Decision:</strong>{' '}
-                    </Text>
-                    <Select
-                      style={{ width: screens.xs ? '100%' : 160, marginBottom: 5 }}
-                      placeholder='Set Status'
-                      value={selectedApplication.applicationStatus || undefined}
-                      onChange={async value => {
-                        try {
-                          await updateStatus(value, selectedApplication.id)
-                          message.success(`Status updated to ${value}`)
-                          setApplications(prev =>
-                            prev.map(app =>
-                              app.id === selectedApplication.id
-                                ? { ...app, applicationStatus: value }
-                                : app
-                            )
-                          )
-                          setFilteredApplications(prev =>
-                            prev.map(app =>
-                              app.id === selectedApplication.id
-                                ? { ...app, applicationStatus: value }
-                                : app
-                            )
-                          )
-                          setSelectedApplication(prev =>
-                            prev ? { ...prev, applicationStatus: value } : prev
-                          )
-                        } catch (err) {
-                          message.error('Failed to update status')
-                        }
-                      }}
-                    >
-                      <Option value='Accepted'>Accept</Option>
-                      <Option value='Rejected'>Reject</Option>
-                      <Option value='Pending'>Pending</Option>
-                    </Select>
+                    <p style={{ fontWeight: 500 }}>{doc.type}</p>
+                    <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
+                      {doc.fileName}
+                    </p>
                   </div>
+                  <Button
+                    type='text'
+                    icon={<DownloadOutlined />}
+                    href={doc.url}
+                    target='_blank'
+                  />
                 </div>
-              ) : (
-                'Applicant Details'
-              )
-            }
-            style={{
-              width: '100%',
-              height: '100%',
-              padding: '12px',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
-            }}
-          >
-            {selectedApplication ? (
-              <div style={{ padding: '8px 16px' }}>
-                <>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Enterprise:</Text>
-                    <div>{selectedApplication.beneficiaryName || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Email:</Text>
-                    <div>{selectedApplication.email || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Gender:</Text>
-                    <div>{selectedApplication.gender || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Stage:</Text>
-                    <div>{selectedApplication.stage || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Hub:</Text>
-                    <div>{selectedApplication.hub || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Motivation:</Text>
-                    <div>{selectedApplication.motivation || 'N/A'}</div>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text strong>Challenges:</Text>
-                    <div>{selectedApplication.challenges || 'N/A'}</div>
-                  </div>
-                </>
-              </div>
-            ) : (
-              <Text type='secondary'>Click a row to view details</Text>
-            )}
-          </Card>
-        </Col>
-      </Row>
-
-      {/* AI Modal */}
-      <Modal
-        title='AI Recommendation'
-        open={aiModalVisible}
-        footer={null}
-        onCancel={() => setAiModalVisible(false)}
-        width={screens.xs ? '90%' : '60%'}
-      >
-        {selectedApplication && (
-          <Space direction='vertical'>
-            <Text>
-              <strong>Recommendation:</strong>{' '}
-              {selectedApplication.aiRecommendation || 'Pending'}
-            </Text>
-            <Text>
-              <strong>Score:</strong> {selectedApplication.aiScore ?? 'N/A'}
-            </Text>
-            <Text>
-              <strong>Justification:</strong>
-            </Text>
-            <Text style={{ whiteSpace: 'pre-line' }}>
-              {selectedApplication.aiJustification ||
-                'No justification provided by AI.'}
-            </Text>
-          </Space>
-        )}
-      </Modal>
-
-      {/* Documents Modal */}
-      <Modal
-        title='Uploaded Documents'
-        open={documentsModalVisible}
-        footer={null}
-        onCancel={() => setDocumentsModalVisible(false)}
-        width={screens.xs ? '90%' : '60%'}
-      >
-        {selectedApplication?.documents?.length ? (
-          <ul>
-            {selectedApplication.documents.map((doc: any, idx: number) => (
-              <li key={idx}>
-                <a href={doc.url} target='_blank' rel='noopener noreferrer'>
-                  {doc.type} ({doc.fileName})
-                </a>
-              </li>
+              </Card>
             ))}
-          </ul>
+          </div>
         ) : (
-          <Text type='secondary'>No documents uploaded</Text>
+          <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>No documents uploaded</p>
         )}
       </Modal>
     </div>
   )
 }
 
-export default ApplicationsPage
+export default ApplicationsDashboard

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Table,
   Tag,
@@ -13,8 +13,9 @@ import {
   Button,
   Modal,
   Skeleton,
-  Spin,
-  Statistic
+  Progress,
+  Statistic,
+  Alert
 } from 'antd'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
@@ -27,6 +28,7 @@ import {
   CalendarOutlined,
   BarChartOutlined
 } from '@ant-design/icons'
+import { motion } from 'framer-motion'
 
 const { Text } = Typography
 const { Option } = Select
@@ -259,27 +261,92 @@ const InterventionDatabaseView = () => {
     return acc
   }, {} as Record<string, number>)
 
+  const completedCount = records.reduce(
+    (acc, rec) =>
+      acc + rec.interventions?.filter(i => i.status === 'Completed')?.length ||
+      0,
+    0
+  )
+  const completionRate = totalInterventions
+    ? Math.round((completedCount / totalInterventions) * 100)
+    : 0
+
+  const gaugeOptions = {
+    chart: { type: 'solidgauge', height: 120 },
+    title: null,
+    pane: {
+      center: ['50%', '85%'],
+      size: '140%',
+      startAngle: -90,
+      endAngle: 90,
+      background: {
+        backgroundColor: 'var(--highcharts-neutral-color-3, #fafafa)',
+        borderColor: 'var(--highcharts-neutral-color-20, #ccc)',
+        borderRadius: 5,
+        innerRadius: '60%',
+        outerRadius: '100%',
+        shape: 'arc'
+      }
+    },
+    credits: { enabled: false },
+    tooltip: { enabled: false },
+    yAxis: {
+      //   min: 0,
+      //   max: 100,
+      stops: [
+        [0.1, '#ff4d4f'],
+        [0.5, '#faad14'],
+        [0.9, '#52c41a']
+      ],
+      lineWidth: 0,
+      tickWidth: 0,
+      minorTickInterval: null,
+      labels: { y: 16 }
+    },
+    series: [
+      {
+        name: 'Completion',
+        data: [completionRate],
+        dataLabels: {
+          format:
+            '<div style="text-align:center"><span style="font-size:18px">{y}%</span><br/><span style="font-size:12px;opacity:0.4">Completed</span></div>'
+        }
+      }
+    ]
+  }
+
   return (
     <div style={{ padding: 24, height: '100vh' }}>
       <Helmet>
         <title>Interventions Database</title>
       </Helmet>
-      {/* {loading ? (
-        <div
-          style={{
-            display: 'flex',
-            height: '100vh',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          <Spin tip='Loading layout...' size='large' />
-        </div>
-      ) : ( */}
-      <>
+
+      <Alert
+        message='📚 Intervention Database'
+        description="View and filter all confirmed interventions. Click 'View' to see details, consultants, time spent, and POEs for each participant."
+        type='info'
+        showIcon
+        closable
+        style={{ marginBottom: 24 }}
+      />
+
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+      >
         <Row gutter={16} style={{ marginBottom: 16 }}>
-          <Col span={6}>
-            <Card loading={loading}>
+          <Col span={8}>
+            <Card
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff',
+                minHeight: 150
+              }}
+            >
               <Statistic
                 title='Total Beneficiaries'
                 value={totalBeneficiaries}
@@ -290,22 +357,49 @@ const InterventionDatabaseView = () => {
             </Card>
           </Col>
 
-          <Col span={6}>
-            <Card loading={loading}>
-              <Statistic
-                title='Total Interventions'
-                value={totalInterventions}
-                prefix={
-                  <FileDoneOutlined
-                    style={{ fontSize: 20, color: '#1890ff' }}
-                  />
-                }
-              />
+          <Col span={8}>
+            <Card
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff',
+                minHeight: 150
+              }}
+            >
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ textAlign: 'left' }}>
+                  <Text type='secondary'>Completion Rate</Text>
+                </div>
+                <Progress
+                  type='dashboard'
+                  gapDegree={100}
+                  percent={completionRate}
+                  width={80} // 👈 decrease from default 120 to a smaller size like 80
+                  strokeColor={
+                    completionRate >= 90
+                      ? '#ff4d4f'
+                      : completionRate >= 50
+                      ? '#faad14'
+                      : '#52c41a'
+                  }
+                  format={() => completionRate}
+                />
+              </div>
             </Card>
           </Col>
 
-          <Col span={12}>
-            <Card loading={loading}>
+          <Col span={8}>
+            <Card
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff',
+                minHeight: 150
+              }}
+            >
               <Statistic
                 title='Interventions per Quarter'
                 prefix={
@@ -332,9 +426,23 @@ const InterventionDatabaseView = () => {
             </Card>
           </Col>
         </Row>
+      </motion.div>
 
-        <Skeleton active paragraph={false} loading={loading}>
-          <Row gutter={16} style={{ marginBottom: 16 }}>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+      >
+        <Card
+          style={{
+            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+            transition: 'all 0.3s ease',
+            borderRadius: 8,
+            border: '1px solid #d6e4ff',
+            marginBottom: 10
+          }}
+        >
+          <Row gutter={16}>
             <Col span={6}>
               <Select
                 style={{ width: '100%' }}
@@ -391,139 +499,150 @@ const InterventionDatabaseView = () => {
               </Select>
             </Col>
           </Row>
-        </Skeleton>
-
-        <Card>
-          <Skeleton active loading={loading}>
-            <Table columns={columns} dataSource={filtered} rowKey='id' />
-          </Skeleton>
         </Card>
+      </motion.div>
 
-        <Modal
-          title={`Completed Interventions for ${
-            participantMap[selectedView?.participantId] || 'Beneficiary'
-          }`}
-          open={!!selectedView}
-          onCancel={() => {
-            setSelectedView(null)
-            setShowDetails(false)
-            setPassword('')
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+      >
+        <Card
+          hoverable
+          style={{
+            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+            transition: 'all 0.3s ease',
+            borderRadius: 8,
+            border: '1px solid #d6e4ff'
           }}
-          footer={[
-            <Button key='close' onClick={() => setSelectedView(null)}>
-              Close
-            </Button>
-          ]}
         >
-          {selectedView && (
-            <>
-              <p>
-                <strong>Participant:</strong>{' '}
-                {participantMap[selectedView.participantId]}
-              </p>
-              <Divider />
+          <Table columns={columns} dataSource={filtered} rowKey='id' />
+        </Card>
+      </motion.div>
 
-              <ul>
-                {[...selectedView.interventions].map((item, index) => (
-                  <li key={index} style={{ marginBottom: 12 }}>
-                    <Space direction='vertical'>
-                      <Text strong>{item.interventionTitle}</Text>
-                      <Button
-                        type='link'
-                        onClick={() => {
-                          setShowDetails(item.id)
-                          setPassword('')
-                        }}
-                      >
-                        🔑 {item.interventionKey}
-                      </Button>
-                    </Space>
+      <Modal
+        title={`Completed Interventions for ${
+          participantMap[selectedView?.participantId] || 'Beneficiary'
+        }`}
+        open={!!selectedView}
+        onCancel={() => {
+          setSelectedView(null)
+          setShowDetails(false)
+          setPassword('')
+        }}
+        footer={[
+          <Button key='close' onClick={() => setSelectedView(null)}>
+            Close
+          </Button>
+        ]}
+      >
+        {selectedView && (
+          <>
+            <p>
+              <strong>Participant:</strong>{' '}
+              {participantMap[selectedView.participantId]}
+            </p>
+            <Divider />
 
-                    {/* Password prompt */}
-                    {showDetails === item.id && (
-                      <div style={{ marginTop: 8 }}>
-                        {!password ? (
-                          <Space direction='vertical' style={{ width: '100%' }}>
-                            <input
-                              type='password'
-                              placeholder='Enter password'
-                              style={{ width: '100%', padding: 8 }}
-                              onChange={e => setPassword(e.target.value)}
-                            />
-                            <Button
-                              type='primary'
-                              onClick={() => {
-                                if (password === 'admin') {
-                                  // do nothing, show details already
-                                } else {
-                                  notification.error({
-                                    message: 'Incorrect password'
-                                  })
-                                  setPassword('')
-                                }
-                              }}
-                            >
-                              Reveal Details
-                            </Button>
-                          </Space>
-                        ) : (
-                          <>
-                            <Divider />
-                            <p>
-                              <strong>Completed At:</strong>{' '}
-                              {dayjs(item.confirmedAt.toDate()).format(
-                                'YYYY-MM-DD'
-                              )}
-                            </p>
-                            <p>
-                              <strong>Consultants:</strong>{' '}
-                              {(item.consultantIds || [])
-                                .map(id => consultantMap[id] || id)
-                                .join(', ')}
-                            </p>
-                            <p>
-                              <strong>Time Spent:</strong>{' '}
-                              {Array.isArray(item.timeSpent)
-                                ? item.timeSpent.join(', ')
-                                : item.timeSpent !== undefined &&
-                                  item.timeSpent !== null
-                                ? item.timeSpent
-                                : ''}{' '}
-                              hrs
-                            </p>
+            <ul>
+              {[...selectedView.interventions].map((item, index) => (
+                <li key={index} style={{ marginBottom: 12 }}>
+                  <Space direction='vertical'>
+                    <Text strong>{item.interventionTitle}</Text>
+                    <Button
+                      type='link'
+                      onClick={() => {
+                        setShowDetails(item.id)
+                        setPassword('')
+                      }}
+                    >
+                      🔑 {item.interventionKey}
+                    </Button>
+                  </Space>
 
-                            <p>
-                              <strong>POE:</strong>{' '}
-                              {item.resources?.length ? (
-                                <ul>
-                                  {item.resources.map((res: any, i: number) => (
-                                    <li key={i}>
-                                      <a
-                                        href={res.link}
-                                        target='_blank'
-                                        rel='noopener noreferrer'
-                                      >
-                                        {res.label}
-                                      </a>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                'None'
-                              )}
-                            </p>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </Modal>
-      </>
-      {/* )} */}
+                  {/* Password prompt */}
+                  {showDetails === item.id && (
+                    <div style={{ marginTop: 8 }}>
+                      {!password ? (
+                        <Space direction='vertical' style={{ width: '100%' }}>
+                          <input
+                            type='password'
+                            placeholder='Enter password'
+                            style={{ width: '100%', padding: 8 }}
+                            onChange={e => setPassword(e.target.value)}
+                          />
+                          <Button
+                            type='primary'
+                            onClick={() => {
+                              if (password === 'admin') {
+                                // do nothing, show details already
+                              } else {
+                                notification.error({
+                                  message: 'Incorrect password'
+                                })
+                                setPassword('')
+                              }
+                            }}
+                          >
+                            Reveal Details
+                          </Button>
+                        </Space>
+                      ) : (
+                        <>
+                          <Divider />
+                          <p>
+                            <strong>Completed At:</strong>{' '}
+                            {dayjs(item.confirmedAt.toDate()).format(
+                              'YYYY-MM-DD'
+                            )}
+                          </p>
+                          <p>
+                            <strong>Consultants:</strong>{' '}
+                            {(item.consultantIds || [])
+                              .map(id => consultantMap[id] || id)
+                              .join(', ')}
+                          </p>
+                          <p>
+                            <strong>Time Spent:</strong>{' '}
+                            {Array.isArray(item.timeSpent)
+                              ? item.timeSpent.join(', ')
+                              : item.timeSpent !== undefined &&
+                                item.timeSpent !== null
+                              ? item.timeSpent
+                              : ''}{' '}
+                            hrs
+                          </p>
+
+                          <p>
+                            <strong>POE:</strong>{' '}
+                            {item.resources?.length ? (
+                              <ul>
+                                {item.resources.map((res: any, i: number) => (
+                                  <li key={i}>
+                                    <a
+                                      href={res.link}
+                                      target='_blank'
+                                      rel='noopener noreferrer'
+                                    >
+                                      {res.label}
+                                    </a>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              'None'
+                            )}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </Modal>
     </div>
   )
 }

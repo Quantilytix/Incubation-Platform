@@ -16,7 +16,8 @@ import {
   Statistic,
   Card,
   Select,
-  Steps
+  Steps,
+  Alert
 } from 'antd'
 import {
   ProjectOutlined,
@@ -46,6 +47,7 @@ import { auth, db } from '@/firebase'
 import { getAuth } from 'firebase/auth'
 import dayjs from 'dayjs'
 import { Helmet } from 'react-helmet'
+import { motion } from 'framer-motion'
 
 const { Title } = Typography
 const { Text } = Typography
@@ -87,6 +89,7 @@ const CRITERIA_OPTIONS = [
 const formatter: StatisticProps['formatter'] = value => (
   <CountUp end={value as number} separator=',' />
 )
+
 const QuestionTable = ({ questions, onAdd, onEdit, onDelete }) => (
   <>
     <Button type='primary' style={{ marginBottom: 16 }} onClick={onAdd}>
@@ -692,217 +695,342 @@ const ProgramManager: React.FC = () => {
           height: '100vh'
         }}
       >
-        <Title level={4}>Incubation Programs</Title>
-
-        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-          <Col xs={24} sm={12} md={6}>
-            <Card loading={loading}>
-              <Statistic
-                title='Total Programs'
-                value={totalPrograms}
-                prefix={<ProjectOutlined />}
-                formatter={formatter}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card loading={loading}>
-              <Statistic
-                title='Active Programs'
-                value={activePrograms}
-                prefix={<CheckCircleOutlined />}
-                formatter={formatter}
-                valueStyle={{ color: '#3f8600' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card loading={loading}>
-              <Statistic
-                title='Total Budget'
-                value={totalBudget}
-                prefix={<DollarOutlined />}
-                valueStyle={{ color: '#1890ff' }}
-                formatter={formatter}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card loading={loading}>
-              <Statistic
-                title='Total Capacity'
-                value={totalCapacity}
-                prefix={<TeamOutlined />}
-                formatter={formatter}
-              />
-            </Card>
-          </Col>
-        </Row>
-
-        <Space
-          style={{
-            marginBottom: 16,
-            justifyContent: 'space-between',
-            display: 'flex'
-          }}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
         >
-          {userRole !== 'director' && (
-            <Button
-              type='primary'
-              icon={<PlusOutlined />}
-              onClick={() => {
-                if (userRole !== 'Director') setModalVisible(true)
+          <Alert
+            message='Incubation Programs'
+            description={
+              <>
+                <p>
+                  This section allows you to create and manage incubation
+                  programs across centers. You must define key program details
+                  before onboarding participants.
+                </p>
+                <p>
+                  <strong>Tip:</strong> You can view existing programs, filter
+                  by status, and edit details later.
+                </p>
+              </>
+            }
+            type='info'
+            showIcon
+            closable
+            style={{ marginBottom: 16 }}
+          />
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+            {[
+              {
+                title: 'Total Programs',
+                value: totalPrograms,
+                icon: <ProjectOutlined style={{ fontSize: 16 }} />,
+                bgColor: '#e6f7ff',
+                color: '#1890ff'
+              },
+              {
+                title: 'Active Programs',
+                value: activePrograms,
+                icon: <CheckCircleOutlined style={{ fontSize: 16 }} />,
+                bgColor: '#f6ffed',
+                color: '#3f8600'
+              },
+              {
+                title: 'Total Budget',
+                value: totalBudget,
+                icon: <DollarOutlined style={{ fontSize: 16 }} />,
+                bgColor: '#f0f5ff',
+                color: '#1890ff'
+              },
+              {
+                title: 'Total Capacity',
+                value: totalCapacity,
+                icon: <TeamOutlined style={{ fontSize: 16 }} />,
+                bgColor: '#f9f0ff',
+                color: '#722ed1'
+              }
+            ].map((metric, index) => (
+              <Col xs={24} sm={12} md={6} key={metric.title}>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: 0.5,
+                    delay: index * 0.1,
+                    ease: 'easeOut'
+                  }}
+                  whileHover={{
+                    y: -5,
+                    transition: { duration: 0.2 }
+                  }}
+                >
+                  <Card
+                    hoverable
+                    style={{
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                      borderRadius: 8,
+                      border: '1px solid #bae7ff',
+                      padding: '16px',
+                      height: '100%',
+                      minHeight: '120px'
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        marginBottom: 12
+                      }}
+                    >
+                      <div
+                        style={{
+                          background: metric.bgColor,
+                          padding: 8,
+                          borderRadius: '50%',
+                          marginRight: 12,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0
+                        }}
+                      >
+                        {metric.icon}
+                      </div>
+                      <Text
+                        strong
+                        style={{ fontSize: 14, whiteSpace: 'nowrap' }}
+                      >
+                        {metric.title}
+                      </Text>
+                    </div>
+                    <Statistic
+                      value={metric.value}
+                      formatter={
+                        metric.title === 'Total Budget'
+                          ? val => (
+                              <>
+                                R&nbsp;
+                                <CountUp end={val as number} separator=',' />
+                              </>
+                            )
+                          : val => <CountUp end={val as number} separator=',' />
+                      }
+                      valueStyle={{
+                        color: metric.color,
+                        fontSize: 24,
+                        fontWeight: 500
+                      }}
+                    />
+                  </Card>
+                </motion.div>
+              </Col>
+            ))}
+          </Row>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <Card
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8,
+              marginBottom: 10,
+              border: '1px solid #d6e4ff'
+            }}
+          >
+            <Row gutter={16}>
+              <Col span={6}>
+                <Input
+                  placeholder='Search Program Name'
+                  value={searchText}
+                  onChange={e => setSearchText(e.target.value)}
+                  allowClear
+                />
+              </Col>
+              <Col span={6}>
+                <Select
+                  placeholder='Filter by Status'
+                  onChange={value => setFilteredStatus(value)}
+                  value={filteredStatus}
+                  allowClear
+                  style={{ width: '100%' }}
+                >
+                  <Select.Option value='Active'>Active</Select.Option>
+                  <Select.Option value='Inactive'>Inactive</Select.Option>
+                  <Select.Option value='Completed'>Completed</Select.Option>
+                  <Select.Option value='Upcoming'>Upcoming</Select.Option>
+                </Select>
+              </Col>
+              <Col span={6}>
+                {userRole !== 'director' && (
+                  <Button
+                    type='primary'
+                    icon={<PlusOutlined />}
+                    onClick={() => {
+                      if (userRole !== 'Director') setModalVisible(true)
+                    }}
+                  >
+                    Add Program
+                  </Button>
+                )}
+              </Col>
+            </Row>
+          </Card>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <Card
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8,
+              border: '1px solid #d6e4ff'
+            }}
+          >
+            <Table
+              loading={loading}
+              dataSource={filteredPrograms}
+              rowKey='id'
+              pagination={{ pageSize: 6 }}
+              expandable={{
+                expandedRowRender: record => (
+                  <div>
+                    <p>
+                      <strong>Description:</strong>{' '}
+                      {record.description || 'N/A'}
+                    </p>
+                    <p>
+                      <strong>Budget:</strong> R{' '}
+                      {record.budget?.toLocaleString() || 0}
+                    </p>
+                    <p>
+                      <strong>Max Capacity:</strong>{' '}
+                      {record.maxCapacity || 'N/A'}
+                    </p>
+                  </div>
+                )
               }}
             >
-              Add Program
-            </Button>
-          )}
-        </Space>
-        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-          <Col xs={24} sm={12} md={8}>
-            <Input
-              placeholder='Search Program Name'
-              value={searchText}
-              onChange={e => setSearchText(e.target.value)}
-              allowClear
-            />
-          </Col>
-          <Col xs={24} sm={12} md={8}>
-            <Select
-              placeholder='Filter by Status'
-              onChange={value => setFilteredStatus(value)}
-              value={filteredStatus}
-              allowClear
-              style={{ width: '100%' }}
-            >
-              <Select.Option value='Active'>Active</Select.Option>
-              <Select.Option value='Inactive'>Inactive</Select.Option>
-              <Select.Option value='Completed'>Completed</Select.Option>
-              <Select.Option value='Upcoming'>Upcoming</Select.Option>
-            </Select>
-          </Col>
-        </Row>
+              <Table.Column title='Program Name' dataIndex='name' key='name' />
+              <Table.Column
+                title='Assigned Admin'
+                key='assignedAdmin'
+                render={record =>
+                  record.assignedAdmin ? (
+                    <Text>
+                      {consultantOptions.find(
+                        c => c.id === record.assignedAdmin
+                      )?.name || 'Unknown'}
+                    </Text>
+                  ) : (
+                    <Tag color='orange'>Not Assigned</Tag>
+                  )
+                }
+              />
 
-        <Table
-          loading={loading}
-          dataSource={filteredPrograms}
-          rowKey='id'
-          pagination={{ pageSize: 6 }}
-          expandable={{
-            expandedRowRender: record => (
-              <div>
-                <p>
-                  <strong>Description:</strong> {record.description || 'N/A'}
-                </p>
-                <p>
-                  <strong>Budget:</strong> R{' '}
-                  {record.budget?.toLocaleString() || 0}
-                </p>
-                <p>
-                  <strong>Max Capacity:</strong> {record.maxCapacity || 'N/A'}
-                </p>
-              </div>
-            )
-          }}
-        >
-          <Table.Column title='Program Name' dataIndex='name' key='name' />
-          <Table.Column
-            title='Assigned Admin'
-            key='assignedAdmin'
-            render={record =>
-              record.assignedAdmin ? (
-                <Text>
-                  {consultantOptions.find(c => c.id === record.assignedAdmin)
-                    ?.name || 'Unknown'}
-                </Text>
-              ) : (
-                <Tag color='orange'>Not Assigned</Tag>
-              )
-            }
-          />
+              <Table.Column title='Type' dataIndex='type' />
+              <Table.Column
+                title='Status'
+                dataIndex='status'
+                render={status => (
+                  <Tag color={status === 'Active' ? 'green' : 'red'}>
+                    {status}
+                  </Tag>
+                )}
+              />
+              <Table.Column
+                title='Start Date'
+                dataIndex='startDate'
+                render={val =>
+                  val?.toDate ? dayjs(val.toDate()).format('YYYY-MM-DD') : 'N/A'
+                }
+              />
+              <Table.Column
+                title='End Date'
+                dataIndex='endDate'
+                render={val =>
+                  val?.toDate ? dayjs(val.toDate()).format('YYYY-MM-DD') : 'N/A'
+                }
+              />
+              <Table.Column
+                title='Registration Link'
+                dataIndex='registrationLink'
+                render={(link: string) => (
+                  <Text
+                    copyable={{
+                      text: window.location.origin + link,
+                      tooltips: ['Copy link', 'Copied!']
+                    }}
+                  >
+                    {/* Empty to hide visible text */}{' '}
+                  </Text>
+                )}
+              />
 
-          <Table.Column title='Type' dataIndex='type' />
-          <Table.Column
-            title='Status'
-            dataIndex='status'
-            render={status => (
-              <Tag color={status === 'Active' ? 'green' : 'red'}>{status}</Tag>
-            )}
-          />
-          <Table.Column
-            title='Start Date'
-            dataIndex='startDate'
-            render={val =>
-              val?.toDate ? dayjs(val.toDate()).format('YYYY-MM-DD') : 'N/A'
-            }
-          />
-          <Table.Column
-            title='End Date'
-            dataIndex='endDate'
-            render={val =>
-              val?.toDate ? dayjs(val.toDate()).format('YYYY-MM-DD') : 'N/A'
-            }
-          />
-          <Table.Column
-            title='Registration Link'
-            dataIndex='registrationLink'
-            render={(link: string) => (
-              <Text
-                copyable={{
-                  text: window.location.origin + link,
-                  tooltips: ['Copy link', 'Copied!']
-                }}
-              >
-                {/* Empty to hide visible text */}{' '}
-              </Text>
-            )}
-          />
+              <Table.Column
+                title='Actions'
+                key='actions'
+                render={(_, record) => (
+                  <Space size='middle'>
+                    <Button
+                      icon={<EditOutlined />}
+                      size='small'
+                      style={{ border: 'none' }}
+                      onClick={() => {
+                        setSelectedProgram(record)
+                        editForm.setFieldsValue({
+                          ...record,
+                          startDate: record.startDate?.toDate
+                            ? dayjs(record.startDate.toDate())
+                            : null,
+                          endDate: record.endDate?.toDate
+                            ? dayjs(record.endDate.toDate())
+                            : null
+                        })
+                        setEligibility(record.eligibilityCriteria || {}) // <-- key!
+                        setQuestions(record.onboardingQuestions || [])
+                        setEditModalVisible(true)
+                        setCurrentStep(0)
+                      }}
+                    />
 
-          <Table.Column
-            title='Actions'
-            key='actions'
-            render={(_, record) => (
-              <Space size='middle'>
-                <Button
-                  icon={<EditOutlined />}
-                  size='small'
-                  style={{ border: 'none' }}
-                  onClick={() => {
-                    setSelectedProgram(record)
-                    editForm.setFieldsValue({
-                      ...record,
-                      startDate: record.startDate?.toDate
-                        ? dayjs(record.startDate.toDate())
-                        : null,
-                      endDate: record.endDate?.toDate
-                        ? dayjs(record.endDate.toDate())
-                        : null
-                    })
-                    setEligibility(record.eligibilityCriteria || {}) // <-- key!
-                    setQuestions(record.onboardingQuestions || [])
-                    setEditModalVisible(true)
-                    setCurrentStep(0)
-                  }}
-                />
-
-                <Button
-                  icon={<DeleteOutlined />}
-                  size='small'
-                  danger
-                  onClick={() => handleDeleteProgram(record.id)}
-                />
-                <Button
-                  size='small'
-                  icon={<PoweroffOutlined />}
-                  onClick={() => toggleStatus(record)}
-                  loading={togglingProgramId === record.id}
-                >
-                  {record.status === 'Active' ? 'Deactivate' : 'Activate'}
-                </Button>
-              </Space>
-            )}
-          />
-        </Table>
+                    <Button
+                      icon={<DeleteOutlined />}
+                      size='small'
+                      danger
+                      onClick={() => handleDeleteProgram(record.id)}
+                    />
+                    <Button
+                      size='small'
+                      icon={<PoweroffOutlined />}
+                      onClick={() => toggleStatus(record)}
+                      loading={togglingProgramId === record.id}
+                    >
+                      {record.status === 'Active' ? 'Deactivate' : 'Activate'}
+                    </Button>
+                  </Space>
+                )}
+              />
+            </Table>
+          </Card>
+        </motion.div>
 
         <Modal
           open={modalVisible}
