@@ -75,6 +75,11 @@ const { TextArea } = Input
 
 const OperationsCompliance: React.FC = () => {
   const [documents, setDocuments] = useState<ComplianceDocument[]>([])
+  const [verificationModalVisible, setVerificationModalVisible] =
+    useState(false)
+  const [verifyingDocument, setVerifyingDocument] =
+    useState<ComplianceDocument | null>(null)
+  const [verificationComment, setVerificationComment] = useState('')
   const [formLoading, setFormLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
   const [isModalVisible, setIsModalVisible] = useState(false)
@@ -176,6 +181,10 @@ const OperationsCompliance: React.FC = () => {
                 id: `${applicationDoc.id}-${index}`,
                 participantName: appData.email,
                 participantId: appData.participantId,
+                verificationStatus: doc.verificationStatus || 'unverified',
+                verificationComment: doc.verificationComment || '',
+                lastVerifiedBy: doc.lastVerifiedBy || '',
+                lastVerifiedAt: doc.lastVerifiedAt || '',
                 ...doc
               })
             }
@@ -249,7 +258,7 @@ const OperationsCompliance: React.FC = () => {
     setIsModalVisible(true)
   }
 
-  const continueSaving = async (fileUrl: string) => {
+  const continueSaving = async (url: string) => {
     try {
       const appSnap = await getDocs(
         query(
@@ -283,7 +292,7 @@ const OperationsCompliance: React.FC = () => {
         expiryDate:
           form.getFieldValue('expiryDate')?.format('YYYY-MM-DD') || '',
         notes: form.getFieldValue('notes'),
-        fileUrl,
+        url,
         uploadedBy: user?.name || 'Unknown',
         uploadedAt: new Date().toISOString().split('T')[0],
         lastVerifiedBy: selectedDocument?.lastVerifiedBy,
@@ -323,7 +332,7 @@ const OperationsCompliance: React.FC = () => {
   // Handle form submission
   const handleSubmit = async (values: any) => {
     try {
-      let fileUrl = selectedDocument?.fileUrl || ''
+      let url = selectedDocument?.url || ''
 
       if (uploadingFile) {
         setIsUploading(true)
@@ -348,18 +357,77 @@ const OperationsCompliance: React.FC = () => {
           },
           async () => {
             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref)
-            fileUrl = downloadURL
+            url = downloadURL
             setIsUploading(false)
             setUploadPercent(0)
-            await continueSaving(fileUrl) // 👇 continue saving after upload
+            await continueSaving(url) // 👇 continue saving after upload
           }
         )
       } else {
-        await continueSaving(fileUrl)
+        await continueSaving(url)
       }
     } catch (error) {
       console.error('Error saving document:', error)
       message.error('Failed to save document.')
+    }
+  }
+
+  const handleVerification = async (
+    status: 'verified' | 'queried',
+    comment?: string
+  ) => {
+    if (!verifyingDocument) return
+
+    try {
+      const appSnap = await getDocs(
+        query(
+          collection(db, 'applications'),
+          where('participantId', '==', verifyingDocument.participantId),
+          where('companyCode', '==', user?.companyCode)
+        )
+      )
+
+      if (appSnap.empty) return message.error('Application not found')
+
+      const docRef = appSnap.docs[0].ref
+      const currentData = appSnap.docs[0].data()
+      const docs = currentData.complianceDocuments || []
+
+      const updatedDocs = docs.map((doc: ComplianceDocument) =>
+        doc.id === verifyingDocument.id
+          ? {
+              ...doc,
+              verificationStatus: status,
+              verificationComment: comment || '',
+              lastVerifiedBy: user?.name || 'Unknown',
+              lastVerifiedAt: new Date().toISOString().split('T')[0]
+            }
+          : doc
+      )
+
+      await updateDoc(docRef, { complianceDocuments: updatedDocs })
+
+      setDocuments(prev =>
+        prev.map(doc =>
+          doc.id === verifyingDocument.id
+            ? {
+                ...doc,
+                verificationStatus: status,
+                verificationComment: comment || '',
+                lastVerifiedBy: user?.name || 'Unknown',
+                lastVerifiedAt: new Date().toISOString().split('T')[0]
+              }
+            : doc
+        )
+      )
+
+      message.success(
+        status === 'verified' ? 'Document verified' : 'Document queried'
+      )
+      setVerificationModalVisible(false)
+    } catch (err) {
+      console.error('❌ Verification failed', err)
+      message.error('Failed to verify document')
     }
   }
 
@@ -499,11 +567,11 @@ const OperationsCompliance: React.FC = () => {
 
         return (
           <Space size='middle'>
-            {record.fileUrl && (
+            {record.url && (
               <Tooltip title='View Document'>
                 <Button
                   icon={<EyeOutlined />}
-                  onClick={() => window.open(record.fileUrl, '_blank')}
+                  onClick={() => window.open(record.url, '_blank')}
                   type='text'
                 />
               </Tooltip>
@@ -532,6 +600,18 @@ const OperationsCompliance: React.FC = () => {
                         okText: 'Close'
                       })
                     }}
+                  />
+                </Tooltip>
+              ) && (
+                <Tooltip title='Verify / Query'>
+                  <Button
+                    icon={<FileProtectOutlined />}
+                    onClick={() => {
+                      setVerifyingDocument(record)
+                      setVerificationComment('')
+                      setVerificationModalVisible(true)
+                    }}
+                    type='text'
                   />
                 </Tooltip>
               )}
@@ -776,6 +856,17 @@ const OperationsCompliance: React.FC = () => {
                       on {record.lastVerifiedAt}
                     </p>
                   )}
+                  <Tag
+                    color={
+                      doc.verificationStatus === 'verified'
+                        ? 'green'
+                        : doc.verificationStatus === 'queried'
+                        ? 'red'
+                        : 'default'
+                    }
+                  >
+                    {doc.verificationStatus || 'unverified'}
+                  </Tag>
                 </div>
               )
             }}
@@ -867,15 +958,13 @@ const OperationsCompliance: React.FC = () => {
             <Upload {...uploadProps}>
               <Button icon={<UploadOutlined />}>Upload Document</Button>
             </Upload>
-            {selectedDocument?.fileUrl && (
+            {selectedDocument?.url && (
               <div style={{ marginTop: '10px' }}>
                 <Text>Current file: </Text>
                 <Button
                   type='link'
                   icon={<DownloadOutlined />}
-                  onClick={() =>
-                    window.open(selectedDocument.fileUrl, '_blank')
-                  }
+                  onClick={() => window.open(selectedDocument.url, '_blank')}
                 >
                   View Document
                 </Button>
@@ -902,6 +991,59 @@ const OperationsCompliance: React.FC = () => {
             </Button>
           </div>
         </Form>
+      </Modal>
+
+      {/* Verification Modal */}
+      <Modal
+        open={verificationModalVisible}
+        title='Verify Compliance Document'
+        onCancel={() => setVerificationModalVisible(false)}
+        footer={null}
+      >
+        {verifyingDocument && (
+          <div>
+            <p>
+              <strong>Document Name:</strong> {verifyingDocument.documentName}
+            </p>
+            <p>
+              <strong>Participant:</strong> {verifyingDocument.participantName}
+            </p>
+            <p>
+              <strong>Status:</strong>{' '}
+              <Tag color='blue'>{verifyingDocument.status}</Tag>
+            </p>
+
+            <TextArea
+              placeholder='Optional comment for participant if querying'
+              rows={4}
+              value={verificationComment}
+              onChange={e => setVerificationComment(e.target.value)}
+              style={{ marginTop: 10, marginBottom: 20 }}
+            />
+
+            <Space style={{ float: 'right' }}>
+              <Button onClick={() => setVerificationModalVisible(false)}>
+                Cancel
+              </Button>
+
+              <Button
+                type='default'
+                onClick={() =>
+                  handleVerification('queried', verificationComment)
+                }
+              >
+                Query
+              </Button>
+
+              <Button
+                type='primary'
+                onClick={() => handleVerification('verified')}
+              >
+                Verify
+              </Button>
+            </Space>
+          </div>
+        )}
       </Modal>
 
       {/* ED Agreement Modal */}
