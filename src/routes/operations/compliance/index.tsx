@@ -21,7 +21,8 @@ import {
   Statistic,
   Progress,
   Layout,
-  Alert
+  Alert,
+  Descriptions
 } from 'antd'
 import {
   SearchOutlined,
@@ -523,11 +524,20 @@ const OperationsCompliance: React.FC = () => {
       key: 'verificationStatus',
       render: (status: string) => {
         let color = 'default'
-        if (status === 'verified') color = 'green'
-        else if (status === 'queried') color = 'red'
-        else if (status === 'unverified') color = 'orange'
+        let label = 'Unverified'
 
-        return <Tag color={color}>{status}</Tag>
+        if (status === 'verified') {
+          color = 'green'
+          label = 'Verified'
+        } else if (status === 'queried') {
+          color = 'red'
+          label = 'Queried'
+        } else {
+          color = 'orange'
+          label = 'Unverified'
+        }
+
+        return <Tag color={color}>{label}</Tag>
       },
       filters: [
         { text: 'Verified', value: 'verified' },
@@ -878,10 +888,14 @@ const OperationsCompliance: React.FC = () => {
                         ? 'green'
                         : record.verificationStatus === 'queried'
                         ? 'red'
-                        : 'default'
+                        : 'orange'
                     }
                   >
-                    {record.verificationStatus || 'unverified'}
+                    {record.verificationStatus === 'verified'
+                      ? 'Verified'
+                      : record.verificationStatus === 'queried'
+                      ? 'Queried'
+                      : 'Unverified'}
                   </Tag>
                 </div>
               )
@@ -1017,48 +1031,97 @@ const OperationsCompliance: React.FC = () => {
         footer={null}
       >
         {verifyingDocument && (
-          <div>
-            <p>
-              <strong>Document Name:</strong> {verifyingDocument.documentName}
-            </p>
-            <p>
-              <strong>Participant:</strong> {verifyingDocument.participantName}
-            </p>
-            <p>
-              <strong>Status:</strong>{' '}
-              <Tag color='blue'>{verifyingDocument.status}</Tag>
-            </p>
-
-            <TextArea
-              placeholder='Optional comment for participant if querying'
-              rows={4}
-              value={verificationComment}
-              onChange={e => setVerificationComment(e.target.value)}
-              style={{ marginTop: 10, marginBottom: 20 }}
+          <>
+            <Alert
+              message='You are reviewing this document for verification.'
+              description={
+                verificationComment.trim()
+                  ? 'You are preparing to query this document. Please ensure the reason provided is clear and actionable.'
+                  : 'If there is an issue, provide a reason to query. Otherwise, proceed to verify.'
+              }
+              type={verificationComment.trim() ? 'warning' : 'info'}
+              showIcon
+              closable
+              style={{ marginBottom: 16 }}
             />
 
-            <Space style={{ float: 'right' }}>
-              <Button onClick={() => setVerificationModalVisible(false)}>
-                Cancel
-              </Button>
+            <Descriptions
+              bordered
+              column={1}
+              size='small'
+              style={{ marginBottom: 16 }}
+            >
+              <Descriptions.Item label='Document Name'>
+                {verifyingDocument.documentName || 'N/A'}
+              </Descriptions.Item>
+              <Descriptions.Item label='Participant'>
+                {verifyingDocument.participantName || 'N/A'}
+              </Descriptions.Item>
+              <Descriptions.Item label='Status'>
+                <Tag color='blue'>
+                  {verifyingDocument.status === 'valid'
+                    ? 'Valid'
+                    : verifyingDocument.status === 'invalid'
+                    ? 'Invalid'
+                    : verifyingDocument.status === 'expired'
+                    ? 'Expired'
+                    : verifyingDocument.status === 'missing'
+                    ? 'Missing'
+                    : verifyingDocument.status === 'expiring'
+                    ? 'Expiring'
+                    : verifyingDocument.status}
+                </Tag>
+              </Descriptions.Item>
+            </Descriptions>
 
-              <Button
-                type='default'
-                onClick={() =>
-                  handleVerification('queried', verificationComment)
-                }
-              >
-                Query
-              </Button>
+            <Form
+              layout='vertical'
+              onFinish={values => {
+                handleVerification('queried', values.verificationComment)
+              }}
+            >
+              <Form.Item name='verificationComment' label='Reason for Query'>
+                <TextArea
+                  rows={4}
+                  placeholder='Enter reason for querying this document'
+                  onChange={e => setVerificationComment(e.target.value)}
+                />
+              </Form.Item>
 
-              <Button
-                type='primary'
-                onClick={() => handleVerification('verified')}
-              >
-                Verify
-              </Button>
-            </Space>
-          </div>
+              <Form.Item noStyle shouldUpdate>
+                {({ getFieldValue }) => {
+                  const reason = getFieldValue('verificationComment')?.trim()
+                  return (
+                    <Row justify='end' gutter={8} style={{ marginTop: 8 }}>
+                      <Col>
+                        <Button
+                          onClick={() => setVerificationModalVisible(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </Col>
+                      {reason ? (
+                        <Col>
+                          <Button htmlType='submit' type='default'>
+                            Query
+                          </Button>
+                        </Col>
+                      ) : (
+                        <Col>
+                          <Button
+                            type='primary'
+                            onClick={() => handleVerification('verified')}
+                          >
+                            Verify
+                          </Button>
+                        </Col>
+                      )}
+                    </Row>
+                  )
+                }}
+              </Form.Item>
+            </Form>
+          </>
         )}
       </Modal>
 
