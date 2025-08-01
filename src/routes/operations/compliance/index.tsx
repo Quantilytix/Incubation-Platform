@@ -49,7 +49,8 @@ import {
   addDoc,
   updateDoc,
   doc,
-  query
+  query,
+  where
 } from 'firebase/firestore'
 import {
   getStorage,
@@ -57,78 +58,60 @@ import {
   uploadBytesResumable,
   getDownloadURL
 } from 'firebase/storage'
+
 import { ComplianceDocument, documentTypes, documentStatuses } from './types'
+import EDAgreementModal from './EDAgreementModal'
 import { Helmet } from 'react-helmet'
+
 import { httpsCallable } from 'firebase/functions'
-import { functions } from '@/firebase'
-import { onAuthStateChanged, getAuth } from 'firebase/auth'
+import { functions } from '@/firebase' // ⬅️ make sure this exports Firebase functions
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { motion } from 'framer-motion'
 
 const { Title, Text } = Typography
+const { TabPane } = Tabs
 const { Option } = Select
 const { TextArea } = Input
 
 const OperationsCompliance: React.FC = () => {
   const [documents, setDocuments] = useState<ComplianceDocument[]>([])
-  const [selectedStatus, setSelectedStatus] = useState(null)
-  const [documentStatuses, setDocumentStatuses] = useState([
-    { value: 'valid', label: 'Valid' },
-    { value: 'expired', label: 'Expired' },
-    { value: 'missing', label: 'Missing' },
-    { value: 'pending', label: 'Pending Review' }
-  ])
-  const [loading, setLoading] = useState(true)
+  const [formLoading, setFormLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
   const [isModalVisible, setIsModalVisible] = useState(false)
+  const [isEDAgreementModalVisible, setIsEDAgreementModalVisible] =
+    useState(false)
   const [selectedDocument, setSelectedDocument] =
     useState<ComplianceDocument | null>(null)
   const storage = getStorage()
-  const [currentUser, setCurrentUser] = useState<any>(null)
-  const [departmentInfo, setDepartmentInfo] = useState<any>(null)
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<
+    string | null
+  >(null)
+
   const [selectedParticipant, setSelectedParticipant] = useState<any>(null)
   const [form] = Form.useForm()
+  const [activeTab, setActiveTab] = useState('1')
   const navigate = useNavigate()
   const [uploadingFile, setUploadingFile] = useState<File | null>(null)
   const [uploadPercent, setUploadPercent] = useState<number>(0)
   const [isUploading, setIsUploading] = useState<boolean>(false)
   const [contactInfoMap, setContactInfoMap] = useState<Record<string, any>>({})
-  const [participants, setParticipants] = useState<any[]>([])
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(getAuth(), async user => {
-      if (user) {
-        const usersSnap = await getDocs(collection(db, 'users'))
-        const userDoc = usersSnap.docs.find(d => d.id === user.uid)
-        const userData = userDoc?.data()
-        if (userData) {
-          setCurrentUser(userData)
-          if (userData.departmentId) {
-            const deptsSnap = await getDocs(collection(db, 'departments'))
-            const deptDoc = deptsSnap.docs.find(
-              d => d.id === userData.departmentId
-            )
-            if (deptDoc?.exists()) {
-              setDepartmentInfo(deptDoc.data())
-            }
-          }
-        }
-      }
-    })
-    return () => unsubscribe()
-  }, [])
+  const { user, loading } = useFullIdentity()
 
   useEffect(() => {
     const fetchContactInfo = async () => {
-      const appsSnap = await getDocs(collection(db, 'applications'))
-      const participantsSnap = await getDocs(collection(db, 'participants'))
+      console.log('Company Code:', user?.companyCode)
+      if (!user?.companyCode) return
 
-      // ✅ Convert to array of {id, name, ...data}
-      const participantArray = participantsSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
+      const appsSnap = await getDocs(
+        query(
+          collection(db, 'applications'),
+          where('companyCode', '==', user.companyCode)
+        )
+      )
 
-      setParticipants(participantArray) // ✅ Now participants is a proper array
+      const participantsSnap = await getDocs(
+        query(collection(db, 'participants'))
+      )
 
       const participantMap = participantsSnap.docs.reduce((acc, doc) => {
         acc[doc.id] = doc.data()
@@ -153,12 +136,12 @@ const OperationsCompliance: React.FC = () => {
     }
 
     fetchContactInfo()
-  }, [])
+  }, [user?.companyCode])
 
   const uploadProps: UploadProps = {
     beforeUpload: file => {
       setUploadingFile(file)
-      return false // ❗ Prevent AntD from auto-uploading
+      return false
     },
     showUploadList: true
   }
@@ -166,33 +149,37 @@ const OperationsCompliance: React.FC = () => {
   // Load data
   useEffect(() => {
     const fetchDocuments = async () => {
-      if (!currentUser || !departmentInfo) {
-        setLoading(false)
-        return
-      }
+      if (!user?.companyCode) return
 
-      setLoading(true)
+      setFormLoading(true)
       try {
-        const snapshot = await getDocs(collection(db, 'applications'))
+        const appsQuery = query(
+          collection(db, 'applications'),
+          where('companyCode', '==', user.companyCode),
+          where('applicationStatus', '==', 'accepted')
+        )
+        const snapshot = await getDocs(appsQuery)
+
         const fetchedDocuments: ComplianceDocument[] = []
 
         snapshot.forEach(applicationDoc => {
           const appData = applicationDoc.data()
-          const companyMatch = currentUser.companyCode === appData.companyCode
-          const isMain = departmentInfo.isMain
-          const deptMatch = isMain
+          const complianceDocs = appData.complianceDocuments || []
 
-          if (companyMatch && deptMatch) {
-            const complianceDocs = appData.complianceDocuments || []
-            complianceDocs.forEach((doc, index) => {
+          complianceDocs.forEach((doc, index) => {
+            const docStatus = doc.status?.toLowerCase()
+            if (
+              !selectedStatusFilter ||
+              docStatus === selectedStatusFilter.toLowerCase()
+            ) {
               fetchedDocuments.push({
                 id: `${applicationDoc.id}-${index}`,
                 participantName: appData.email,
                 participantId: appData.participantId,
                 ...doc
               })
-            })
-          }
+            }
+          })
         })
 
         setDocuments(fetchedDocuments)
@@ -200,12 +187,12 @@ const OperationsCompliance: React.FC = () => {
         console.error('Error fetching compliance docs:', error)
         message.error('Failed to load documents.')
       } finally {
-        setLoading(false)
+        setFormLoading(false)
       }
     }
 
     fetchDocuments()
-  }, [currentUser, departmentInfo])
+  }, [user?.companyCode, selectedStatusFilter]) // 🔁 refetch when filter changes
 
   const handleSendReminders = async () => {
     const remindersByUser: Record<string, ComplianceDocument[]> = {}
@@ -262,69 +249,82 @@ const OperationsCompliance: React.FC = () => {
     setIsModalVisible(true)
   }
 
-  const continueSaving = async (url: string) => {
+  const continueSaving = async (fileUrl: string) => {
     try {
-      const newDocument: ComplianceDocument = {
+      const appSnap = await getDocs(
+        query(
+          collection(db, 'applications'),
+          where('participantId', '==', form.getFieldValue('participantId')),
+          where('companyCode', '==', user?.companyCode)
+        )
+      )
+
+      if (appSnap.empty) {
+        message.error('Application not found for this participant.')
+        return
+      }
+
+      const applicationDoc = appSnap.docs[0]
+      const applicationId = applicationDoc.id
+      const applicationData = applicationDoc.data()
+
+      const complianceDocuments: ComplianceDocument[] =
+        applicationData.complianceDocuments || []
+
+      const newDoc: ComplianceDocument = {
         id: selectedDocument?.id || `d${Date.now()}`,
         participantId: form.getFieldValue('participantId'),
         participantName:
-          participants?.find(
-            (p: any) => p.id === form.getFieldValue('participantId')
-          )?.beneficiaryName || '',
+          contactInfoMap[form.getFieldValue('participantId')]?.name || '',
         type: form.getFieldValue('type'),
         documentName: form.getFieldValue('documentName'),
         status: form.getFieldValue('status'),
-        issueDate: form.getFieldValue('issueDate')
-          ? form.getFieldValue('issueDate').format('YYYY-MM-DD')
-          : '',
-        expiryDate: form.getFieldValue('expiryDate')
-          ? form.getFieldValue('expiryDate').format('YYYY-MM-DD')
-          : '',
+        issueDate: form.getFieldValue('issueDate')?.format('YYYY-MM-DD') || '',
+        expiryDate:
+          form.getFieldValue('expiryDate')?.format('YYYY-MM-DD') || '',
         notes: form.getFieldValue('notes'),
-        url,
-        uploadedBy: 'Current User',
+        fileUrl,
+        uploadedBy: user?.name || 'Unknown',
         uploadedAt: new Date().toISOString().split('T')[0],
         lastVerifiedBy: selectedDocument?.lastVerifiedBy,
         lastVerifiedAt: selectedDocument?.lastVerifiedAt
       }
 
+      let updatedDocs
+
       if (selectedDocument) {
-        await updateDoc(
-          doc(db, 'complianceDocuments', selectedDocument.id),
-          newDocument
+        updatedDocs = complianceDocuments.map(doc =>
+          doc.id === selectedDocument.id ? newDoc : doc
         )
-        setDocuments(prev =>
-          prev.map(doc =>
-            doc.id === selectedDocument.id
-              ? { ...newDocument, id: selectedDocument.id }
-              : doc
-          )
-        )
-        message.success('Document updated successfully')
       } else {
-        const docRef = await addDoc(
-          collection(db, 'complianceDocuments'),
-          newDocument
-        )
-        setDocuments(prev => [...prev, { ...newDocument, id: docRef.id }])
-        message.success('Document added successfully')
+        updatedDocs = [...complianceDocuments, newDoc]
       }
 
+      await updateDoc(doc(db, 'applications', applicationId), {
+        complianceDocuments: updatedDocs
+      })
+
+      setDocuments(prev =>
+        selectedDocument
+          ? prev.map(doc => (doc.id === selectedDocument.id ? newDoc : doc))
+          : [...prev, newDoc]
+      )
+
+      message.success(selectedDocument ? 'Document updated' : 'Document added')
       setUploadingFile(null)
       setIsModalVisible(false)
       form.resetFields()
     } catch (error) {
       console.error('Error saving document:', error)
-      message.error('Failed to save document.')
+      message.error('❌ Failed to update application.')
     }
   }
 
   // Handle form submission
   const handleSubmit = async (values: any) => {
     try {
-      let url = selectedDocument?.url || ''
+      let fileUrl = selectedDocument?.fileUrl || ''
 
-      // If a new file was selected for upload
       if (uploadingFile) {
         setIsUploading(true)
         const storageRef = ref(
@@ -337,7 +337,6 @@ const OperationsCompliance: React.FC = () => {
         uploadTask.on(
           'state_changed',
           snapshot => {
-            // Calculate progress percentage
             const progress =
               (snapshot.bytesTransferred / snapshot.totalBytes) * 100
             setUploadPercent(Math.round(progress))
@@ -348,65 +347,16 @@ const OperationsCompliance: React.FC = () => {
             setIsUploading(false)
           },
           async () => {
-            // Upload completed successfully
             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref)
-            url = downloadURL
+            fileUrl = downloadURL
             setIsUploading(false)
             setUploadPercent(0)
-            continueSaving(url) // ➡ continue with saving the document
+            await continueSaving(fileUrl) // 👇 continue saving after upload
           }
         )
       } else {
-        continueSaving(url) // ➡ no file upload, just save
+        await continueSaving(fileUrl)
       }
-
-      const newDocument: ComplianceDocument = {
-        id: selectedDocument?.id || `d${Date.now()}`,
-        participantId: values.participantId,
-        participantName:
-          participants.find(p => p.id === values.participantId)?.name || '',
-        type: values.type,
-        documentName: values.documentName,
-        status: values.status,
-        issueDate: values.issueDate
-          ? values.issueDate.format('YYYY-MM-DD')
-          : '',
-        expiryDate: values.expiryDate
-          ? values.expiryDate.format('YYYY-MM-DD')
-          : '',
-        notes: values.notes,
-        url, // use uploaded file URL
-        uploadedBy: 'Current User',
-        uploadedAt: new Date().toISOString().split('T')[0],
-        lastVerifiedBy: selectedDocument?.lastVerifiedBy,
-        lastVerifiedAt: selectedDocument?.lastVerifiedAt
-      }
-
-      if (selectedDocument) {
-        await updateDoc(
-          doc(db, 'complianceDocuments', selectedDocument.id),
-          newDocument
-        )
-        setDocuments(prev =>
-          prev.map(doc =>
-            doc.id === selectedDocument.id
-              ? { ...newDocument, id: selectedDocument.id }
-              : doc
-          )
-        )
-        message.success('Document updated successfully')
-      } else {
-        const docRef = await addDoc(
-          collection(db, 'complianceDocuments'),
-          newDocument
-        )
-        setDocuments(prev => [...prev, { ...newDocument, id: docRef.id }])
-        message.success('Document added successfully')
-      }
-
-      setUploadingFile(null)
-      setIsModalVisible(false)
-      form.resetFields()
     } catch (error) {
       console.error('Error saving document:', error)
       message.error('Failed to save document.')
@@ -444,22 +394,38 @@ const OperationsCompliance: React.FC = () => {
     }
   }
 
+  // Show ED Agreement modal for specific participant
+  const showEDAgreementModal = (participantId: string) => {
+    const participant = {
+      id: participantId,
+      ...contactInfoMap[participantId]
+    }
+
+    setSelectedParticipant(participant)
+    setIsEDAgreementModalVisible(true)
+  }
+
+  // Handle saving the new ED Agreement
+  const handleSaveEDAgreement = (document: ComplianceDocument) => {
+    setDocuments([...documents, document])
+  }
+
   // Search functionality
-  const filteredDocuments = documents.filter(doc => {
-    const docTypeLabel =
-      documentTypes.find(t => t.value === doc.type || t.label === doc.type)
-        ?.label || ''
+  const filteredDocuments = searchText
+    ? documents.filter(doc => {
+        const docTypeLabel =
+          documentTypes.find(t => t.value === doc.type || t.label === doc.type)
+            ?.label || ''
 
-    const matchesSearch =
-      !searchText ||
-      doc.participantName.toLowerCase().includes(searchText.toLowerCase()) ||
-      doc.type.toLowerCase().includes(searchText.toLowerCase()) ||
-      docTypeLabel.toLowerCase().includes(searchText.toLowerCase())
-
-    const matchesStatus = !selectedStatus || doc.status === selectedStatus
-
-    return matchesSearch && matchesStatus
-  })
+        return (
+          doc.participantName
+            .toLowerCase()
+            .includes(searchText.toLowerCase()) ||
+          doc.type.toLowerCase().includes(searchText.toLowerCase()) ||
+          docTypeLabel.toLowerCase().includes(searchText.toLowerCase())
+        )
+      })
+    : documents
 
   // Get compliance statistics
   const complianceStats = {
@@ -529,14 +495,15 @@ const OperationsCompliance: React.FC = () => {
       key: 'actions',
       render: (_: any, record: ComplianceDocument) => {
         const contact = contactInfoMap[record.participantId]
+        console.log('record.participantId', record.participantId)
 
         return (
           <Space size='middle'>
-            {record.url && (
+            {record.fileUrl && (
               <Tooltip title='View Document'>
                 <Button
                   icon={<EyeOutlined />}
-                  onClick={() => window.open(record.url, '_blank')}
+                  onClick={() => window.open(record.fileUrl, '_blank')}
                   type='text'
                 />
               </Tooltip>
@@ -590,10 +557,11 @@ const OperationsCompliance: React.FC = () => {
       />
 
       {/* Statistics Cards */}
+
       <Row gutter={[16, 16]} style={{ marginBottom: 12 }}>
         {[
           {
-            title: 'Total Documents',
+            title: 'Documents',
             value: complianceStats.total,
             color: '#1890ff',
             icon: <SafetyCertificateOutlined />,
@@ -607,7 +575,7 @@ const OperationsCompliance: React.FC = () => {
             bgColor: '#f6ffed'
           },
           {
-            title: 'Expiring Soon',
+            title: 'Expiring',
             value: complianceStats.expiring,
             color: '#faad14',
             icon: <WarningOutlined />,
@@ -628,7 +596,7 @@ const OperationsCompliance: React.FC = () => {
             bgColor: '#fff2e8'
           },
           {
-            title: 'Pending Review',
+            title: 'Pending',
             value: complianceStats.pending,
             color: '#1890ff',
             icon: <FileTextOutlined />,
@@ -649,17 +617,15 @@ const OperationsCompliance: React.FC = () => {
                   transition: 'all 0.3s ease',
                   borderRadius: 8,
                   border: '1px solid #bae7ff',
-                  padding: '16px',
-                  height: '100%'
+                  padding: '12px',
+                  height: '100%',
+                  minHeight: '120px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between'
                 }}
               >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    marginBottom: 12
-                  }}
-                >
+                <div style={{ display: 'flex', alignItems: 'center' }}>
                   <div
                     style={{
                       background: metric.bgColor,
@@ -668,16 +634,26 @@ const OperationsCompliance: React.FC = () => {
                       marginRight: 12,
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center'
+                      justifyContent: 'center',
+                      flexShrink: 0
                     }}
                   >
                     {React.cloneElement(metric.icon, {
-                      style: { fontSize: 18, color: metric.color }
+                      style: { fontSize: 16, color: metric.color }
                     })}
                   </div>
-                  <Text strong>{metric.title}</Text>
+                  <Text strong style={{ fontSize: 14, whiteSpace: 'nowrap' }}>
+                    {metric.title}
+                  </Text>
                 </div>
-                <Title level={3} style={{ margin: 0, color: metric.color }}>
+                <Title
+                  level={4}
+                  style={{
+                    margin: '8px 0 0 0',
+                    color: metric.color,
+                    textAlign: 'right'
+                  }}
+                >
                   {metric.value}
                 </Title>
               </Card>
@@ -692,6 +668,7 @@ const OperationsCompliance: React.FC = () => {
         transition={{ duration: 0.4 }}
       >
         <Card
+          hoverable
           style={{
             boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
             transition: 'all 0.3s ease',
@@ -700,31 +677,35 @@ const OperationsCompliance: React.FC = () => {
             marginBottom: 10
           }}
         >
-          <Row gutter={16} justify='space-between' align='middle'>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Input
-                placeholder='Search documents or participants'
-                value={searchText}
-                onChange={e => setSearchText(e.target.value)}
-                style={{ width: '100%' }}
-                prefix={<SearchOutlined />}
-              />
+          <Row justify='space-between' align='middle' gutter={[16, 16]}>
+            {/* Left side: Search + Status Filter */}
+            <Col>
+              <Space>
+                <Input
+                  placeholder='Search documents or participants'
+                  value={searchText}
+                  onChange={e => setSearchText(e.target.value)}
+                  style={{ width: 300 }}
+                  prefix={<SearchOutlined />}
+                />
+
+                <Select
+                  placeholder='Filter by Status'
+                  allowClear
+                  style={{ width: 200 }}
+                  onChange={value => setSelectedStatusFilter(value || null)}
+                >
+                  {documentStatuses.map(status => (
+                    <Option key={status.value} value={status.value}>
+                      {status.label}
+                    </Option>
+                  ))}
+                </Select>
+              </Space>
             </Col>
-            <Col xs={24} sm={12} md={8} lg={6}>
-              <Select
-                placeholder='Filter by status'
-                allowClear
-                style={{ width: '100%' }}
-                onChange={value => setSelectedStatus(value)}
-              >
-                {documentStatuses.map(status => (
-                  <Select.Option key={status.value} value={status.value}>
-                    {status.label}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Col>
-            <Col xs={24} md={8} lg={12} style={{ textAlign: 'right' }}>
+
+            {/* Right side: Buttons */}
+            <Col>
               <Space>
                 <Button
                   type='primary'
@@ -732,6 +713,13 @@ const OperationsCompliance: React.FC = () => {
                   onClick={() => showModal()}
                 >
                   Add New Document
+                </Button>
+
+                <Button
+                  icon={<FileAddOutlined />}
+                  onClick={() => setIsEDAgreementModalVisible(true)}
+                >
+                  Generate ED Agreement
                 </Button>
 
                 <Button
@@ -760,17 +748,18 @@ const OperationsCompliance: React.FC = () => {
             borderRadius: 8,
             border: '1px solid #d6e4ff'
           }}
+          loading={formLoading}
         >
           <Table
             columns={columns}
             dataSource={filteredDocuments}
             rowKey='id'
-            loading={loading}
+            loading={formLoading}
             expandable={{
               expandedRowRender: record => (
                 <div style={{ padding: '0 20px' }}>
                   <p>
-                    <strong>Issue Date:</strong> {record.issueDate || 'N/A'}
+                    <strong>Expiry Date:</strong> {record.expiryDate || 'N/A'}
                   </p>
                   {record.notes && (
                     <p>
@@ -809,12 +798,11 @@ const OperationsCompliance: React.FC = () => {
             rules={[{ required: true, message: 'Please select a participant' }]}
           >
             <Select placeholder='Select a participant'>
-              {participants.length > 0 &&
-                participants.map((participant: any) => (
-                  <Option key={participant.id} value={participant.id}>
-                    {participant.beneficiaryName || participant.name}
-                  </Option>
-                ))}
+              {Object.entries(contactInfoMap).map(([id, info]) => (
+                <Option key={id} value={id}>
+                  {info.name}
+                </Option>
+              ))}
             </Select>
           </Form.Item>
 
@@ -879,13 +867,15 @@ const OperationsCompliance: React.FC = () => {
             <Upload {...uploadProps}>
               <Button icon={<UploadOutlined />}>Upload Document</Button>
             </Upload>
-            {selectedDocument?.url && (
+            {selectedDocument?.fileUrl && (
               <div style={{ marginTop: '10px' }}>
                 <Text>Current file: </Text>
                 <Button
                   type='link'
                   icon={<DownloadOutlined />}
-                  onClick={() => window.open(selectedDocument.url, '_blank')}
+                  onClick={() =>
+                    window.open(selectedDocument.fileUrl, '_blank')
+                  }
                 >
                   View Document
                 </Button>
@@ -913,6 +903,14 @@ const OperationsCompliance: React.FC = () => {
           </div>
         </Form>
       </Modal>
+
+      {/* ED Agreement Modal */}
+      <EDAgreementModal
+        visible={isEDAgreementModalVisible}
+        onCancel={() => setIsEDAgreementModalVisible(false)}
+        participant={selectedParticipant}
+        onSave={handleSaveEDAgreement}
+      />
     </Layout>
   )
 }
