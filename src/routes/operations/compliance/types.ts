@@ -4,15 +4,19 @@ export interface ComplianceDocument {
     participantName: string
     documentType: string
     documentName: string
+    type: string
     status: 'valid' | 'expiring' | 'expired' | 'missing' | 'pending';
     issueDate?: string
     expiryDate?: string
     notes?: string
-    fileUrl?: string
+    url?: string
     uploadedBy?: string
     uploadedAt?: string
+    verificationStatus?: 'verified' | 'queried' | 'unverified'
+    verificationComment?: string
     lastVerifiedBy?: string
     lastVerifiedAt?: string
+
   }
 
 
