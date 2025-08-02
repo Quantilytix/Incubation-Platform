@@ -1,238 +1,30 @@
-import React, { useState, useEffect } from 'react'
-import { Card, Select, Typography, Row, Col, Button, Modal, Spin } from 'antd'
+import React, { useEffect, useState } from 'react'
+import { Alert, Spin, Tabs, Typography, Card, Select, Row, Col } from 'antd'
+import type { TabsProps } from 'antd'
+import { Helmet } from 'react-helmet'
+import StickyBox from 'react-sticky-box'
+import { auth, db } from '@/firebase'
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore'
+import { motion } from 'framer-motion'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import { Helmet } from 'react-helmet'
-import { auth, db } from '@/firebase'
-import { doc, getDoc } from 'firebase/firestore'
-
-import('highcharts/modules/heatmap').then(HeatmapModule => {
-  HeatmapModule.default(Highcharts)
-})
 
 const { Title } = Typography
 const { Option } = Select
 
-const months = ['Jan', 'Feb', 'Mar', 'Apr']
-const categories = ['Training', 'Funding', 'Mentoring']
-const sectors = ['Agriculture', 'Tech', 'Manufacturing']
-const companies = [
-  'BrightTech',
-  'GreenFarms',
-  'AgroWave',
-  'FinReach',
-  'EduLift'
-]
+const chartTypes = ['Interventions per Month', 'Interventions per Sector']
 
-const defaultInterventionCharts = (empty = false) => ({
-  'Interventions per Month': {
-    chart: { type: 'column' },
-    title: { text: 'Interventions per Month' },
-    xAxis: { categories: months },
-    yAxis: { title: { text: 'Count' } },
-    plotOptions: {
-      column: { dataLabels: { enabled: true, format: '{point.y}' } }
-    },
-    series: [{ name: 'Interventions', data: empty ? [] : [40, 50, 30, 60] }]
-  },
-  'Income vs Expense (Type)': {
-    chart: { type: 'column' },
-    title: { text: 'Income vs Expense per Type' },
-    xAxis: { categories },
-    yAxis: { title: { text: 'Rands (R)' } },
-    plotOptions: {
-      column: { dataLabels: { enabled: true, format: 'R{point.y}' } }
-    },
-    series: [
-      { name: 'Income', data: empty ? [] : [30000, 45000, 25000] },
-      { name: 'Expense', data: empty ? [] : [18000, 22000, 14000] }
-    ]
-  },
-  'Interventions by Sector': {
-    chart: { type: 'bar' },
-    title: { text: 'Interventions by Sector' },
-    xAxis: { categories: sectors },
-    yAxis: { title: { text: 'Total Interventions' } },
-    plotOptions: {
-      bar: { dataLabels: { enabled: true, format: '{point.y}' } }
-    },
-    series: [{ name: 'Sector Count', data: empty ? [] : [25, 40, 30] }]
-  },
-  'Intervention Categories': {
-    chart: { type: 'pie' },
-    title: { text: 'Intervention Categories' },
-    plotOptions: {
-      pie: {
-        dataLabels: { enabled: true, format: '{point.name}: {point.y}' }
-      }
-    },
-    series: [
-      {
-        name: 'Categories',
-        colorByPoint: true,
-        data: empty
-          ? []
-          : categories.map((cat, i) => ({
-              name: cat,
-              y: [50, 35, 20][i]
-            }))
-      }
-    ]
-  },
-  'Compliance Overview': {
-    chart: { type: 'pie' },
-    title: { text: 'Compliance Status Overview' },
-    plotOptions: {
-      pie: {
-        dataLabels: { enabled: true, format: '{point.name}: {point.y}' }
-      }
-    },
-    series: [
-      {
-        name: 'Companies',
-        colorByPoint: true,
-        data: empty
-          ? []
-          : [
-              { name: 'Valid', y: 120 },
-              { name: 'Expiring Soon', y: 30 },
-              { name: 'Expired', y: 20 },
-              { name: 'Missing', y: 10 },
-              { name: 'Pending Review', y: 15 }
-            ]
-      }
-    ]
-  },
-  'Revenue vs Workers': {
-    chart: { type: 'column' },
-    title: { text: 'Revenue vs Workers (Permanent & Temporary)' },
-    xAxis: { categories: companies },
-    yAxis: { title: { text: 'Values' } },
-    plotOptions: {
-      column: { dataLabels: { enabled: true, format: '{point.y}' } }
-    },
-    series: [
-      { name: 'Revenue', data: empty ? [] : [60000, 55000, 48000, 39000, 32000] },
-      { name: 'Permanent Workers', data: empty ? [] : [30, 25, 20, 15, 10] },
-      { name: 'Temporary Workers', data: empty ? [] : [15, 10, 8, 5, 4] }
-    ]
-  },
-  'Revenue vs Productivity': {
-    chart: { type: 'line' },
-    title: { text: 'Revenue per Worker (Productivity)' },
-    xAxis: { categories: companies },
-    yAxis: { title: { text: 'Rands per Headcount' } },
-    plotOptions: {
-      line: { dataLabels: { enabled: true, format: 'R {point.y:.0f}' } }
-    },
-    series: [
-      {
-        name: 'Productivity',
-        data: empty ? [] : [1200, 1300, 1250, 1500, 1280],
-        color: '#722ed1'
-      }
-    ]
-  }
-})
-
-const defaultCompanyCharts = (empty = false) => ({
-  'Interventions per Month (Companies)': {
-    chart: { type: 'line' },
-    title: { text: 'Monthly Interventions by Company' },
-    xAxis: { categories: months },
-    yAxis: { title: { text: 'Interventions' } },
-    plotOptions: {
-      series: {
-        dataLabels: {
-          enabled: true,
-          format: '{point.y}'
-        }
-      }
-    },
-    series: empty
-      ? []
-      : [
-          { name: 'BrightTech', data: [10, 12, 8, 14] },
-          { name: 'GreenFarms', data: [8, 9, 6, 10] },
-          { name: 'AgroWave', data: [7, 11, 5, 9] },
-          { name: 'FinReach', data: [6, 5, 7, 4] },
-          { name: 'EduLift', data: [5, 4, 3, 6] }
-        ]
-  },
-  'Income vs Expense (Companies)': {
-    chart: { type: 'column' },
-    title: { text: 'Income vs Expense per Company' },
-    xAxis: { categories: companies },
-    yAxis: { title: { text: 'Rands (R)' } },
-    plotOptions: {
-      series: {
-        dataLabels: {
-          enabled: true,
-          format: '{point.y}'
-        }
-      }
-    },
-    series: empty
-      ? []
-      : [
-          { name: 'Income', data: [60000, 55000, 48000, 39000, 32000] },
-          { name: 'Expense', data: [30000, 25000, 23000, 18000, 15000] }
-        ]
-  },
-  'Categories per Company': {
-    chart: { type: 'bar' },
-    title: { text: 'Intervention Categories per Company' },
-    xAxis: { categories: companies },
-    yAxis: { title: { text: 'Category Count' } },
-    plotOptions: {
-      series: {
-        dataLabels: {
-          enabled: true,
-          format: '{point.y}'
-        }
-      }
-    },
-    series: empty
-      ? []
-      : [
-          { name: 'Training', data: [4, 6, 5, 2, 1] },
-          { name: 'Funding', data: [3, 2, 1, 1, 0] },
-          { name: 'Mentoring', data: [2, 3, 3, 1, 2] }
-        ]
-  },
-  'Sector Counts per Company': {
-    chart: { type: 'column' },
-    title: { text: 'Sector Engagement by Company' },
-    xAxis: { categories: companies },
-    plotOptions: {
-      series: {
-        dataLabels: {
-          enabled: true,
-          format: '{point.y}'
-        }
-      }
-    },
-    yAxis: { title: { text: 'Sectors' } },
-    series: empty ? [] : [{ name: 'Sector Count', data: [4, 5, 3, 2, 1] }]
-  }
-})
-
-const challengeCategories = [
-  'Access to Finance',
-  'Market Access',
-  'Regulatory Hurdles',
-  'Lack of Equipment',
-  'Skills Gap',
-  'Infrastructure',
-  'Mentorship',
-  'Digital Presence',
-  'Product Development'
-]
-
-const MonitoringEvaluationEvaluation = () => {
-  // Company logic
+const MonitoringEvaluationEvaluation: React.FC = () => {
   const [companyCode, setCompanyCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [interventionData, setInterventionData] = useState<any[]>([])
+  const [participantsMap, setParticipantsMap] = useState<Record<string, any>>(
+    {}
+  )
+  const [selectedGender, setSelectedGender] = useState('All')
+  const [selectedProvince, setSelectedProvince] = useState('All')
+  const [selectedChartType, setSelectedChartType] = useState(chartTypes[0])
+  const [chartOptions, setChartOptions] = useState<Highcharts.Options>({})
 
   useEffect(() => {
     const fetchCompanyCode = async () => {
@@ -244,6 +36,7 @@ const MonitoringEvaluationEvaluation = () => {
           setLoading(false)
           return
         }
+
         const userRef = doc(db, 'users', user.uid)
         const userSnap = await getDoc(userRef)
         if (!userSnap.exists()) {
@@ -251,237 +44,278 @@ const MonitoringEvaluationEvaluation = () => {
           setLoading(false)
           return
         }
-        const code = userSnap.data().companyCode
-        setCompanyCode(code)
+
+        setCompanyCode(userSnap.data().companyCode)
       } catch (err) {
+        console.error(err)
         setCompanyCode(null)
       }
       setLoading(false)
     }
+
     fetchCompanyCode()
   }, [])
 
-  // Dashboard state and data
-  const [gender, setGender] = useState('All')
-  const [ageGroup, setAgeGroup] = useState('All')
-  const [topN, setTopN] = useState(5)
-  const [interventionChart, setInterventionChart] = useState(
-    'Interventions per Month'
-  )
-  const [companyChart, setCompanyChart] = useState(
-    'Interventions per Month (Companies)'
-  )
-  const [expandedChart, setExpandedChart] = useState<Highcharts.Options | null>(
-    null
-  )
-  const [expandedVisible, setExpandedVisible] = useState(false)
-
-  // Use empty chart data for non-QTX
-  const isQTX = companyCode === 'QTX'
-  const interventionCharts = isQTX ? defaultInterventionCharts(false) : defaultInterventionCharts(true)
-  const companyCharts = isQTX ? defaultCompanyCharts(false) : defaultCompanyCharts(true)
-
-  // Heatmap: use empty data if not QTX
-  const challengeFrequency: [number, number, number][] = []
-  if (isQTX) {
-    months.forEach((month, y) => {
-      challengeCategories.forEach((challenge, x) => {
-        const frequency = Math.floor(Math.random() * 20)
-        challengeFrequency.push([x, y, frequency])
+  // 🔄 Fetch participants and interventions once
+  useEffect(() => {
+    const fetchData = async () => {
+      // Fetch participants
+      const participantsSnap = await getDocs(collection(db, 'participants'))
+      const participantMap: Record<string, any> = {}
+      participantsSnap.docs.forEach(doc => {
+        participantMap[doc.id] = { id: doc.id, ...doc.data() }
       })
-    })
-  }
 
-  const challengeHeatmapOptions: Highcharts.Options = {
-    chart: { type: 'heatmap' },
-    title: { text: 'Challenge Frequency by Month' },
-    xAxis: {
-      categories: challengeCategories,
-      title: { text: 'Challenges' }
-    },
-    yAxis: {
-      categories: months,
-      title: { text: 'Month' },
-      reversed: true
-    },
-    colorAxis: {
-      min: 0,
-      max: 20,
-      stops: [
-        [0, '#00A651'],
-        [0.5, '#FFC107'],
-        [1, '#D32F2F']
-      ]
-    },
-    legend: {
-      align: 'right',
-      layout: 'vertical',
-      margin: 0,
-      verticalAlign: 'top',
-      y: 25,
-      symbolHeight: 280
-    },
-    tooltip: {
-      formatter: function () {
-        return `<b>${months[this.point.y]}</b><br/>${
-          challengeCategories[this.point.x]
-        }: <b>${this.point.value}</b>`
-      }
-    },
-    series: [
-      {
-        name: 'Challenge Frequency',
-        borderWidth: 1,
-        type: 'heatmap',
-        data: isQTX ? challengeFrequency : [],
-        dataLabels: {
-          enabled: true,
-          color: '#000000'
+      setParticipantsMap(participantMap)
+
+      // Fetch interventions
+      const interventionsSnap = await getDocs(
+        collection(db, 'interventionsDatabase')
+      )
+      const allInterventions = interventionsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+
+      // Filter based on selectedGender and selectedProvince
+      const filtered = allInterventions.filter(intv => {
+        const participant = participantMap[intv.participantId]
+        if (!participant) return false
+        const matchGender =
+          selectedGender === 'All' || participant.gender === selectedGender
+        const matchProvince =
+          selectedProvince === 'All' ||
+          participant.province === selectedProvince
+        return matchGender && matchProvince
+      })
+
+      setInterventionData(filtered)
+    }
+
+    fetchData()
+  }, [selectedGender, selectedProvince])
+
+  // Chart Logic
+  useEffect(() => {
+    if (!interventionData.length || !Object.keys(participantsMap).length) return
+
+    if (selectedChartType === 'Interventions per Month') {
+      const monthCounts: Record<string, number> = {}
+
+      interventionData.forEach(i => {
+        const date = i.confirmedAt?.toDate?.()
+        if (date) {
+          const formatter = new Intl.DateTimeFormat('en-US', {
+            month: 'short',
+            year: '2-digit'
+          })
+          const label = formatter.format(date) // e.g., Jan 23
+          monthCounts[label] = (monthCounts[label] || 0) + 1
         }
-      }
-    ]
-  }
+      })
 
-  const openExpand = (chart: Highcharts.Options) => {
-    setExpandedChart(chart)
-    setExpandedVisible(true)
-  }
+      const categories = Object.keys(monthCounts)
+      const data = categories.map(label => monthCounts[label])
+
+      setChartOptions({
+        chart: { type: 'column' },
+        title: { text: 'Interventions per Month' },
+        xAxis: { categories, title: { text: 'Month' } },
+        yAxis: { title: { text: 'Number of Interventions' } },
+        plotOptions: {
+          series: {
+            borderRadius: 8,
+            dataLabels: {
+              enabled: true,
+              format: '{point.y:.1f}'
+            }
+          }
+        },
+        credits: { enabled: false },
+        series: [
+          {
+            name: 'Interventions',
+            type: 'column',
+            data
+          }
+        ]
+      })
+    }
+
+    if (selectedChartType === 'Interventions per Sector') {
+      const sectorCounts: Record<string, number> = {}
+
+      interventionData.forEach(i => {
+        const participant = participantsMap[i.participantId]
+        const sector = participant?.sector || 'Unknown'
+        sectorCounts[sector] = (sectorCounts[sector] || 0) + 1
+      })
+
+      const data = Object.entries(sectorCounts).map(([name, value]) => ({
+        name,
+        y: value
+      }))
+
+      setChartOptions({
+        chart: { type: 'pie' },
+        title: { text: 'Interventions by Sector' },
+        plotOptions: {
+          pie: {
+            allowPointSelect: true,
+            cursor: 'pointer',
+            dataLabels: {
+              enabled: true,
+              format: '{point.name}: {point.y}'
+            }
+          }
+        },
+        credits: { enabled: false },
+        series: [
+          {
+            name: 'Interventions',
+            type: 'pie',
+            colorByPoint: true,
+            data
+          }
+        ],
+        xAxis: undefined, // ensure xAxis is removed
+        yAxis: undefined // ensure yAxis is removed
+      })
+    }
+  }, [interventionData, selectedChartType, participantsMap])
+
+  const renderTabBar: TabsProps['renderTabBar'] = (props, DefaultTabBar) => (
+    <StickyBox offsetTop={64} offsetBottom={20} style={{ zIndex: 1 }}>
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <DefaultTabBar {...props} style={{ background: '#fff' }} />
+      </div>
+    </StickyBox>
+  )
+
+  const tabItems: TabsProps['items'] = [
+    {
+      key: '1',
+      label: 'Intervention Metrics',
+      children: (
+        <Row gutter={[24, 24]}>
+          <Col xs={24}>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <Card
+                hoverable
+                style={{
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                  transition: 'all 0.3s ease',
+                  borderRadius: 8,
+                  border: '1px solid #d6e4ff'
+                }}
+                title='📊 Intervention Breakdown'
+                extra={
+                  <Select
+                    value={selectedChartType}
+                    onChange={setSelectedChartType}
+                    style={{ width: 240 }}
+                  >
+                    {chartTypes.map(type => (
+                      <Option key={type} value={type}>
+                        {type}
+                      </Option>
+                    ))}
+                  </Select>
+                }
+              >
+                <HighchartsReact
+                  highcharts={Highcharts}
+                  options={chartOptions}
+                />
+              </Card>
+            </motion.div>
+          </Col>
+        </Row>
+      )
+    },
+    {
+      key: '2',
+      label: 'Company Breakdown',
+      children: (
+        <Alert
+          message='This section will show company-level intervention insights.'
+          type='info'
+        />
+      )
+    },
+    {
+      key: '3',
+      label: 'Challenge Frequency',
+      children: (
+        <Alert
+          message='Heatmap of challenges will be added soon.'
+          type='info'
+        />
+      )
+    }
+  ]
 
   return (
     <>
       <Helmet>
-        <title>
-          Monitoring & Evaluation Dashboard | Smart Incubation Platform
-        </title>
-        <meta
-          name='description'
-          content='Analyze intervention trends, company-level impacts, compliance, and demographic engagement across the incubation platform.'
-        />
+        <title>Monitoring & Evaluation | Smart Incubation Platform</title>
       </Helmet>
+
       {loading ? (
-        <div style={{ minHeight: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Spin tip="Loading company info..." size="large" />
+        <div
+          style={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <Spin tip='Loading company info...' size='large' />
         </div>
       ) : (
-        <div style={{ padding: 24 }}>
-          <Title level={3}>📈 Monitoring & Evaluation Dashboard</Title>
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <div style={{ padding: 24, minHeight: '100vh' }}>
+          <Alert
+            message='📊 This dashboard helps you analyze intervention trends, company performance, and common challenges faced by participants.'
+            type='info'
+            showIcon
+            style={{ marginBottom: 24 }}
+          />
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
             <Col>
-              <Select value={gender} onChange={setGender} style={{ width: 120 }}>
-                <Option value='All'>All</Option>
+              <Select
+                value={selectedGender}
+                onChange={setSelectedGender}
+                style={{ width: 160 }}
+              >
+                <Option value='All'>All Genders</Option>
                 <Option value='Male'>Male</Option>
                 <Option value='Female'>Female</Option>
               </Select>
             </Col>
             <Col>
-              <Select value={ageGroup} onChange={setAgeGroup}>
-                <Option value='All'>All Ages</Option>
-                <Option value='Youth'>Youth</Option>
-                <Option value='Adult'>Adult</Option>
-                <Option value='Senior'>Senior</Option>
+              <Select
+                value={selectedProvince}
+                onChange={setSelectedProvince}
+                style={{ width: 180 }}
+              >
+                <Option value='All'>All Provinces</Option>
+                <Option value='Gauteng'>Gauteng</Option>
+                <Option value='Western Cape'>Western Cape</Option>
+                <Option value='KwaZulu-Natal'>KwaZulu-Natal</Option>
               </Select>
             </Col>
           </Row>
 
-          <Row gutter={[24, 24]}>
-            <Col xs={24} lg={12}>
-              <Card
-                title='📊 Interventions Overview'
-                extra={
-                  <>
-                    <Select
-                      value={interventionChart}
-                      onChange={setInterventionChart}
-                      style={{ width: 250, marginRight: 12 }}
-                    >
-                      {Object.keys(interventionCharts).map(key => (
-                        <Option key={key} value={key}>
-                          {key}
-                        </Option>
-                      ))}
-                    </Select>
-                    <Button
-                      onClick={() =>
-                        openExpand(interventionCharts[interventionChart])
-                      }
-                    >
-                      Expand
-                    </Button>
-                  </>
-                }
-              >
-                <HighchartsReact
-                  highcharts={Highcharts}
-                  options={interventionCharts[interventionChart]}
-                />
-              </Card>
-            </Col>
-
-            <Col xs={24} lg={12}>
-              <Card
-                title='🏢 Company-Level Breakdowns'
-                extra={
-                  <>
-                    <Select
-                      value={companyChart}
-                      onChange={setCompanyChart}
-                      style={{ width: 250, marginRight: 12 }}
-                    >
-                      {Object.keys(companyCharts).map(key => (
-                        <Option key={key} value={key}>
-                          {key}
-                        </Option>
-                      ))}
-                    </Select>
-                    <Button
-                      onClick={() => openExpand(companyCharts[companyChart])}
-                    >
-                      Expand
-                    </Button>
-                  </>
-                }
-              >
-                <Select
-                  value={topN}
-                  onChange={setTopN}
-                  style={{ marginBottom: 16, width: 120 }}
-                >
-                  {[5, 3, 10].map(n => (
-                    <Option key={n} value={n}>
-                      Top {n}
-                    </Option>
-                  ))}
-                </Select>
-
-                <HighchartsReact
-                  highcharts={Highcharts}
-                  options={companyCharts[companyChart]}
-                />
-              </Card>
-            </Col>
-          </Row>
-
-          <Row gutter={[24, 24]} style={{ marginTop: 32 }}>
-            <Col span={24}>
-              <Card title='Challenge Frequency Heatmap'>
-                <HighchartsReact
-                  highcharts={Highcharts}
-                  options={challengeHeatmapOptions}
-                />
-              </Card>
-            </Col>
-          </Row>
-
-          <Modal
-            open={expandedVisible}
-            onCancel={() => setExpandedVisible(false)}
-            width='80%'
-            footer={null}
-          >
-            {expandedChart && (
-              <HighchartsReact highcharts={Highcharts} options={expandedChart} />
-            )}
-          </Modal>
+          <Tabs
+            defaultActiveKey='1'
+            renderTabBar={renderTabBar}
+            items={tabItems}
+            style={{ marginTop: 15 }}
+          />
         </div>
       )}
     </>
