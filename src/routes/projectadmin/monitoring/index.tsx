@@ -4,15 +4,36 @@ import type { TabsProps } from 'antd'
 import { Helmet } from 'react-helmet'
 import StickyBox from 'react-sticky-box'
 import { auth, db } from '@/firebase'
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore'
+import {
+  doc,
+  getDoc,
+  collection,
+  getDocs,
+  query,
+  where
+} from 'firebase/firestore'
 import { motion } from 'framer-motion'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
+import drilldown from 'highcharts/modules/drilldown'
+
+if (typeof drilldown === 'function') {
+  drilldown(Highcharts)
+}
 
 const { Title } = Typography
 const { Option } = Select
 
-const chartTypes = ['Interventions per Month', 'Interventions per Sector']
+Highcharts.setOptions({
+  credits: { enabled: false }
+})
+
+const chartTypes = [
+  'Interventions per Month',
+  'Interventions per Sector',
+  'Most Required Interventions',
+  'Required vs Completed Interventions'
+]
 
 const MonitoringEvaluationEvaluation: React.FC = () => {
   const [companyCode, setCompanyCode] = useState<string | null>(null)
@@ -97,91 +118,241 @@ const MonitoringEvaluationEvaluation: React.FC = () => {
 
   // Chart Logic
   useEffect(() => {
-    if (!interventionData.length || !Object.keys(participantsMap).length) return
+    const generateChart = async () => {
+      if (!interventionData.length || !Object.keys(participantsMap).length)
+        return
 
-    if (selectedChartType === 'Interventions per Month') {
-      const monthCounts: Record<string, number> = {}
+      if (selectedChartType === 'Interventions per Month') {
+        const monthCounts: Record<string, number> = {}
 
-      interventionData.forEach(i => {
-        const date = i.confirmedAt?.toDate?.()
-        if (date) {
-          const formatter = new Intl.DateTimeFormat('en-US', {
-            month: 'short',
-            year: '2-digit'
+        interventionData.forEach(i => {
+          const date = i.confirmedAt?.toDate?.()
+          if (date) {
+            const label = new Intl.DateTimeFormat('en-US', {
+              month: 'short',
+              year: '2-digit'
+            }).format(date) // e.g., Jan 23
+            monthCounts[label] = (monthCounts[label] || 0) + 1
+          }
+        })
+
+        const categories = Object.keys(monthCounts)
+        const data = categories.map(label => monthCounts[label])
+
+        setChartOptions({
+          chart: { type: 'column' },
+          title: { text: 'Interventions per Month' },
+          xAxis: { categories, title: { text: 'Month' } },
+          yAxis: { title: { text: 'Number of Interventions' } },
+          plotOptions: {
+            column: {
+              borderRadius: 12,
+              pointPadding: 0.2,
+              groupPadding: 0.1
+            },
+            series: {
+              dataLabels: {
+                enabled: true,
+                format: '{point.y}'
+              }
+            }
+          },
+          credits: { enabled: false },
+          series: [{ name: 'Interventions', type: 'column', data }]
+        })
+      } else if (selectedChartType === 'Interventions per Sector') {
+        const sectorCounts: Record<string, number> = {}
+
+        interventionData.forEach(i => {
+          const participant = participantsMap[i.participantId]
+          const sector = participant?.sector || 'Unknown'
+          sectorCounts[sector] = (sectorCounts[sector] || 0) + 1
+        })
+
+        const data = Object.entries(sectorCounts).map(([name, y]) => ({
+          name,
+          y
+        }))
+
+        setChartOptions({
+          chart: { type: 'pie' },
+          title: { text: 'Interventions by Sector' },
+          plotOptions: {
+            pie: {
+              allowPointSelect: true,
+              cursor: 'pointer',
+              dataLabels: {
+                enabled: true,
+                format: '{point.name}: {point.y}'
+              }
+            }
+          },
+          credits: { enabled: false },
+          series: [
+            {
+              name: 'Interventions',
+              type: 'pie',
+              colorByPoint: true,
+              data
+            }
+          ]
+        })
+      } else if (selectedChartType === 'Most Required Interventions') {
+        const appSnap = await getDocs(
+          query(
+            collection(db, 'applications'),
+            where('status', '==', 'accepted')
+          )
+        )
+        const requiredCount: Record<string, number> = {}
+
+        appSnap.docs.forEach(doc => {
+          const required = doc.data().interventions?.required || []
+          required.forEach((title: string) => {
+            requiredCount[title] = (requiredCount[title] || 0) + 1
           })
-          const label = formatter.format(date) // e.g., Jan 23
-          monthCounts[label] = (monthCounts[label] || 0) + 1
-        }
-      })
+        })
 
-      const categories = Object.keys(monthCounts)
-      const data = categories.map(label => monthCounts[label])
+        const categories = Object.keys(requiredCount)
+        const data = categories.map(k => requiredCount[k])
 
-      setChartOptions({
-        chart: { type: 'column' },
-        title: { text: 'Interventions per Month' },
-        xAxis: { categories, title: { text: 'Month' } },
-        yAxis: { title: { text: 'Number of Interventions' } },
-        plotOptions: {
-          series: {
-            borderRadius: 8,
-            dataLabels: {
-              enabled: true,
-              format: '{point.y:.1f}'
+        setChartOptions({
+          chart: { type: 'bar' },
+          title: {
+            text: 'Most Required Interventions'
+          },
+          xAxis: { categories, title: { text: 'Intervention' } },
+          yAxis: { title: { text: 'Required Count' } },
+          plotOptions: {
+            bar: {
+              borderRadius: 12,
+              pointPadding: 0.2,
+              groupPadding: 0.1
+            },
+            series: {
+              dataLabels: {
+                enabled: true,
+                format: '{point.y}'
+              }
             }
+          },
+          credits: { enabled: false },
+          series: [{ name: 'Required', type: 'bar', data }]
+        })
+      } else if (selectedChartType === 'Required vs Completed Interventions') {
+        const appSnap = await getDocs(
+          query(
+            collection(db, 'applications'),
+            where('status', '==', 'accepted')
+          )
+        )
+
+        const requiredAreaMap: Record<string, number> = {}
+
+        appSnap.docs.forEach(doc => {
+          const required: string[] = doc.data().interventions?.required || []
+          required.forEach(title => {
+            // Use the intervention title as key (will map later to area)
+            requiredAreaMap[title] = (requiredAreaMap[title] || 0) + 1
+          })
+        })
+
+        const interventionSnap = await getDocs(
+          collection(db, 'interventionsDatabase')
+        )
+
+        const titleToAreaMap: Record<string, string> = {}
+        const completedAreaMap: Record<string, number> = {}
+
+        interventionSnap.docs.forEach(doc => {
+          const data = doc.data()
+          const title = data.interventionTitle || 'Untitled'
+          const area = data.areaOfSupport || 'Unknown'
+          titleToAreaMap[title] = area
+          completedAreaMap[area] = (completedAreaMap[area] || 0) + 1
+        })
+
+        const resolvedRequiredByArea: Record<string, number> = {}
+
+        Object.entries(requiredAreaMap).forEach(([title, count]) => {
+          const area = titleToAreaMap[title] || 'Unknown'
+          resolvedRequiredByArea[area] =
+            (resolvedRequiredByArea[area] || 0) + count
+        })
+
+        const drilldownSeries: Highcharts.DrilldownSeriesOptions[] = []
+
+        // Prepare drilldown for Required
+        drilldownSeries.push({
+          id: 'required',
+          type: 'pie',
+          data: Object.entries(resolvedRequiredByArea).map(([area, count]) => [
+            area,
+            count
+          ])
+        })
+
+        // Prepare drilldown for Completed
+        drilldownSeries.push({
+          id: 'completed',
+          type: 'pie',
+          data: Object.entries(completedAreaMap).map(([area, count]) => [
+            area,
+            count
+          ])
+        })
+
+        setChartOptions({
+          chart: {
+            type: 'pie'
+          },
+          title: { text: 'Required vs Completed Interventions' },
+          plotOptions: {
+            pie: {
+              allowPointSelect: true,
+              cursor: 'pointer',
+              borderRadius: 12,
+              dataLabels: {
+                enabled: true,
+                format: '{point.name}: {point.y}'
+              }
+            }
+          },
+          credits: { enabled: false },
+          tooltip: {
+            headerFormat: '',
+            pointFormat: '<b>{point.name}</b>: {point.y}'
+          },
+          series: [
+            {
+              name: 'Overall',
+              type: 'pie',
+              colorByPoint: true,
+              data: [
+                {
+                  name: 'Required',
+                  y: Object.values(resolvedRequiredByArea).reduce(
+                    (a, b) => a + b,
+                    0
+                  ),
+                  drilldown: 'required'
+                },
+                {
+                  name: 'Completed',
+                  y: Object.values(completedAreaMap).reduce((a, b) => a + b, 0),
+                  drilldown: 'completed'
+                }
+              ]
+            }
+          ],
+          drilldown: {
+            series: drilldownSeries
           }
-        },
-        credits: { enabled: false },
-        series: [
-          {
-            name: 'Interventions',
-            type: 'column',
-            data
-          }
-        ]
-      })
+        })
+      }
     }
 
-    if (selectedChartType === 'Interventions per Sector') {
-      const sectorCounts: Record<string, number> = {}
-
-      interventionData.forEach(i => {
-        const participant = participantsMap[i.participantId]
-        const sector = participant?.sector || 'Unknown'
-        sectorCounts[sector] = (sectorCounts[sector] || 0) + 1
-      })
-
-      const data = Object.entries(sectorCounts).map(([name, value]) => ({
-        name,
-        y: value
-      }))
-
-      setChartOptions({
-        chart: { type: 'pie' },
-        title: { text: 'Interventions by Sector' },
-        plotOptions: {
-          pie: {
-            allowPointSelect: true,
-            cursor: 'pointer',
-            dataLabels: {
-              enabled: true,
-              format: '{point.name}: {point.y}'
-            }
-          }
-        },
-        credits: { enabled: false },
-        series: [
-          {
-            name: 'Interventions',
-            type: 'pie',
-            colorByPoint: true,
-            data
-          }
-        ],
-        xAxis: undefined, // ensure xAxis is removed
-        yAxis: undefined // ensure yAxis is removed
-      })
-    }
+    generateChart()
   }, [interventionData, selectedChartType, participantsMap])
 
   const renderTabBar: TabsProps['renderTabBar'] = (props, DefaultTabBar) => (
@@ -217,7 +388,7 @@ const MonitoringEvaluationEvaluation: React.FC = () => {
                   <Select
                     value={selectedChartType}
                     onChange={setSelectedChartType}
-                    style={{ width: 240 }}
+                    style={{ width: 280 }}
                   >
                     {chartTypes.map(type => (
                       <Option key={type} value={type}>
