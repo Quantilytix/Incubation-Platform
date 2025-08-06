@@ -17,7 +17,8 @@ import {
   PlusOutlined,
   EditOutlined,
   UnorderedListOutlined,
-  DollarOutlined
+  DollarOutlined,
+  DeleteOutlined
 } from '@ant-design/icons'
 import {
   collection,
@@ -26,7 +27,8 @@ import {
   updateDoc,
   doc,
   query,
-  where
+  where,
+  deleteDoc
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import dayjs from 'dayjs'
@@ -47,6 +49,15 @@ const SystemSetupForm: React.FC = () => {
   const [form] = Form.useForm()
   const { user, loading: identityLoading } = useFullIdentity()
   const [companyCode, setCompanyCode] = useState<string>('')
+  const [filters, setFilters] = useState({
+    area: '',
+    title: '',
+    compulsory: ''
+  })
+
+  const handleFilterChange = (key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+  }
 
   useEffect(() => {
     if (!identityLoading && user?.companyCode) {
@@ -133,10 +144,17 @@ const SystemSetupForm: React.FC = () => {
             title: 'Actions',
             key: 'actions',
             render: (_, record) => (
-              <Button
-                icon={<EditOutlined />}
-                onClick={() => openEdit(record)}
-              />
+              <Button.Group>
+                <Button
+                  icon={<EditOutlined />}
+                  onClick={() => openEdit(record)}
+                />
+                <Button
+                  icon={<DeleteOutlined />}
+                  danger
+                  onClick={() => deleteIntervention(record.id)}
+                />
+              </Button.Group>
             )
           }
         ]
@@ -192,6 +210,48 @@ const SystemSetupForm: React.FC = () => {
           editingRecord.id
         )
         await updateDoc(ref, baseValues)
+
+        // ✅ If updating an intervention, update its title in all relevant applications
+        if (setupType === 'intervention') {
+          const appsSnap = await getDocs(collection(db, 'applications'))
+
+          for (const appDoc of appsSnap.docs) {
+            const appData = appDoc.data()
+            const required = appData.interventions?.required || []
+
+            const updatedRequired = required.map((item: any) => {
+              if (typeof item === 'string' && item === editingRecord.id) {
+                // Replace string with full object
+                return {
+                  id: item,
+                  title: baseValues.interventionTitle,
+                  area: baseValues.areaOfSupport
+                }
+              }
+
+              if (typeof item === 'object' && item.id === editingRecord.id) {
+                // Update object
+                return {
+                  ...item,
+                  title: baseValues.interventionTitle,
+                  area: baseValues.areaOfSupport
+                }
+              }
+
+              return item
+            })
+
+            const hasChanged =
+              JSON.stringify(required) !== JSON.stringify(updatedRequired)
+            if (hasChanged) {
+              await updateDoc(doc(db, 'applications', appDoc.id), {
+                'interventions.required': updatedRequired
+              })
+              console.log(`✅ Synced updated title to application ${appDoc.id}`)
+            }
+          }
+        }
+
         message.success('Updated successfully')
       } else {
         await addDoc(
@@ -212,6 +272,54 @@ const SystemSetupForm: React.FC = () => {
       setLoading(false)
     }
   }
+
+  const deleteIntervention = async (interventionId: string) => {
+    setLoading(true)
+    try {
+      // Delete intervention
+      await deleteDoc(doc(db, 'interventions', interventionId))
+
+      // Go through all applications and remove from required
+      const appsSnap = await getDocs(collection(db, 'applications'))
+      for (const appDoc of appsSnap.docs) {
+        const appData = appDoc.data()
+        const required = appData.interventions?.required || []
+
+        const filtered = required.filter(
+          (item: any) => item.id !== interventionId
+        )
+
+        // Only update if something was removed
+        if (filtered.length !== required.length) {
+          await updateDoc(doc(db, 'applications', appDoc.id), {
+            'interventions.required': filtered
+          })
+          console.log(`🧹 Removed from application ${appDoc.id}`)
+        }
+      }
+
+      message.success('Intervention deleted.')
+      await fetchAll(companyCode)
+    } catch (err) {
+      console.error(err)
+      message.error('Failed to delete intervention')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const filteredData = interventions.filter(item => {
+    const areaMatch = item.areaOfSupport
+      ?.toLowerCase()
+      .includes(filters.area.toLowerCase())
+    const titleMatch = item.interventionTitle
+      ?.toLowerCase()
+      .includes(filters.title.toLowerCase())
+    const compulsoryMatch = filters.compulsory
+      ? item.isCompulsory === filters.compulsory
+      : true
+    return areaMatch && titleMatch && compulsoryMatch
+  })
 
   return (
     <div style={{ padding: 24, minHeight: '100vh' }}>
@@ -279,11 +387,49 @@ const SystemSetupForm: React.FC = () => {
                   <Option value='expense'>Expense Types</Option>
                 </Select>
               </Col>
+              {setupType === 'intervention' && (
+                <Row gutter={8}>
+                  <Col>
+                    <Input
+                      allowClear
+                      placeholder='Filter by Area'
+                      value={filters.area}
+                      onChange={e => handleFilterChange('area', e.target.value)}
+                    />
+                  </Col>
+                  <Col>
+                    <Input
+                      allowClear
+                      placeholder='Filter by Title'
+                      value={filters.title}
+                      onChange={e =>
+                        handleFilterChange('title', e.target.value)
+                      }
+                    />
+                  </Col>
+                  <Col>
+                    <Select
+                      allowClear
+                      placeholder='Compulsory?'
+                      value={filters.compulsory}
+                      onChange={value =>
+                        handleFilterChange('compulsory', value)
+                      }
+                      style={{ width: 150 }}
+                    >
+                      <Option value='yes'>Yes</Option>
+                      <Option value='no'>No</Option>
+                    </Select>
+                  </Col>
+                </Row>
+              )}
+
               <Col>
                 <Button
                   type='primary'
                   icon={<PlusOutlined />}
                   onClick={openAdd}
+                  style={{ marginLeft: 10 }}
                 >
                   Add New Setup
                 </Button>
@@ -300,14 +446,14 @@ const SystemSetupForm: React.FC = () => {
         >
           <Table
             columns={columns}
-            dataSource={dataSource}
+            dataSource={setupType === 'intervention' ? filteredData : expenses}
             rowKey='id'
             loading={loading}
           />
         </Card>
       </motion.div>
       <Modal
-        visible={modalVisible}
+        open={modalVisible}
         title={
           editingRecord
             ? `Edit ${
