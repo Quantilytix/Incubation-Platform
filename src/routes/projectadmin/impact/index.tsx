@@ -43,7 +43,8 @@ export const ImpactAnalysisForm: React.FC = () => {
           setLoading(false)
           return
         }
-        setCompanyCode(userSnap.data().companyCode)
+        // setCompanyCode(userSnap.data().companyCode)
+        setCompanyCode('QTX')
       } catch {
         setCompanyCode(null)
       }
@@ -74,7 +75,9 @@ export const ImpactAnalysisForm: React.FC = () => {
   const chartOptions: Highcharts.Options = {
     chart: { type: 'bar' },
     title: {
-      text: `Top ${topN} Interventions (Lag: ${lagMonths} month${lagMonths !== 1 ? 's' : ''})`
+      text: `Top ${topN} Interventions (Lag: ${lagMonths} month${
+        lagMonths !== 1 ? 's' : ''
+      })`
     },
     xAxis: {
       categories: chartData.map(i => i.name),
@@ -82,7 +85,9 @@ export const ImpactAnalysisForm: React.FC = () => {
     },
     yAxis: {
       min: chartData.length ? Math.min(...chartData.map(i => i.value)) - 10 : 0,
-      max: chartData.length ? Math.max(...chartData.map(i => i.value)) + 10 : 10,
+      max: chartData.length
+        ? Math.max(...chartData.map(i => i.value)) + 10
+        : 10,
       title: { text: 'Impact Weight (%)', align: 'high' },
       plotLines: [{ value: 0, width: 1, color: '#999' }]
     },
@@ -120,8 +125,15 @@ export const ImpactAnalysisForm: React.FC = () => {
         />
       </Helmet>
       {loading ? (
-        <div style={{ minHeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Spin tip="Loading company info..." size="large" />
+        <div
+          style={{
+            minHeight: 300,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <Spin tip='Loading company info...' size='large' />
         </div>
       ) : (
         <div style={{ padding: 24 }}>
