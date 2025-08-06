@@ -7,7 +7,10 @@ import {
   Divider,
   message,
   Button,
-  Modal
+  Modal,
+  Form,
+  Input,
+  Select
 } from 'antd'
 import {
   doc,
@@ -29,6 +32,13 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
   const [applicationData, setApplicationData] = useState<any>(null)
   const [interventions, setInterventions] = useState<any[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [form] = Form.useForm()
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([])
+  const [availableInterventions, setAvailableInterventions] = useState<any[]>(
+    []
+  )
+  const [searchArea, setSearchArea] = useState('')
+  const [searchTitle, setSearchTitle] = useState('')
 
   const confirmByOperations = async () => {
     try {
@@ -155,6 +165,54 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
     }
   }
 
+  const handleAddMultiple = async () => {
+    try {
+      const selected = availableInterventions.filter(i =>
+        selectedRowKeys.includes(i.id)
+      )
+
+      const appSnap = await getDocs(
+        query(
+          collection(db, 'applications'),
+          where('email', '==', participant.email),
+          where('applicationStatus', 'in', ['accepted', 'Accepted'])
+        )
+      )
+      if (appSnap.empty) return message.error('Application not found.')
+
+      const appRef = appSnap.docs[0].ref
+      const appData = appSnap.docs[0].data()
+      const existingRequired = appData?.interventions?.required || []
+
+      const additions = selected.map(item => ({
+        id: item.id,
+        title: item.interventionTitle,
+        area: item.areaOfSupport
+      }))
+
+      await updateDoc(appRef, {
+        'interventions.required': [...existingRequired, ...additions]
+      })
+
+      setInterventions(prev => [
+        ...prev,
+        ...additions.map(i => ({
+          ...i,
+          source: 'SME',
+          confirmedAt: null
+        }))
+      ])
+
+      message.success(`${additions.length} interventions added.`)
+      setIsModalOpen(false)
+      setSelectedRowKeys([])
+      form.resetFields()
+    } catch (err) {
+      console.error(err)
+      message.error('Error adding interventions.')
+    }
+  }
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -203,6 +261,30 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
         }
 
         setInterventions([...manual, ...aiRecommended])
+
+        const intvSnap = await getDocs(
+          query(
+            collection(db, 'interventions'),
+            where('companyCode', '==', app?.companyCode || 'RCM')
+          )
+        )
+        const allInterventions = intvSnap.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        }))
+
+        const requiredIds = new Set((manual || []).map((i: any) => i.id))
+        const aiTitles = new Set(
+          aiRecommended.map((i: any) => i.interventionTitle)
+        )
+
+        // ❌ Exclude interventions already in required or AI recommended
+        const available = allInterventions.filter(
+          (intv: any) =>
+            !requiredIds.has(intv.id) && !aiTitles.has(intv.interventionTitle)
+        )
+
+        setAvailableInterventions(available)
       } catch (err) {
         console.error('Error fetching growth plan data', err)
         message.error('Failed to fetch participant data.')
@@ -213,6 +295,12 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
 
     fetchData()
   }, [participant])
+
+  const filteredInterventions = availableInterventions.filter(
+    i =>
+      i.areaOfSupport.toLowerCase().includes(searchArea.toLowerCase()) &&
+      i.interventionTitle.toLowerCase().includes(searchTitle.toLowerCase())
+  )
 
   if (loading)
     return (
@@ -393,10 +481,66 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
       )}
       <Modal
         open={isModalOpen}
-        onCancel={() => setIsModalOpen(false)}
+        onCancel={() => {
+          setIsModalOpen(false)
+          setSelectedRowKeys([])
+          form.resetFields()
+        }}
         footer={null}
+        title='Add New Interventions'
       >
-        <Paragraph>Add New Intervention Form (coming soon)</Paragraph>
+        <Form layout='vertical' form={form} onFinish={handleAddMultiple}>
+          {/* Filters */}
+          <Form.Item label='Filter by Area of Support'>
+            <Input
+              placeholder='e.g. Marketing'
+              value={searchArea}
+              onChange={e => setSearchArea(e.target.value)}
+              allowClear
+            />
+          </Form.Item>
+
+          <Form.Item label='Filter by Title'>
+            <Input
+              placeholder='e.g. Website Development'
+              value={searchTitle}
+              onChange={e => setSearchTitle(e.target.value)}
+              allowClear
+            />
+          </Form.Item>
+
+          {/* Table */}
+          <Table
+            dataSource={filteredInterventions}
+            rowKey='id'
+            rowSelection={{
+              selectedRowKeys,
+              onChange: keys => setSelectedRowKeys(keys as string[])
+            }}
+            columns={[
+              {
+                title: 'Title',
+                dataIndex: 'interventionTitle'
+              },
+              {
+                title: 'Area',
+                dataIndex: 'areaOfSupport'
+              }
+            ]}
+            pagination={{ pageSize: 5 }}
+            size='small'
+          />
+
+          <Form.Item>
+            <Button
+              type='primary'
+              htmlType='submit'
+              disabled={selectedRowKeys.length === 0}
+            >
+              Add Selected Interventions
+            </Button>
+          </Form.Item>
+        </Form>
       </Modal>
     </Card>
   )
