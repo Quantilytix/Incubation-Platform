@@ -160,7 +160,7 @@ export const OperationsDashboard: React.FC = () => {
     try {
       const q = query(
         collection(db, 'assignedInterventions'),
-        where('companyCode', '==', user.companyCode)
+        where('companyCode', '==', user?.companyCode)
       )
       const snapshot = await getDocs(q)
 
