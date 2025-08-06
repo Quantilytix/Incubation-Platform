@@ -400,6 +400,7 @@ export const CustomLayout: React.FC = () => {
         label: 'Tracker',
         icon: <SolutionOutlined />
       },
+
       {
         key: 'financials',
         to: '/incubatee/financials',
@@ -407,8 +408,8 @@ export const CustomLayout: React.FC = () => {
         icon: <DollarOutlined />
       },
       {
-        key: 'projects',
-        to: '/incubatee/projects',
+        key: 'metrics',
+        to: '/incubatee/metrics',
         label: 'Key Metrics',
         icon: <BarChartOutlined />
       },
@@ -426,6 +427,18 @@ export const CustomLayout: React.FC = () => {
         to: '/operations',
         label: 'Dashboard',
         icon: <DashboardOutlined />
+      },
+      {
+        key: 'diagnostics',
+        to: '/operations/diagnostics',
+        label: 'Growth Plan',
+        icon: <SolutionOutlined />
+      },
+      {
+        key: 'impact',
+        to: '/projectadmin/impact',
+        label: 'Impact Analytics',
+        icon: <FundProjectionScreenOutlined />
       },
       {
         key: 'consultants',
