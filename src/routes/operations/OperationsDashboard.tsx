@@ -63,6 +63,7 @@ import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import HighchartsMore from 'highcharts/highcharts-more'
 import HighchartsAccessibility from 'highcharts/modules/accessibility'
+import { motion } from 'framer-motion'
 
 // Initialize additional modules
 if (typeof HighchartsMore === 'function') {
@@ -157,7 +158,12 @@ export const OperationsDashboard: React.FC = () => {
   //   Fetch Assigned Interventions
   const fetchAssignments = async () => {
     try {
-      const snapshot = await getDocs(collection(db, 'assignedInterventions'))
+      const q = query(
+        collection(db, 'assignedInterventions'),
+        where('companyCode', '==', user.companyCode)
+      )
+      const snapshot = await getDocs(q)
+
       const fetchedAssignments = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -243,7 +249,12 @@ export const OperationsDashboard: React.FC = () => {
     }
     const fetchComplianceDocuments = async () => {
       try {
-        const snapshot = await getDocs(collection(db, 'complianceDocuments'))
+        const q = query(
+          collection(db, 'complianceDocuments'),
+          where('companyCode', '==', user.companyCode)
+        )
+        const snapshot = await getDocs(q)
+
         const documents = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
@@ -597,276 +608,382 @@ export const OperationsDashboard: React.FC = () => {
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
         {/** PENDING TASKS */}
         <Col xs={24} sm={12} md={8} lg={8}>
-          <Card
-            hoverable
-            style={{
-              boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)',
-              minHeight: 150,
-              position: 'relative'
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              delay: 0.1,
+              ease: 'easeOut'
+            }}
+            whileHover={{
+              y: -3,
+              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+              transition: { duration: 0.2 }
             }}
           >
-            <Statistic
-              title='Pending Tasks'
-              value={tasks.filter(t => t.status !== 'Completed').length}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: '#1890ff' }}
-            />
-            <Button
-              type='link'
-              ghost
+            <Card
+              hoverable
               style={{
-                border: '1px solid #d9d9d9',
-                position: 'absolute',
-                bottom: 16,
-                right: 16
+                boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)',
+                minHeight: 150,
+                position: 'relative'
               }}
-              onClick={() => navigate('/tasks')}
             >
-              View All <ArrowRightOutlined />
-            </Button>
-          </Card>
+              <Statistic
+                title='Pending Tasks'
+                value={tasks.filter(t => t.status !== 'Completed').length}
+                prefix={<CheckCircleOutlined />}
+                valueStyle={{ color: '#1890ff' }}
+              />
+              <Button
+                type='link'
+                ghost
+                style={{
+                  border: '1px solid #d9d9d9',
+                  position: 'absolute',
+                  bottom: 16,
+                  right: 16
+                }}
+                onClick={() => navigate('/operations/tasks')}
+              >
+                View All <ArrowRightOutlined />
+              </Button>
+            </Card>
+          </motion.div>
         </Col>
 
         {/** INTERVENTIONS PROGRESS */}
         <Col xs={24} sm={12} md={8} lg={8}>
-          <Card
-            hoverable
-            style={{
-              boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)',
-              minHeight: 150,
-              position: 'relative'
-              //   textAlign: 'center'
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              delay: 0.1,
+              ease: 'easeOut'
+            }}
+            whileHover={{
+              y: -3,
+              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+              transition: { duration: 0.2 }
             }}
           >
-            <Statistic
-              title='Interventions Progress'
-              valueRender={() => (
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
-                  <Progress
-                    type='dashboard'
-                    gapDegree={100}
-                    percent={completionRate}
-                    width={80}
-                    strokeColor={
-                      completionRate >= 90
-                        ? '#ff4d4f'
-                        : completionRate >= 50
-                        ? '#faad14'
-                        : '#52c41a'
-                    }
-                    format={() => `${completionRate}%`}
-                  />
-                </div>
-              )}
-            />
-            <Button
-              type='link'
-              ghost
+            <Card
+              hoverable
               style={{
-                border: '1px solid #d9d9d9',
-                position: 'absolute',
-                bottom: 16,
-                right: 16
+                boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)',
+                minHeight: 150,
+                position: 'relative'
               }}
-              onClick={() => navigate('/interventions')}
             >
-              View All <ArrowRightOutlined />
-            </Button>
-          </Card>
+              <Statistic
+                title='Interventions Progress'
+                valueRender={() => (
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <Progress
+                      type='dashboard'
+                      gapDegree={100}
+                      percent={completionRate}
+                      width={80}
+                      strokeColor={
+                        completionRate >= 90
+                          ? '#ff4d4f'
+                          : completionRate >= 50
+                          ? '#faad14'
+                          : '#52c41a'
+                      }
+                      format={() => `${completionRate}%`}
+                    />
+                  </div>
+                )}
+              />
+              <Button
+                type='link'
+                ghost
+                style={{
+                  border: '1px solid #d9d9d9',
+                  position: 'absolute',
+                  bottom: 16,
+                  right: 16
+                }}
+                onClick={() => navigate('/interventions')}
+              >
+                View All <ArrowRightOutlined />
+              </Button>
+            </Card>
+          </motion.div>
         </Col>
 
         {/** ACTIVE PARTICIPANTS */}
         <Col xs={24} sm={12} md={8} lg={8}>
-          <Card
-            hoverable
-            style={{
-              boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)',
-              minHeight: 150,
-              position: 'relative'
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              delay: 0.1,
+              ease: 'easeOut'
+            }}
+            whileHover={{
+              y: -3,
+              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+              transition: { duration: 0.2 }
             }}
           >
-            <Statistic
-              title='Active Participants'
-              value={participants.length}
-              prefix={<TeamOutlined />}
-              valueStyle={{ color: '#722ed1' }}
-            />
-            <Button
-              type='link'
-              ghost
+            <Card
+              hoverable
               style={{
-                border: '1px solid #d9d9d9',
-                position: 'absolute',
-                bottom: 16,
-                right: 16
+                boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)',
+                minHeight: 150,
+                position: 'relative'
               }}
-              onClick={() => navigate('/participants')}
             >
-              View All <ArrowRightOutlined />
-            </Button>
-          </Card>
+              <Statistic
+                title='Active Participants'
+                value={participants.length}
+                prefix={<TeamOutlined />}
+                valueStyle={{ color: '#722ed1' }}
+              />
+              <Button
+                type='link'
+                ghost
+                style={{
+                  border: '1px solid #d9d9d9',
+                  position: 'absolute',
+                  bottom: 16,
+                  right: 16
+                }}
+                onClick={() => navigate('/operations/participants')}
+              >
+                View All <ArrowRightOutlined />
+              </Button>
+            </Card>
+          </motion.div>
         </Col>
       </Row>
       <Row gutter={[16, 16]} style={{ marginBottom: 10 }}>
         <Col xs={24} lg={12}>
-          <Card
-            title={
-              <Space>
-                <ScheduleOutlined />
-                <span>Consultant Appointments</span>
-              </Space>
-            }
-            hoverable
-            style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              delay: 0.1,
+              ease: 'easeOut'
+            }}
+            whileHover={{
+              y: -3,
+              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+              transition: { duration: 0.2 }
+            }}
           >
-            <List
-              size='small'
-              loading={appointmentsLoading}
-              dataSource={[...appointments].sort((a, b) =>
-                dayjs(a.date + ' ' + a.time).diff(dayjs(b.date + ' ' + b.time))
-              )}
-              renderItem={appt => (
-                <List.Item>
-                  <List.Item.Meta
-                    title={
-                      <Space>
-                        <Text>{appt.participantName}</Text>
-                        <Tag color='blue'>{appt.consultantName}</Tag>
-                      </Space>
-                    }
-                    description={
-                      <>
-                        Date/Time:{' '}
-                        {dayjs(
-                          `${appt.date} ${dayjs(appt.time).format('HH:mm')}`
-                        ).format('YYYY-MM-DD HH:mm')}
-                        <br />
-                        Location: {appt.location || appt.meetingLink}
-                      </>
-                    }
-                  />
-                  <Badge
-                    status={
-                      appt.status === 'completed' ? 'success' : 'processing'
-                    }
-                    text={appt.status}
-                  />
-                </List.Item>
-              )}
-            />
-          </Card>
+            <Card
+              title={
+                <Space>
+                  <ScheduleOutlined />
+                  <span>Consultant Appointments</span>
+                </Space>
+              }
+              hoverable
+              style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
+            >
+              <List
+                size='small'
+                loading={appointmentsLoading}
+                dataSource={[...appointments].sort((a, b) =>
+                  dayjs(a.date + ' ' + a.time).diff(
+                    dayjs(b.date + ' ' + b.time)
+                  )
+                )}
+                renderItem={appt => (
+                  <List.Item>
+                    <List.Item.Meta
+                      title={
+                        <Space>
+                          <Text>{appt.participantName}</Text>
+                          <Tag color='blue'>{appt.consultantName}</Tag>
+                        </Space>
+                      }
+                      description={
+                        <>
+                          Date/Time:{' '}
+                          {dayjs(
+                            `${appt.date} ${dayjs(appt.time).format('HH:mm')}`
+                          ).format('YYYY-MM-DD HH:mm')}
+                          <br />
+                          Location: {appt.location || appt.meetingLink}
+                        </>
+                      }
+                    />
+                    <Badge
+                      status={
+                        appt.status === 'completed' ? 'success' : 'processing'
+                      }
+                      text={appt.status}
+                    />
+                  </List.Item>
+                )}
+              />
+            </Card>
+          </motion.div>
         </Col>
 
         <Col xs={24} lg={12}>
-          <Card
-            title={
-              <Space>
-                <ScheduleOutlined />
-                <span>Upcoming Events</span>
-              </Space>
-            }
-            hoverable
-            extra={
-              <Button
-                type='primary'
-                size='small'
-                onClick={() => setEventModalOpen(true)}
-              >
-                Add Event
-              </Button>
-            }
-            style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              delay: 0.1,
+              ease: 'easeOut'
+            }}
+            whileHover={{
+              y: -3,
+              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+              transition: { duration: 0.2 }
+            }}
           >
-            <Timeline mode='left'>
-              {events.map((event, index) => (
-                <Timeline.Item key={index} dot={getEventIcon(event.type)}>
-                  <Text strong>
-                    {event.date} - {event.title}
-                  </Text>
-                  <br />
-                  <Space wrap>
-                    <Text type='secondary'>
-                      Time: {dayjs(event.time).format('HH:mm')}
-                    </Text>
-                    <Tag color='blue'>{event.format}</Tag>
-                    <Tag color='green'>{event.type}</Tag>
-                  </Space>
-                  {event.participants?.length > 0 && (
-                    <>
-                      <br />
-                      <Text type='secondary'>
-                        Participants: {event.participants.length}
-                      </Text>
-                    </>
-                  )}
-                </Timeline.Item>
-              ))}
-            </Timeline>
-            <Button
-              type='link'
-              style={{ padding: 0 }}
-              onClick={() => setCalendarModalOpen(true)}
+            <Card
+              title={
+                <Space>
+                  <ScheduleOutlined />
+                  <span>Upcoming Events</span>
+                </Space>
+              }
+              hoverable
+              extra={
+                <Button
+                  type='primary'
+                  size='small'
+                  onClick={() => setEventModalOpen(true)}
+                >
+                  Add Event
+                </Button>
+              }
+              style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
             >
-              View Full Calendar
-            </Button>
-          </Card>
+              <Timeline mode='left'>
+                {events.map((event, index) => (
+                  <Timeline.Item key={index} dot={getEventIcon(event.type)}>
+                    <Text strong>
+                      {event.date} - {event.title}
+                    </Text>
+                    <br />
+                    <Space wrap>
+                      <Text type='secondary'>
+                        Time: {dayjs(event.time).format('HH:mm')}
+                      </Text>
+                      <Tag color='blue'>{event.format}</Tag>
+                      <Tag color='green'>{event.type}</Tag>
+                    </Space>
+                    {event.participants?.length > 0 && (
+                      <>
+                        <br />
+                        <Text type='secondary'>
+                          Participants: {event.participants.length}
+                        </Text>
+                      </>
+                    )}
+                  </Timeline.Item>
+                ))}
+              </Timeline>
+              <Button
+                type='link'
+                style={{ padding: 0 }}
+                onClick={() => setCalendarModalOpen(true)}
+              >
+                View Full Calendar
+              </Button>
+            </Card>
+          </motion.div>
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card
-            title='Tasks vs Interventions Breakdown'
-            style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
-            extra={
-              <>
-                <Button
-                  type='primary'
-                  size='small'
-                  onClick={() => navigate('/operations/tasks')}
-                  style={{ margin: 10 }}
-                >
-                  View All Tasks
-                </Button>
-                <Button
-                  type='primary'
-                  size='small'
-                  onClick={() => navigate('/interventions')}
-                  style={{ margin: 10 }}
-                >
-                  View All Interventions
-                </Button>
-              </>
-            }
-            hoverable
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              delay: 0.1,
+              ease: 'easeOut'
+            }}
+            whileHover={{
+              y: -3,
+              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+              transition: { duration: 0.2 }
+            }}
           >
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={tasksVsInterventionsChart}
-            />
-          </Card>
+            <Card
+              title='Tasks vs Interventions Breakdown'
+              style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
+              extra={
+                <>
+                  <Button
+                    type='primary'
+                    size='small'
+                    onClick={() => navigate('/operations/tasks')}
+                    style={{ margin: 10 }}
+                  >
+                    View All Tasks
+                  </Button>
+                  <Button
+                    type='primary'
+                    size='small'
+                    onClick={() => navigate('/interventions')}
+                    style={{ margin: 10 }}
+                  >
+                    View All Interventions
+                  </Button>
+                </>
+              }
+              hoverable
+            >
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={tasksVsInterventionsChart}
+              />
+            </Card>
+          </motion.div>
         </Col>
 
         <Col xs={24} lg={12}>
-          <Card
-            title='Compliance Status Breakdown'
-            style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
-            extra={
-              <Button
-                type='primary'
-                size='small'
-                onClick={() => navigate('/operations/compliance')}
-                style={{ margin: 10 }}
-              >
-                View All
-              </Button>
-            }
-            hoverable
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.4,
+              delay: 0.1,
+              ease: 'easeOut'
+            }}
+            whileHover={{
+              y: -3,
+              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+              transition: { duration: 0.2 }
+            }}
           >
-            <HighchartsReact
-              highcharts={Highcharts}
-              options={complianceChartOptions}
-            />
-          </Card>
+            <Card
+              title='Compliance Status Breakdown'
+              style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
+              extra={
+                <Button
+                  type='primary'
+                  size='small'
+                  onClick={() => navigate('/operations/compliance')}
+                  style={{ margin: 10 }}
+                >
+                  View All
+                </Button>
+              }
+              hoverable
+            >
+              <HighchartsReact
+                highcharts={Highcharts}
+                options={complianceChartOptions}
+              />
+            </Card>
+          </motion.div>
         </Col>
       </Row>
       <EventModal
