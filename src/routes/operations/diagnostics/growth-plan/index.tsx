@@ -159,6 +159,7 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
         setInterventions(prev => prev.filter(i => i.id !== record.id))
         message.success('AI Intervention removed.')
       }
+      await fetchData() // Refresh UI + availableInterventions
     } catch (err) {
       console.error('Error deleting intervention:', err)
       message.error('Could not delete intervention.')
@@ -196,12 +197,16 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
 
       setInterventions(prev => [
         ...prev,
-        ...additions.map(i => ({
-          ...i,
-          source: 'SME',
+        ...selected.map(i => ({
+          id: i.id,
+          interventionTitle: i.interventionTitle,
+          areaOfSupport: i.areaOfSupport,
+          source: 'System', // ✅ correct
           confirmedAt: null
         }))
       ])
+
+      await fetchData()
 
       message.success(`${additions.length} interventions added.`)
       setIsModalOpen(false)
@@ -212,123 +217,121 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
       message.error('Error adding interventions.')
     }
   }
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const appSnap = await getDocs(
-          query(
-            collection(db, 'applications'),
-            where('email', '==', participant.email),
-            where('applicationStatus', 'in', ['accepted', 'Accepted'])
-          )
+  const fetchData = async () => {
+    try {
+      const appSnap = await getDocs(
+        query(
+          collection(db, 'applications'),
+          where('email', '==', participant.email),
+          where('applicationStatus', 'in', ['accepted', 'Accepted'])
         )
-        if (appSnap.empty) return
+      )
+      if (appSnap.empty) return
 
-        const appDoc = appSnap.docs[0]
-        const app = appDoc.data()
-        const appRef = appDoc.ref
+      const appDoc = appSnap.docs[0]
+      const app = appDoc.data()
+      const appRef = appDoc.ref
 
-        const confirmedAt = app?.confirmedAt || null
-        const digitalSignature = app?.digitalSignature || null
+      const confirmedAt = app?.confirmedAt || null
+      const digitalSignature = app?.digitalSignature || null
 
-        // Store these for use
-        setApplicationData({
-          ...app,
-          confirmedAt,
-          digitalSignature
-        })
+      // Store these for use
+      setApplicationData({
+        ...app,
+        confirmedAt,
+        digitalSignature
+      })
 
-        const allRequired: any[] = []
-        const normalizedRequired: any[] = []
+      const allRequired: any[] = []
+      const normalizedRequired: any[] = []
 
-        for (const entry of app?.interventions?.required || []) {
-          if (typeof entry === 'string') {
-            // If entry is just an ID string, fetch full doc
-            const intvSnap = await getDoc(doc(db, 'interventions', entry))
-            if (intvSnap.exists()) {
-              const intvData = intvSnap.data()
-              const norm = {
-                id: entry,
-                title: intvData.interventionTitle || '',
-                area: intvData.areaOfSupport || ''
-              }
-              allRequired.push({
-                id: entry,
-                interventionTitle: norm.title,
-                areaOfSupport: norm.area,
-                source: 'SME',
-                confirmedAt: null
-              })
-              normalizedRequired.push(norm)
+      for (const entry of app?.interventions?.required || []) {
+        if (typeof entry === 'string') {
+          // If entry is just an ID string, fetch full doc
+          const intvSnap = await getDoc(doc(db, 'interventions', entry))
+          if (intvSnap.exists()) {
+            const intvData = intvSnap.data()
+            const norm = {
+              id: entry,
+              title: intvData.interventionTitle || '',
+              area: intvData.areaOfSupport || ''
             }
-          } else {
             allRequired.push({
-              id: entry.id,
-              interventionTitle: entry.title || '',
-              areaOfSupport: entry.area || '',
+              id: entry,
+              interventionTitle: norm.title,
+              areaOfSupport: norm.area,
               source: 'SME',
               confirmedAt: null
             })
-            normalizedRequired.push(entry)
+            normalizedRequired.push(norm)
           }
-        }
-
-        // Patch Firestore if needed
-        if (normalizedRequired.length > 0) {
-          await updateDoc(appRef, {
-            'interventions.required': normalizedRequired
+        } else {
+          allRequired.push({
+            id: entry.id,
+            interventionTitle: entry.title || '',
+            areaOfSupport: entry.area || '',
+            source: 'SME',
+            confirmedAt: null
           })
+          normalizedRequired.push(entry)
         }
-
-        let aiRecommended: any[] = []
-        if (
-          typeof app?.aiEvaluation?.['Recommended Interventions'] === 'object'
-        ) {
-          const recs = app.aiEvaluation['Recommended Interventions']
-          aiRecommended = Object.entries(recs).flatMap(([area, items]) =>
-            items.map((title: string, i: number) => ({
-              id: `ai-${area}-${i}`,
-              interventionTitle: title,
-              areaOfSupport: area,
-              source: 'AI',
-              confirmedAt: null
-            }))
-          )
-        }
-
-        setInterventions([...allRequired, ...aiRecommended])
-
-        // Fetch all available interventions
-        const intvSnap = await getDocs(
-          query(
-            collection(db, 'interventions'),
-            where('companyCode', '==', app?.companyCode || 'RCM')
-          )
-        )
-        const allInterventions = intvSnap.docs.map(d => ({
-          id: d.id,
-          ...d.data()
-        }))
-
-        const requiredIds = new Set(allRequired.map(i => i.id))
-        const aiTitles = new Set(aiRecommended.map(i => i.interventionTitle))
-
-        // ❌ Exclude required + AI
-        const available = allInterventions.filter(
-          (intv: any) =>
-            !requiredIds.has(intv.id) && !aiTitles.has(intv.interventionTitle)
-        )
-
-        setAvailableInterventions(available)
-      } catch (err) {
-        console.error('Error fetching growth plan data', err)
-        message.error('Failed to fetch participant data.')
-      } finally {
-        setLoading(false)
       }
-    }
 
+      // Patch Firestore if needed
+      if (normalizedRequired.length > 0) {
+        await updateDoc(appRef, {
+          'interventions.required': normalizedRequired
+        })
+      }
+
+      let aiRecommended: any[] = []
+      if (
+        typeof app?.aiEvaluation?.['Recommended Interventions'] === 'object'
+      ) {
+        const recs = app.aiEvaluation['Recommended Interventions']
+        aiRecommended = Object.entries(recs).flatMap(([area, items]) =>
+          items.map((title: string, i: number) => ({
+            id: `ai-${area}-${i}`,
+            interventionTitle: title,
+            areaOfSupport: area,
+            source: 'AI',
+            confirmedAt: null
+          }))
+        )
+      }
+
+      setInterventions([...allRequired, ...aiRecommended])
+
+      // Fetch all available interventions
+      const intvSnap = await getDocs(
+        query(
+          collection(db, 'interventions'),
+          where('companyCode', '==', app?.companyCode || 'RCM')
+        )
+      )
+      const allInterventions = intvSnap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }))
+
+      const requiredIds = new Set(allRequired.map(i => i.id))
+      const aiTitles = new Set(aiRecommended.map(i => i.interventionTitle))
+
+      // ❌ Exclude required + AI
+      const available = allInterventions.filter(
+        (intv: any) =>
+          !requiredIds.has(intv.id) && !aiTitles.has(intv.interventionTitle)
+      )
+
+      setAvailableInterventions(available)
+    } catch (err) {
+      console.error('Error fetching growth plan data', err)
+      message.error('Failed to fetch participant data.')
+    } finally {
+      setLoading(false)
+    }
+  }
+  useEffect(() => {
     fetchData()
   }, [participant])
 
