@@ -157,6 +157,7 @@ export const OperationsDashboard: React.FC = () => {
 
   //   Fetch Assigned Interventions
   const fetchAssignments = async () => {
+    if (!user?.companyCode) return
     try {
       const q = query(
         collection(db, 'assignedInterventions'),
