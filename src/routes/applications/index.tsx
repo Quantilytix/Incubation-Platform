@@ -186,17 +186,33 @@ const ApplicationsDashboard = () => {
             ...doc.data()
           }))
 
-          // Prepare the required array with just the IDs (or full objects, your call)
-          const requiredInterventionIds = compulsoryInterventions.map(i => i.id)
-
           // Use this:
           const applicantSnap = await getDoc(ref)
           const applicantData = applicantSnap.data()
           const existingRequired = applicantData?.interventions?.required || []
 
-          const updatedRequired = Array.from(
-            new Set([...existingRequired, ...requiredInterventionIds])
+          // Ensure required is always an array of objects with { id, title, area }
+          const newCompulsory = compulsoryInterventions.map(i => ({
+            id: i.id,
+            title: i.title,
+            area: i.area
+          }))
+
+          // Filter out already existing intervention IDs (works even if some are strings)
+          const existingIds = new Set(
+            existingRequired.map(item =>
+              typeof item === 'string' ? item : item.id
+            )
           )
+
+          // Only add new ones
+          const updatedRequired = [
+            ...existingRequired.filter(item => {
+              const id = typeof item === 'string' ? item : item.id
+              return existingIds.has(id)
+            }),
+            ...newCompulsory.filter(i => !existingIds.has(i.id))
+          ]
 
           await updateDoc(ref, {
             'interventions.required': updatedRequired
