@@ -33,7 +33,15 @@ import {
   FileOutlined
 } from '@ant-design/icons'
 import { db, auth } from '@/firebase'
-import { collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore'
+import {
+  collection,
+  getDocs,
+  doc,
+  getDoc,
+  updateDoc,
+  query,
+  where
+} from 'firebase/firestore'
 import { motion } from 'framer-motion'
 
 const { TabPane } = Tabs
@@ -156,12 +164,49 @@ const ApplicationsDashboard = () => {
     try {
       const ref = doc(db, 'applications', docId)
       await updateDoc(ref, { applicationStatus: newStatus })
-      message.success('Status updated successfully')
 
-      // Fetch fresh data
+      // If status is accepted, assign compulsory interventions
+      if (newStatus === 'accepted') {
+        const applicationDoc = await getDoc(ref)
+        const applicationData = applicationDoc.data()
+        const companyCode = applicationData?.companyCode
+
+        if (companyCode) {
+          // Fetch compulsory interventions for this company
+          const interventionSnap = await getDocs(
+            query(
+              collection(db, 'interventions'),
+              where('companyCode', '==', companyCode),
+              where('isCompulsory', '==', 'yes') // or `true` if using booleans
+            )
+          )
+
+          const compulsoryInterventions = interventionSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }))
+
+          // Prepare the required array with just the IDs (or full objects, your call)
+          const requiredInterventionIds = compulsoryInterventions.map(i => i.id)
+
+          // Use this:
+          const applicantSnap = await getDoc(ref)
+          const applicantData = applicantSnap.data()
+          const existingRequired = applicantData?.interventions?.required || []
+
+          const updatedRequired = Array.from(
+            new Set([...existingRequired, ...requiredInterventionIds])
+          )
+
+          await updateDoc(ref, {
+            'interventions.required': updatedRequired
+          })
+        }
+      }
+
+      message.success('Status updated successfully')
       await fetchApplications()
 
-      // Update selected application with the new data
       const updatedApp = applications.find(app => app.id === docId)
       if (updatedApp) {
         setSelectedApplication(updatedApp)

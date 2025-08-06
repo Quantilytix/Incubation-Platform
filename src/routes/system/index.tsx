@@ -31,15 +31,14 @@ import {
 import { db } from '@/firebase'
 import dayjs from 'dayjs'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
+import { motion } from 'framer-motion'
 
 const { Option } = Select
 
 const SystemSetupForm: React.FC = () => {
-  const [setupType, setSetupType] = useState<
-    'intervention' | 'expense' | 'department'
-  >('intervention')
-  const [departments, setDepartments] = useState<any[]>([])
-
+  const [setupType, setSetupType] = useState<'intervention' | 'expense'>(
+    'intervention'
+  )
   const [interventions, setInterventions] = useState<any[]>([])
   const [expenses, setExpenses] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
@@ -52,38 +51,36 @@ const SystemSetupForm: React.FC = () => {
   useEffect(() => {
     if (!identityLoading && user?.companyCode) {
       setCompanyCode(user.companyCode)
-      console.info('ompany Co: ', user.companyCode)
-      fetchAll(user.companyCode) // Pass code to fetch
+      fetchAll(user.companyCode)
     }
   }, [identityLoading, user?.companyCode])
 
-  useEffect(() => {
-    fetchAll()
-  }, [])
+  const fetchAll = async (code?: string) => {
+    const resolvedCode = code || companyCode
 
-  const fetchAll = async (code = companyCode) => {
+    if (!resolvedCode) {
+      console.warn('Company code not available for fetching data.')
+      return
+    }
+
     setLoading(true)
     try {
-      const [intSnap, expSnap, deptSnap] = await Promise.all([
+      const [intSnap, expSnap] = await Promise.all([
         getDocs(
           query(
             collection(db, 'interventions'),
-            where('companyCode', '==', code)
+            where('companyCode', '==', resolvedCode)
           )
         ),
         getDocs(
           query(
             collection(db, 'expenseTypes'),
-            where('companyCode', '==', code)
+            where('companyCode', '==', resolvedCode)
           )
-        ),
-        getDocs(
-          query(collection(db, 'departments'), where('companyCode', '==', code))
         )
       ])
       setInterventions(intSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setDepartments(deptSnap.docs.map(d => ({ id: d.id, ...d.data() })))
     } catch (error) {
       console.error(error)
       message.error('Error fetching data')
@@ -115,36 +112,16 @@ const SystemSetupForm: React.FC = () => {
             key: 'interventionTitle'
           },
           {
-            title: 'Department',
-            dataIndex: 'departmentName',
-            key: 'departmentName'
-          }, // Show dept
-          {
-            title: 'Created',
-            dataIndex: 'createdAt',
-            key: 'createdAt',
-            render: ts => dayjs(ts).format('YYYY-MM-DD')
+            title: 'Compulsory',
+            dataIndex: 'isCompulsory',
+            key: 'isCompulsory',
+            render: value => (value === 'yes' ? '✅' : '❌')
           },
           {
-            title: 'Actions',
-            key: 'actions',
-            render: (_, record) => (
-              <Button
-                icon={<EditOutlined />}
-                onClick={() => openEdit(record)}
-              />
-            )
-          }
-        ]
-      : setupType === 'department'
-      ? [
-          { title: 'Department Name', dataIndex: 'name', key: 'name' },
-          {
-            title: 'Main?',
-            dataIndex: 'isMain',
-            key: 'isMain',
-            render: val =>
-              val ? <span style={{ color: 'green' }}>Main</span> : '—'
+            title: 'Recurring',
+            dataIndex: 'isRecurring',
+            key: 'isRecurring',
+            render: value => (value === 'yes' ? '♻️' : '—')
           },
           {
             title: 'Created',
@@ -184,12 +161,7 @@ const SystemSetupForm: React.FC = () => {
           }
         ]
 
-  const dataSource =
-    setupType === 'intervention'
-      ? interventions
-      : setupType === 'department'
-      ? departments
-      : expenses
+  const dataSource = setupType === 'intervention' ? interventions : expenses
 
   const openEdit = (record: any) => {
     setEditingRecord(record)
@@ -212,19 +184,11 @@ const SystemSetupForm: React.FC = () => {
         companyCode,
         createdAt: new Date().toISOString()
       }
-      if (setupType === 'intervention' && values.departmentId) {
-        const dep = departments.find(d => d.id === values.departmentId)
-        baseValues.departmentName = dep?.name || ''
-      }
 
       if (editingRecord) {
         const ref = doc(
           db,
-          setupType === 'intervention'
-            ? 'interventions'
-            : setupType === 'expense'
-            ? 'expenseTypes'
-            : 'departments',
+          setupType === 'intervention' ? 'interventions' : 'expenseTypes',
           editingRecord.id
         )
         await updateDoc(ref, baseValues)
@@ -233,11 +197,7 @@ const SystemSetupForm: React.FC = () => {
         await addDoc(
           collection(
             db,
-            setupType === 'intervention'
-              ? 'interventions'
-              : setupType === 'expense'
-              ? 'expenseTypes'
-              : 'departments'
+            setupType === 'intervention' ? 'interventions' : 'expenseTypes'
           ),
           baseValues
         )
@@ -257,42 +217,95 @@ const SystemSetupForm: React.FC = () => {
     <div style={{ padding: 24, minHeight: '100vh' }}>
       <Row gutter={16} style={{ marginBottom: 24 }}>
         {metrics.map(m => (
-          <Col span={6} key={m.title}>
-            <Card>
-              <Statistic title={m.title} value={m.value} prefix={m.icon} />
-            </Card>
+          <Col span={12} key={m.title}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.4,
+                delay: 0.1,
+                ease: 'easeOut'
+              }}
+              whileHover={{
+                y: -3,
+                boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+                transition: { duration: 0.2 },
+                borderRadius: 8,
+                background: 'transparent'
+              }}
+            >
+              {' '}
+              <Card
+                hoverable
+                style={{
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                  transition: 'all 0.3s ease',
+                  borderRadius: 8,
+                  border: '1px solid #d6e4ff'
+                }}
+              >
+                <Statistic title={m.title} value={m.value} prefix={m.icon} />
+              </Card>
+            </motion.div>
           </Col>
         ))}
       </Row>
-      <Card
-        title={
-          <Row justify='space-between'>
-            <Col>
-              <Select
-                value={setupType}
-                onChange={setSetupType}
-                style={{ width: 200 }}
-              >
-                <Option value='intervention'>Interventions</Option>
-                <Option value='expense'>Expense Types</Option>
-                <Option value='department'>Departments</Option>
-              </Select>
-            </Col>
-            <Col>
-              <Button type='primary' icon={<PlusOutlined />} onClick={openAdd}>
-                Add New Setup
-              </Button>
-            </Col>
-          </Row>
-        }
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          duration: 0.4,
+          delay: 0.1,
+          ease: 'easeOut'
+        }}
+        whileHover={{
+          y: -3,
+          boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
+          transition: { duration: 0.2 },
+          borderRadius: 8,
+          background: 'transparent'
+        }}
       >
-        <Table
-          columns={columns}
-          dataSource={dataSource}
-          rowKey='id'
-          loading={loading}
-        />
-      </Card>
+        <Card
+          title={
+            <Row justify='space-between'>
+              <Col>
+                <Select
+                  value={setupType}
+                  onChange={setSetupType}
+                  style={{ width: 200 }}
+                >
+                  <Option value='intervention'>Interventions</Option>
+                  <Option value='expense'>Expense Types</Option>
+                </Select>
+              </Col>
+              <Col>
+                <Button
+                  type='primary'
+                  icon={<PlusOutlined />}
+                  onClick={openAdd}
+                >
+                  Add New Setup
+                </Button>
+              </Col>
+            </Row>
+          }
+          hoverable
+          style={{
+            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+            transition: 'all 0.3s ease',
+            borderRadius: 8,
+            border: '1px solid #d6e4ff'
+          }}
+        >
+          <Table
+            columns={columns}
+            dataSource={dataSource}
+            rowKey='id'
+            loading={loading}
+          />
+        </Card>
+      </motion.div>
       <Modal
         visible={modalVisible}
         title={
@@ -325,36 +338,24 @@ const SystemSetupForm: React.FC = () => {
                 <Input placeholder='e.g. Website Development' />
               </Form.Item>
               <Form.Item
-                name='departmentId'
-                label='Department'
+                name='isCompulsory'
+                label='Is this intervention compulsory?'
                 rules={[{ required: true }]}
               >
-                <Select placeholder='Select Department'>
-                  {departments.map(dep => (
-                    <Option key={dep.id} value={dep.id}>
-                      {dep.name}
-                    </Option>
-                  ))}
+                <Select placeholder='Select an option'>
+                  <Option value='yes'>Yes</Option>
+                  <Option value='no'>No</Option>
                 </Select>
               </Form.Item>
-            </>
-          ) : setupType === 'department' ? (
-            <>
+
               <Form.Item
-                name='name'
-                label='Department Name'
+                name='isRecurring'
+                label='Is this intervention recurring?'
                 rules={[{ required: true }]}
               >
-                <Input placeholder='e.g. Finance, Operations' />
-              </Form.Item>
-              <Form.Item
-                name='isMain'
-                label='Main Department'
-                valuePropName='checked'
-              >
-                <Select>
-                  <Option value={true}>Yes (Access all)</Option>
-                  <Option value={false}>No</Option>
+                <Select placeholder='Select an option'>
+                  <Option value='yes'>Yes</Option>
+                  <Option value='no'>No</Option>
                 </Select>
               </Form.Item>
             </>
