@@ -116,8 +116,14 @@ export const OperationsDashboard: React.FC = () => {
 
   useEffect(() => {
     const fetchNotifications = async () => {
+      if (!user?.companyCode) return
       try {
-        const snapshot = await getDocs(collection(db, 'notifications'))
+        const snapshot = await getDocs(
+          query(
+            collection(db, 'notifications'),
+            where('companyCode', '==', user?.companyCode)
+          )
+        )
         const all = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
