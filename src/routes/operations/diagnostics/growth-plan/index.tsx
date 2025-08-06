@@ -223,26 +223,63 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
             where('applicationStatus', 'in', ['accepted', 'Accepted'])
           )
         )
-        const app = appSnap.empty ? null : appSnap.docs[0].data()
+        if (appSnap.empty) return
+
+        const appDoc = appSnap.docs[0]
+        const app = appDoc.data()
+        const appRef = appDoc.ref
+
         const confirmedAt = app?.confirmedAt || null
         const digitalSignature = app?.digitalSignature || null
 
-        // Store these as part of applicationData for reuse
-
+        // Store these for use
         setApplicationData({
           ...app,
           confirmedAt,
           digitalSignature
         })
 
-        const manual =
-          app?.interventions?.required?.map((intv: any) => ({
-            id: intv.id,
-            interventionTitle: intv.title || '',
-            areaOfSupport: intv.area || '',
-            source: 'SME',
-            confirmedAt: null
-          })) || []
+        const allRequired: any[] = []
+        const normalizedRequired: any[] = []
+
+        for (const entry of app?.interventions?.required || []) {
+          if (typeof entry === 'string') {
+            // If entry is just an ID string, fetch full doc
+            const intvSnap = await getDoc(doc(db, 'interventions', entry))
+            if (intvSnap.exists()) {
+              const intvData = intvSnap.data()
+              const norm = {
+                id: entry,
+                title: intvData.interventionTitle || '',
+                area: intvData.areaOfSupport || ''
+              }
+              allRequired.push({
+                id: entry,
+                interventionTitle: norm.title,
+                areaOfSupport: norm.area,
+                source: 'SME',
+                confirmedAt: null
+              })
+              normalizedRequired.push(norm)
+            }
+          } else {
+            allRequired.push({
+              id: entry.id,
+              interventionTitle: entry.title || '',
+              areaOfSupport: entry.area || '',
+              source: 'SME',
+              confirmedAt: null
+            })
+            normalizedRequired.push(entry)
+          }
+        }
+
+        // Patch Firestore if needed
+        if (normalizedRequired.length > 0) {
+          await updateDoc(appRef, {
+            'interventions.required': normalizedRequired
+          })
+        }
 
         let aiRecommended: any[] = []
         if (
@@ -260,8 +297,9 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
           )
         }
 
-        setInterventions([...manual, ...aiRecommended])
+        setInterventions([...allRequired, ...aiRecommended])
 
+        // Fetch all available interventions
         const intvSnap = await getDocs(
           query(
             collection(db, 'interventions'),
@@ -273,12 +311,10 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
           ...d.data()
         }))
 
-        const requiredIds = new Set((manual || []).map((i: any) => i.id))
-        const aiTitles = new Set(
-          aiRecommended.map((i: any) => i.interventionTitle)
-        )
+        const requiredIds = new Set(allRequired.map(i => i.id))
+        const aiTitles = new Set(aiRecommended.map(i => i.interventionTitle))
 
-        // ❌ Exclude interventions already in required or AI recommended
+        // ❌ Exclude required + AI
         const available = allInterventions.filter(
           (intv: any) =>
             !requiredIds.has(intv.id) && !aiTitles.has(intv.interventionTitle)
