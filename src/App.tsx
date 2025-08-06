@@ -84,9 +84,9 @@ import { ImpactReports } from './routes/government/reports'
 // 🔹 Incubatee Routes
 // ───────────────────────────────────────────────────────────
 import { IncubateeDashboard } from '@/routes/incubatee'
-import { MonthlyPerformanceForm } from '@/routes/incubatee/projects/projectSubmission'
 import { DocumentHub } from './routes/incubatee/documents/DocumentsHub'
 import InterventionsTrackingView from './routes/incubatee/interventions'
+import { MonthlyPerformanceForm } from './routes/incubatee/metrics'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Consultant Routes
@@ -135,6 +135,8 @@ import GrowthPlanPage from './routes/incubatee/diagnostic'
 import { TasksEventsPage } from './routes/tasksEvents'
 import AppointmentsManager from './routes/consultants/appointments'
 import AllocatedHistory from './routes/consultants/allocated/history'
+import { TasksManager } from './routes/operations/tasks'
+import DiagnosticsDashboard from './routes/operations/diagnostics'
 
 const queryClient = new QueryClient()
 
@@ -218,7 +220,7 @@ const App = () => {
                           element={<GrowthPlanPage />}
                         />
                         <Route
-                          path='projects'
+                          path='metrics'
                           element={<MonthlyPerformanceForm />}
                         />
                         <Route
@@ -290,13 +292,14 @@ const App = () => {
                       {/* Operations Routes */}
                       <Route path='operations'>
                         <Route index element={<OperationsDashboard />} />
-                        <Route
-                          path='forms'
-                          element={<OperationsFormsManagement />}
-                        />
+                        <Route path='tasks' element={<TasksManager />} />
                         <Route
                           path='assignments'
                           element={<ConsultantAssignments />}
+                        />
+                        <Route
+                          path='diagnostics'
+                          element={<DiagnosticsDashboard />}
                         />
                         <Route
                           path='participants'
