@@ -147,7 +147,7 @@ export const OperationsDashboard: React.FC = () => {
       try {
         const q = query(
           collection(db, 'appointments'),
-          where('companyCode', '==', user.companyCode)
+          where('companyCode', '==', user?.companyCode)
         )
         const snapshot = await getDocs(q)
         const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
@@ -258,7 +258,7 @@ export const OperationsDashboard: React.FC = () => {
       try {
         const q = query(
           collection(db, 'complianceDocuments'),
-          where('companyCode', '==', user.companyCode)
+          where('companyCode', '==', user?.companyCode)
         )
         const snapshot = await getDocs(q)
 
