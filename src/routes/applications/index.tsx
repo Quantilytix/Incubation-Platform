@@ -163,61 +163,93 @@ const ApplicationsDashboard = () => {
   const updateStatus = async (newStatus: string, docId: string) => {
     try {
       const ref = doc(db, 'applications', docId)
+
+      // Step 1: Update status immediately
       await updateDoc(ref, { applicationStatus: newStatus })
 
-      // If status is accepted, assign compulsory interventions
+      // Step 2: If accepted, assign compulsory interventions
       if (newStatus === 'accepted') {
-        const applicationDoc = await getDoc(ref)
-        const applicationData = applicationDoc.data()
+        const applicationSnap = await getDoc(ref)
+        const applicationData = applicationSnap.data()
         const companyCode = applicationData?.companyCode
 
-        if (companyCode) {
-          // Fetch compulsory interventions for this company
-          const interventionSnap = await getDocs(
-            query(
-              collection(db, 'interventions'),
-              where('companyCode', '==', companyCode),
-              where('isCompulsory', '==', 'yes') // or `true` if using booleans
-            )
-          )
-
-          const compulsoryInterventions = interventionSnap.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }))
-
-          // Use this:
-          const applicantSnap = await getDoc(ref)
-          const applicantData = applicantSnap.data()
-          const existingRequired = applicantData?.interventions?.required || []
-
-          // Ensure required is always an array of objects with { id, title, area }
-          const newCompulsory = compulsoryInterventions.map(i => ({
-            id: i.id,
-            title: i.title,
-            area: i.area
-          }))
-
-          // Filter out already existing intervention IDs (works even if some are strings)
-          const existingIds = new Set(
-            existingRequired.map(item =>
-              typeof item === 'string' ? item : item.id
-            )
-          )
-
-          // Only add new ones
-          const updatedRequired = [
-            ...existingRequired.filter(item => {
-              const id = typeof item === 'string' ? item : item.id
-              return existingIds.has(id)
-            }),
-            ...newCompulsory.filter(i => !existingIds.has(i.id))
-          ]
-
-          await updateDoc(ref, {
-            'interventions.required': updatedRequired
-          })
+        if (!companyCode) {
+          console.warn('❗ companyCode missing on application, cannot proceed.')
+          return
         }
+
+        // Fetch compulsory interventions
+        const interventionSnap = await getDocs(
+          query(
+            collection(db, 'interventions'),
+            where('companyCode', '==', companyCode),
+            where('isCompulsory', '==', 'yes') // or `true` if stored as boolean
+          )
+        )
+
+        const compulsoryInterventions = interventionSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+
+        console.log(
+          '%c🔥 [Compulsory Interventions]',
+          'color:orange',
+          compulsoryInterventions
+        )
+
+        const newCompulsory = compulsoryInterventions
+          .filter(i => i.id && i.interventionTitle && i.areaOfSupport)
+          .map(i => ({
+            id: i.id,
+            title: i.interventionTitle,
+            area: i.areaOfSupport
+          }))
+
+        const existingRequired = applicationData?.interventions?.required || []
+        console.log(
+          '%c🧾 [Existing Required Interventions]',
+          'color:teal',
+          existingRequired
+        )
+
+        const existingIds = new Set(
+          existingRequired.map(item =>
+            typeof item === 'string' ? item : item.id
+          )
+        )
+
+        const filteredNew = newCompulsory.filter(i => {
+          const isNew = !existingIds.has(i.id)
+          if (!isNew) {
+            console.log(`⚠️ Skipping duplicate: ${i.title} (${i.id})`)
+          }
+          return isNew
+        })
+
+        console.log('%c➕ [Interventions Added]', 'color:blue', filteredNew)
+
+        const finalRequired = [...existingRequired, ...filteredNew]
+
+        const allValid = finalRequired.every(i => i?.id && i?.title && i?.area)
+        if (!allValid) {
+          throw new Error(
+            '❌ One or more interventions are missing required fields.'
+          )
+        }
+
+        console.log(
+          '%c✅ [Final Interventions to Save]',
+          'color:green',
+          finalRequired
+        )
+
+        await updateDoc(ref, {
+          interventions: {
+            ...(applicationData?.interventions || {}),
+            required: finalRequired
+          }
+        })
       }
 
       message.success('Status updated successfully')
@@ -228,7 +260,7 @@ const ApplicationsDashboard = () => {
         setSelectedApplication(updatedApp)
       }
     } catch (error) {
-      console.error('Error updating status:', error)
+      console.error('❌ Error updating status:', error)
       message.error('Failed to update status')
     }
   }
