@@ -66,8 +66,10 @@ const DiagnosticsDashboard = () => {
           id: doc.id,
           ...doc.data()
         }))
-        const participantsWithApplications = allParticipants.filter(
-          p => appMap[p.email]
+        const participantsWithApplications = Array.from(
+          new Map(
+            allParticipants.filter(p => appMap[p.email]).map(p => [p.email, p])
+          ).values()
         )
 
         setMetrics({
