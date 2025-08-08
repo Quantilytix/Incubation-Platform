@@ -99,7 +99,6 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
       await updateDoc(appRef, {
         'interventions.required': updatedRequired,
         'interventions.confirmedBy.operations': true,
-        growthPlanConfirmed: true,
         confirmedAt: new Date().toISOString(),
         'aiEvaluation.Recommended Interventions': {}
       })
@@ -116,7 +115,6 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
             operations: true
           }
         },
-        growthPlanConfirmed: true,
         confirmedAt: new Date(),
         aiEvaluation: {
           ...(prev.aiEvaluation || {}),
@@ -349,6 +347,7 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
           where('applicationStatus', 'in', ['accepted', 'Accepted'])
         )
       )
+
       if (appSnap.empty) return
 
       const appDoc = appSnap.docs[0]
@@ -364,6 +363,18 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
         confirmedAt,
         digitalSignature
       })
+
+      // 🔄 Also fetch user signature from `users` collection
+      const userSnap = await getDocs(
+        query(collection(db, 'users'), where('email', '==', participant.email))
+      )
+      if (!userSnap.empty) {
+        const userData = userSnap.docs[0].data()
+        setApplicationData(prev => ({
+          ...prev,
+          userSignatureURL: userData.signatureURL || null
+        }))
+      }
 
       const allRequired: any[] = []
       const normalizedRequired: any[] = []
@@ -569,26 +580,6 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
             key: 'actions',
             render: (_, record) => (
               <div style={{ display: 'flex', gap: 12 }}>
-                {record.source === 'AI' && !record.confirmed && (
-                  <div
-                    style={{
-                      transition: 'transform 0.2s',
-                      cursor: 'pointer'
-                    }}
-                    onMouseEnter={e =>
-                      (e.currentTarget.style.transform = 'scale(1.2)')
-                    }
-                    onMouseLeave={e =>
-                      (e.currentTarget.style.transform = 'scale(1)')
-                    }
-                    title='Confirm'
-                    onClick={() => handleConfirmIntervention(record)}
-                  >
-                    <CheckCircleOutlined
-                      style={{ color: 'green', fontSize: 18 }}
-                    />
-                  </div>
-                )}
                 <div
                   style={{
                     transition: 'transform 0.2s',
@@ -612,22 +603,38 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
         rowKey={record => record.id || record.interventionTitle}
         pagination={false}
       />
-      {applicationData.growthPlanConfirmed && (
+      {applicationData.interventions?.confirmedBy?.incubatee && (
         <>
+          {applicationData.digitalSignature && (
+            <>
+              <Divider>Participant Signature</Divider>
+              <Text strong>Cryptographic Signature:</Text>
+              <br />
+              <Text copyable>{applicationData.digitalSignature}</Text>
+              <br />
+              {applicationData.userSignatureURL && (
+                <>
+                  <Text strong>Digital Signature:</Text>
+                  <br />
+                  <img
+                    src={applicationData.userSignatureURL}
+                    alt='Participant Signature'
+                    style={{
+                      maxWidth: 200,
+                      border: '1px solid #ccc',
+                      marginTop: 8
+                    }}
+                  />
+                </>
+              )}
+            </>
+          )}
           <Divider>Confirmation Details</Divider>
           <Text strong>Confirmed At:</Text>{' '}
           {applicationData.confirmedAt?.toDate
             ? dayjs(applicationData.confirmedAt.toDate()).format('YYYY-MM-DD')
             : 'N/A'}
-          {applicationData.confirmedAt}
           <br />
-        </>
-      )}
-      {applicationData.digitalSignature && (
-        <>
-          <Text strong>Participant Signature:</Text>
-          <br />
-          {applicationData.digitalSignature}
         </>
       )}
       <Divider />
