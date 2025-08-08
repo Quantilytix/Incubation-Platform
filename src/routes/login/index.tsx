@@ -175,7 +175,7 @@ export const LoginPage: React.FC = () => {
             where('email', '==', user.email)
           )
         )
-        const apps = appsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        const apps = appsSnap.docs.map(doc => doc.data())
 
         if (apps.length === 0) {
           navigate('/incubatee/sme')
@@ -190,40 +190,12 @@ export const LoginPage: React.FC = () => {
           app => app.applicationStatus?.toLowerCase?.() === 'accepted'
         )
 
-        // 1️⃣ If accepted but GAP not completed, redirect to GAP form
-        if (accepted) {
-          if (accepted.gapAnalysisStatus !== 'Completed') {
-            const participantsSnap = await getDocs(
-              query(
-                collection(db, 'participants'),
-                where('email', '==', user.email)
-              )
-            )
-            const participantDoc = participantsSnap.docs[0]
-            const participant = participantDoc
-              ? { id: participantDoc.id, ...participantDoc.data() }
-              : null
-
-            navigate('/incubatee/gap-analysis', {
-              state: {
-                participantId: participant?.id,
-                prefillData: {
-                  companyName: participant?.beneficiaryName,
-                  region: participant?.province,
-                  contactDetails: participant?.phone,
-                  email: participant?.email,
-                  dateOfEngagement: accepted?.dateAccepted
-                }
-              }
-            })
-            return
-          } else {
-            navigate(`/${role}`)
-            return
-          }
-        }
         if (pending) {
           navigate('/incubatee/tracker')
+          return
+        }
+        if (accepted) {
+          navigate(`/${role}`)
           return
         }
         navigate('/incubatee/sme')
