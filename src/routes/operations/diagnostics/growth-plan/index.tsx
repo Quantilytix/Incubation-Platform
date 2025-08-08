@@ -70,6 +70,7 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
           growthPlanConfirmed: true,
           confirmedAt: new Date()
         }))
+        await fetchData()
       }
     } catch (error) {
       console.error('Failed to confirm growth plan:', error)
@@ -92,17 +93,19 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
       const appRef = appSnap.docs[0].ref
       const appData = appSnap.docs[0].data()
       const existingRequired = appData?.interventions?.required || []
+      const aiEvaluation = appData?.aiEvaluation || {}
 
       // Prevent duplicate adds
       const alreadyExists = existingRequired.some(
-        (i: any) => i.id === record.id
+        (i: any) => i.id === record.id || i.title === record.interventionTitle
       )
       if (alreadyExists) {
         message.info('Already confirmed.')
         return
       }
 
-      const updated = [
+      // 1. Add to required
+      const updatedRequired = [
         ...existingRequired,
         {
           id: record.id,
@@ -111,18 +114,36 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
         }
       ]
 
+      // 2. Remove from AI Recommendations
+      const recs = aiEvaluation['Recommended Interventions'] || {}
+      const area = record.areaOfSupport
+      if (recs[area]) {
+        const updatedAreaList = recs[area].filter(
+          (title: string) => title !== record.interventionTitle
+        )
+
+        if (updatedAreaList.length === 0) {
+          delete recs[area]
+        } else {
+          recs[area] = updatedAreaList
+        }
+      }
+
+      // 3. Update Firestore
       await updateDoc(appRef, {
-        'interventions.required': updated
+        'interventions.required': updatedRequired,
+        'aiEvaluation.Recommended Interventions': recs
       })
 
-      // Update UI to hide Confirm button
+      // 4. Update UI
       setInterventions(prev =>
         prev.map(item =>
           item.id === record.id ? { ...item, confirmed: true } : item
         )
       )
 
-      message.success('AI Intervention confirmed.')
+      message.success('AI Intervention confirmed and saved.')
+      await fetchData()
     } catch (err) {
       console.error('Error confirming AI intervention:', err)
       message.error('Could not confirm intervention.')
@@ -144,7 +165,9 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
       const appRef = appSnap.docs[0].ref
       const appData = appSnap.docs[0].data()
       const existingRequired = appData?.interventions?.required || []
+      const aiEvaluation = appData?.aiEvaluation || {}
 
+      // Handle SME intervention deletion
       if (record.source === 'SME') {
         const updatedRequired = existingRequired.filter(
           (i: any) => i.id !== record.id
@@ -152,14 +175,37 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
         await updateDoc(appRef, {
           'interventions.required': updatedRequired
         })
-        setInterventions(prev => prev.filter(i => i.id !== record.id))
         message.success('SME Intervention removed from required.')
-      } else if (record.source === 'AI') {
-        // Just remove from local AI list
-        setInterventions(prev => prev.filter(i => i.id !== record.id))
-        message.success('AI Intervention removed.')
       }
-      await fetchData() // Refresh UI + availableInterventions
+
+      // Handle AI intervention deletion (even unconfirmed ones)
+      if (record.source === 'AI') {
+        const recs = aiEvaluation['Recommended Interventions'] || {}
+        const area = record.areaOfSupport
+
+        if (recs[area]) {
+          const updatedAreaList = recs[area].filter(
+            (title: string) => title !== record.interventionTitle
+          )
+
+          // If the list is now empty, remove the key entirely
+          if (updatedAreaList.length === 0) {
+            delete recs[area]
+          } else {
+            recs[area] = updatedAreaList
+          }
+
+          await updateDoc(appRef, {
+            'aiEvaluation.Recommended Interventions': recs
+          })
+
+          message.success('AI Intervention removed from evaluation.')
+        }
+      }
+
+      // Always remove from UI
+      setInterventions(prev => prev.filter(i => i.id !== record.id))
+      await fetchData()
     } catch (err) {
       console.error('Error deleting intervention:', err)
       message.error('Could not delete intervention.')
