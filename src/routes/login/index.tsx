@@ -3,13 +3,23 @@ import {
   EyeTwoTone,
   GoogleOutlined
 } from '@ant-design/icons'
-import { Button, Form, Input, Typography, message, Spin } from 'antd'
+import {
+  Button,
+  Form,
+  Alert,
+  Input,
+  Typography,
+  message,
+  Spin,
+  Modal
+} from 'antd'
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  sendPasswordResetEmail
 } from 'firebase/auth'
 import {
   collection,
@@ -58,6 +68,8 @@ export const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
+  const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false)
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('')
 
   // Framer Motion Variants
   const blobVariants = {
@@ -99,6 +111,26 @@ export const LoginPage: React.FC = () => {
     'government'
   ]
 
+  //   Forgot Password Logic
+  const handleForgotPassword = async () => {
+    if (!forgotPasswordEmail) {
+      message.warning('Please enter your email.')
+      return
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, forgotPasswordEmail)
+      message.success(
+        `A password reset link has been sent to ${forgotPasswordEmail}. Please check your inbox.`
+      )
+      setForgotPasswordVisible(false)
+      setForgotPasswordEmail('')
+    } catch (error: any) {
+      console.error('Forgot password error:', error)
+      message.error(formatFirebaseError(error))
+    }
+  }
+
   async function checkUser (user) {
     const userRef = doc(db, 'users', user.uid)
     const userSnap = await getDoc(userRef)
@@ -120,6 +152,7 @@ export const LoginPage: React.FC = () => {
   const handleLogin = async values => {
     try {
       setLoading(true)
+
       const userCred = await signInWithEmailAndPassword(
         auth,
         values.email,
@@ -142,7 +175,7 @@ export const LoginPage: React.FC = () => {
             where('email', '==', user.email)
           )
         )
-        const apps = appsSnap.docs.map(doc => doc.data())
+        const apps = appsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
 
         if (apps.length === 0) {
           navigate('/incubatee/sme')
@@ -157,17 +190,46 @@ export const LoginPage: React.FC = () => {
           app => app.applicationStatus?.toLowerCase?.() === 'accepted'
         )
 
+        // 1️⃣ If accepted but GAP not completed, redirect to GAP form
+        if (accepted) {
+          if (accepted.gapAnalysisStatus !== 'Completed') {
+            const participantsSnap = await getDocs(
+              query(
+                collection(db, 'participants'),
+                where('email', '==', user.email)
+              )
+            )
+            const participantDoc = participantsSnap.docs[0]
+            const participant = participantDoc
+              ? { id: participantDoc.id, ...participantDoc.data() }
+              : null
+
+            navigate('/incubatee/gap-analysis', {
+              state: {
+                participantId: participant?.id,
+                prefillData: {
+                  companyName: participant?.beneficiaryName,
+                  region: participant?.province,
+                  contactDetails: participant?.phone,
+                  email: participant?.email,
+                  dateOfEngagement: accepted?.dateAccepted
+                }
+              }
+            })
+            return
+          } else {
+            navigate(`/${role}`)
+            return
+          }
+        }
         if (pending) {
           navigate('/incubatee/tracker')
-          return
-        }
-        if (accepted) {
-          navigate(`/${role}`)
           return
         }
         navigate('/incubatee/sme')
         return
       }
+
       if (role === 'director' && !firstLoginComplete) {
         navigate('/director/onboarding')
       } else {
@@ -423,6 +485,19 @@ export const LoginPage: React.FC = () => {
                     }
                   />
                 </Form.Item>
+                <div
+                  style={{
+                    textAlign: 'right',
+                    marginBottom: 10,
+                    fontSize: 13,
+                    color: '#1890ff',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setForgotPasswordVisible(true)}
+                >
+                  Forgot Password?
+                </div>
+
                 <Form.Item style={{ marginBottom: 7 }}>
                   <Button
                     type='primary'
@@ -466,6 +541,40 @@ export const LoginPage: React.FC = () => {
             </div>
           </div>
         </motion.div>
+        <Modal
+          title='Reset Your Password'
+          open={forgotPasswordVisible}
+          onCancel={() => setForgotPasswordVisible(false)}
+          footer={null}
+        >
+          <Alert
+            message='Informational Notes'
+            description=' Enter your registered email below. We’ll send you a password reset
+            link. Click the link in your email to set a new password.'
+            type='info'
+            showIcon
+          />
+
+          <Input
+            placeholder='Enter your email'
+            type='email'
+            value={forgotPasswordEmail}
+            onChange={e => setForgotPasswordEmail(e.target.value)}
+            style={{ marginBottom: 18, marginTop: 18 }}
+          />
+
+          <div style={{ textAlign: 'right' }}>
+            <Button
+              style={{ marginRight: 8 }}
+              onClick={() => setForgotPasswordVisible(false)}
+            >
+              Cancel
+            </Button>
+            <Button type='primary' onClick={handleForgotPassword}>
+              Send Reset Link
+            </Button>
+          </div>
+        </Modal>
 
         {/* Bottom-right logo */}
         <motion.img
