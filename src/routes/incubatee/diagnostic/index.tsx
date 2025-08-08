@@ -31,6 +31,7 @@ const IncubateeGrowthPlanPage = () => {
   const [application, setApplication] = useState<any>(null)
   const [interventions, setInterventions] = useState<any[]>([])
   const [confirmModalOpen, setConfirmModalOpen] = useState(false)
+  const [userSignatureURL, setUserSignatureURL] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -62,6 +63,15 @@ const IncubateeGrowthPlanPage = () => {
         const appDoc = appSnap.docs[0]
         const appData = { ...appDoc.data(), docId: appDoc.id }
         setApplication(appData)
+
+        // 🔍 Fetch digital signature image
+        const userSnap = await getDocs(
+          query(collection(db, 'users'), where('email', '==', user.email))
+        )
+        if (!userSnap.empty) {
+          const userData = userSnap.docs[0].data()
+          setUserSignatureURL(userData.signatureURL || null)
+        }
 
         // Normalize interventions
         const required: any[] = appData?.interventions?.required || []
@@ -126,6 +136,7 @@ const IncubateeGrowthPlanPage = () => {
           }
         },
         digitalSignature: sig,
+        growthPlanConfirmed: true,
         confirmedAt: new Date()
       }))
     } catch (err) {
@@ -245,8 +256,29 @@ const IncubateeGrowthPlanPage = () => {
           <Divider />
           {application.interventions?.confirmedBy?.incubatee ? (
             <>
-              <Text strong>Digital Signature:</Text>{' '}
+              <Divider>Participant Confirmation</Divider>
+
+              <Text strong>Cryptographic Signature:</Text>
+              <br />
               <Text copyable>{application.digitalSignature}</Text>
+
+              {userSignatureURL && (
+                <>
+                  <br />
+                  <Text strong>Digital Signature Image:</Text>
+                  <br />
+                  <img
+                    src={userSignatureURL}
+                    alt='Signature'
+                    style={{
+                      maxWidth: 200,
+                      marginTop: 8,
+                      border: '1px solid #ccc'
+                    }}
+                  />
+                </>
+              )}
+
               <br />
               <Text>
                 <strong>Confirmed At:</strong>{' '}
