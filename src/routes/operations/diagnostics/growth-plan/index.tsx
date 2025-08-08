@@ -50,30 +50,83 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
         )
       )
 
-      if (!appSnap.empty) {
-        const appRef = appSnap.docs[0].ref
-        await updateDoc(appRef, {
-          'interventions.confirmedBy.operations': true,
-          growthPlanConfirmed: true,
-          confirmedAt: new Date().toISOString()
+      if (appSnap.empty) return
+
+      const appDoc = appSnap.docs[0]
+      const appRef = appDoc.ref
+      const appData = appDoc.data()
+      const companyCode = appData.companyCode || 'RCM'
+      const existingRequired = appData?.interventions?.required || []
+      const aiRecs = appData?.aiEvaluation?.['Recommended Interventions'] || {}
+
+      // Flatten AI interventions
+      const aiTitlesToConfirm = Object.entries(aiRecs).flatMap(
+        ([area, titles]) =>
+          titles.map(title => ({
+            title,
+            area
+          }))
+      )
+
+      // Fetch actual interventions from the database
+      const intvSnap = await getDocs(
+        query(
+          collection(db, 'interventions'),
+          where('companyCode', '==', companyCode)
+        )
+      )
+      const allIntvs = intvSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+
+      const confirmedInterventions = aiTitlesToConfirm
+        .map(ai => {
+          const matched = allIntvs.find(
+            intv =>
+              intv.interventionTitle === ai.title &&
+              intv.areaOfSupport === ai.area
+          )
+          return matched
+            ? {
+                id: matched.id,
+                title: matched.interventionTitle,
+                area: matched.areaOfSupport
+              }
+            : null
         })
-        message.success('Growth plan confirmed!')
-        setApplicationData(prev => ({
-          ...prev,
-          interventions: {
-            ...prev.interventions,
-            confirmedBy: {
-              ...(prev.interventions?.confirmedBy || {}),
-              operations: true
-            }
-          },
-          growthPlanConfirmed: true,
-          confirmedAt: new Date()
-        }))
-        await fetchData()
-      }
+        .filter(Boolean)
+
+      const updatedRequired = [...existingRequired, ...confirmedInterventions]
+
+      await updateDoc(appRef, {
+        'interventions.required': updatedRequired,
+        'interventions.confirmedBy.operations': true,
+        growthPlanConfirmed: true,
+        confirmedAt: new Date().toISOString(),
+        'aiEvaluation.Recommended Interventions': {}
+      })
+
+      message.success('Growth plan confirmed and AI interventions added!')
+
+      setApplicationData(prev => ({
+        ...prev,
+        interventions: {
+          ...prev.interventions,
+          required: updatedRequired,
+          confirmedBy: {
+            ...(prev.interventions?.confirmedBy || {}),
+            operations: true
+          }
+        },
+        growthPlanConfirmed: true,
+        confirmedAt: new Date(),
+        aiEvaluation: {
+          ...(prev.aiEvaluation || {}),
+          'Recommended Interventions': {}
+        }
+      }))
+
+      await fetchData()
     } catch (error) {
-      console.error('Failed to confirm growth plan:', error)
+      console.error('❌ Failed to confirm growth plan:', error)
       message.error('Error during confirmation')
     }
   }
@@ -92,29 +145,52 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
 
       const appRef = appSnap.docs[0].ref
       const appData = appSnap.docs[0].data()
+      const companyCode = appData?.companyCode || 'RCM'
+
       const existingRequired = appData?.interventions?.required || []
       const aiEvaluation = appData?.aiEvaluation || {}
 
       // Prevent duplicate adds
       const alreadyExists = existingRequired.some(
-        (i: any) => i.id === record.id || i.title === record.interventionTitle
+        (i: any) =>
+          i.title === record.interventionTitle &&
+          i.area === record.areaOfSupport
       )
       if (alreadyExists) {
         message.info('Already confirmed.')
         return
       }
 
-      // 1. Add to required
+      // 🔍 Get real ID from interventions collection
+      const intvSnap = await getDocs(
+        query(
+          collection(db, 'interventions'),
+          where('companyCode', '==', companyCode),
+          where('interventionTitle', '==', record.interventionTitle),
+          where('areaOfSupport', '==', record.areaOfSupport)
+        )
+      )
+
+      if (intvSnap.empty) {
+        message.error('No matching intervention found in master list.')
+        return
+      }
+
+      const matched = intvSnap.docs[0]
+      const matchedId = matched.id
+      const matchedData = matched.data()
+
+      // ✅ Add to required
       const updatedRequired = [
         ...existingRequired,
         {
-          id: record.id,
-          title: record.interventionTitle,
-          area: record.areaOfSupport
+          id: matchedId,
+          title: matchedData.interventionTitle,
+          area: matchedData.areaOfSupport
         }
       ]
 
-      // 2. Remove from AI Recommendations
+      // 🧹 Remove from AI Evaluation
       const recs = aiEvaluation['Recommended Interventions'] || {}
       const area = record.areaOfSupport
       if (recs[area]) {
@@ -129,13 +205,13 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
         }
       }
 
-      // 3. Update Firestore
+      // 💾 Update Firestore
       await updateDoc(appRef, {
         'interventions.required': updatedRequired,
         'aiEvaluation.Recommended Interventions': recs
       })
 
-      // 4. Update UI
+      // 🖼️ Update UI
       setInterventions(prev =>
         prev.map(item =>
           item.id === record.id ? { ...item, confirmed: true } : item
@@ -263,6 +339,7 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
       message.error('Error adding interventions.')
     }
   }
+
   const fetchData = async () => {
     try {
       const appSnap = await getDocs(
