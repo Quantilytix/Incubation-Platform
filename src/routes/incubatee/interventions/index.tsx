@@ -143,7 +143,7 @@ const InterventionsTrackingView: React.FC = () => {
   const confirmedByIncubatee =
     !!application?.interventions?.confirmedBy?.incubatee
 
-  const motivationalGif = '/public/assets/images/motivation.gif'
+  const motivationalGif = '/assets/images/motivation.gif'
 
   // 1) In your useEffect for loading the application:
   useEffect(() => {
@@ -1303,3 +1303,4 @@ const InterventionsTrackingView: React.FC = () => {
 }
 
 export default InterventionsTrackingView
+
