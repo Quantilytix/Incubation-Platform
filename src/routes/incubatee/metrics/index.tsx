@@ -6,13 +6,17 @@ import {
   Modal,
   Button,
   Form,
+  DatePicker,
+  Space,
   InputNumber,
   message,
   Row,
   Col,
   Upload,
   Statistic,
-  Progress
+  Progress,
+  Alert,
+  Tabs
 } from 'antd'
 import {
   PlusOutlined,
@@ -30,13 +34,19 @@ import {
   orderBy,
   query,
   Timestamp,
-  where
+  where,
+  getDoc
 } from 'firebase/firestore'
 import { auth, db, storage } from '@/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import axios from 'axios'
+import { motion } from 'framer-motion'
+import dayjs from 'dayjs'
+import Highcharts from 'highcharts'
+import HighchartsReact from 'highcharts-react-official'
 
 const { Title } = Typography
+Highcharts.setOptions({ credits: { enabled: false } })
 
 export const MonthlyPerformanceForm: React.FC = () => {
   const [form] = Form.useForm()
@@ -45,6 +55,8 @@ export const MonthlyPerformanceForm: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false)
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  // add near the top of the component body
+  const thisMonth = dayjs().format('MMMM YYYY')
 
   // Progress modal
   const [progressVisible, setProgressVisible] = useState(false)
@@ -54,6 +66,86 @@ export const MonthlyPerformanceForm: React.FC = () => {
   // Transaction Preview States
   const [previewVisible, setPreviewVisible] = useState(false)
   const [previewTransactions, setPreviewTransactions] = useState<any[]>([])
+
+  //Application Details
+  const [pRevenueMonthly, setPRevenueMonthly] = useState<
+    Record<string, number>
+  >({})
+  const [pHeadcountMonthly, setPHeadcountMonthly] = useState<
+    Record<string, { permanent?: number; temporary?: number }>
+  >({})
+
+  // default: current year
+  const [range, setRange] = useState<[Dayjs, Dayjs]>([
+    dayjs().startOf('year'),
+    dayjs().endOf('year')
+  ])
+
+  const monthNames = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
+  ]
+  // Map "April 2025" -> "April"
+  const monthFromLabel = (label?: string) => (label || '').trim().split(' ')[0]
+
+  // Build month-indexed arrays from uploaded history (Table `data`)
+  const buildUploadedByMonth = (rows: any[]) => {
+    const revenue = Array(12).fill(null) as (number | null)[]
+    const perm = Array(12).fill(null) as (number | null)[]
+    const temp = Array(12).fill(null) as (number | null)[]
+    const orders = Array(12).fill(null) as (number | null)[]
+    const customers = Array(12).fill(null) as (number | null)[]
+
+    rows.forEach(r => {
+      const mName = monthFromLabel(r.month)
+      const i = monthNames.findIndex(m => m === mName)
+      if (i >= 0) {
+        revenue[i] = Number(r.revenue ?? null)
+        perm[i] = Number(r.headPermanent ?? null)
+        temp[i] = Number(r.headTemporary ?? null)
+        orders[i] = Number(r.orders ?? null)
+        customers[i] = Number(r.customers ?? null)
+      }
+    })
+
+    return { revenue, perm, temp, orders, customers }
+  }
+
+  const normalizeRevenueMap = (m?: Record<string, any>) => {
+    const result: number[] = Array(12).fill(null)
+    if (!m) return result
+    monthNames.forEach((name, i) => {
+      const v = Number(m[name])
+      result[i] = Number.isFinite(v) ? v : null
+    })
+    return result
+  }
+
+  const normalizeHeadcountMap = (
+    m?: Record<string, { permanent?: any; temporary?: any }>
+  ) => {
+    const perm: (number | null)[] = Array(12).fill(null)
+    const temp: (number | null)[] = Array(12).fill(null)
+    if (!m) return { perm, temp }
+    monthNames.forEach((name, i) => {
+      const row = m[name] || {}
+      const p = Number(row.permanent)
+      const t = Number(row.temporary)
+      perm[i] = Number.isFinite(p) ? p : null
+      temp[i] = Number.isFinite(t) ? t : null
+    })
+    return { perm, temp }
+  }
 
   const encouragingMessages = [
     'Hang tight, crunching the numbers...',
@@ -94,6 +186,25 @@ export const MonthlyPerformanceForm: React.FC = () => {
 
         if (!snapshot.empty) {
           setParticipantId(snapshot.docs[0].id)
+          // after setParticipantId(...)
+          if (snapshot && !snapshot.empty) {
+            const pid = snapshot.docs[0].id
+            setParticipantId(pid)
+
+            // NEW: fetch participant doc to read histories
+            const pDoc = await getDoc(doc(db, 'participants', pid))
+            if (pDoc.exists()) {
+              const pdata = pDoc.data() as any
+
+              // revenueHistory.monthly (2025 months by name)
+              const revMonthly = pdata?.revenueHistory?.monthly || {}
+              setPRevenueMonthly(revMonthly)
+
+              // headcountHistory.monthly { April: {permanent, temporary}, ... }
+              const hcMonthly = pdata?.headcountHistory?.monthly || {}
+              setPHeadcountMonthly(hcMonthly)
+            }
+          }
         } else {
           message.error('No participant record found for this user.')
         }
@@ -121,6 +232,119 @@ export const MonthlyPerformanceForm: React.FC = () => {
   useEffect(() => {
     fetchData()
   }, [participantId])
+
+  // Participant doc monthly maps (e.g., revenueHistory.monthly.April) -> arrays
+  const participantRev = normalizeRevenueMap(pRevenueMonthly)
+  const { perm: participantPerm, temp: participantTemp } =
+    normalizeHeadcountMap(pHeadcountMonthly)
+
+  // 1) keep your monthNames, buildUploadedByMonth, normalizeRevenueMap, normalizeHeadcountMap
+
+  // Prefer uploaded value, else participant value, else null
+  const mergePrefUploaded = (
+    uploaded: (number | null)[],
+    participant: (number | null)[]
+  ) =>
+    monthNames.map((_, i) =>
+      uploaded[i] != null ? uploaded[i] : participant[i] ?? null
+    )
+
+  // --- Build base arrays ---
+  const uploaded = buildUploadedByMonth(data)
+  const pRev = normalizeRevenueMap(pRevenueMonthly)
+  const pHC = normalizeHeadcountMap(pHeadcountMonthly)
+
+  // --- Merge to single series per metric ---
+  const revenueMerged = mergePrefUploaded(uploaded.revenue, pRev)
+  const permMerged = mergePrefUploaded(uploaded.perm, pHC.perm)
+  const tempMerged = mergePrefUploaded(uploaded.temp, pHC.temp)
+  const ordersMerged = uploaded.orders // participant doc has no orders -> just uploaded
+  const customersMerged = uploaded.customers // participant doc has no customers -> just uploaded
+
+  // Optional: 3-month moving average on the merged revenue
+  const revMA3 = revenueMerged.map((_, i) => {
+    const windowVals = revenueMerged.slice(Math.max(0, i - 2), i + 1)
+    const nums = windowVals.filter(v => typeof v === 'number') as number[]
+    if (!nums.length) return null
+    const avg = nums.reduce((a, b) => a + b, 0) / nums.length
+    return Math.round(avg * 100) / 100
+  })
+
+  // indices of months we will show based on the range (same-year filter)
+  const monthIdxInRange = (() => {
+    const startM = range?.[0]?.month() ?? 0
+    const endM = range?.[1]?.month() ?? 11
+    const idxs = []
+    for (let i = startM; i <= endM; i++) idxs.push(i)
+    return idxs
+  })()
+
+  const formatLabel = (mIndex: number, year: number) =>
+    dayjs().year(year).month(mIndex).format('MMM YY') // e.g., "Jan 25"
+
+  const categories = monthIdxInRange.map(i =>
+    formatLabel(i, range?.[0]?.year() ?? dayjs().year())
+  )
+
+  const pickRange = (arr: (number | null)[]) => monthIdxInRange.map(i => arr[i])
+
+  // 2) Charts now use ONE series per metric
+  const revenueTrendOptions: Highcharts.Options = {
+    chart: { type: 'line' },
+    title: { text: 'Revenue Trend' },
+    xAxis: { categories },
+    yAxis: { title: { text: 'Revenue (R)' } },
+    tooltip: { shared: true },
+    series: [
+      { name: 'Revenue', type: 'line', data: pickRange(revenueMerged) },
+      {
+        name: '3-month Avg',
+        type: 'line',
+        dashStyle: 'ShortDot',
+        data: pickRange(revMA3)
+      }
+    ]
+  }
+
+  const employeesStackedOptions: Highcharts.Options = {
+    chart: { type: 'column' },
+    title: { text: 'Headcount Composition' },
+    xAxis: { categories },
+    yAxis: {
+      min: 0,
+      title: { text: 'Employees' },
+      stackLabels: { enabled: true }
+    },
+    plotOptions: { column: { stacking: 'normal' } },
+    series: [
+      { name: 'Permanent', type: 'column', data: pickRange(permMerged) },
+      { name: 'Temporary', type: 'column', data: pickRange(tempMerged) }
+    ]
+  }
+
+  const ordersCustomersDualAxis: Highcharts.Options = {
+    title: { text: 'Orders vs Customers' },
+    xAxis: [{ categories, crosshair: true }],
+    yAxis: [
+      { title: { text: 'Orders' } },
+      { title: { text: 'Customers' }, opposite: true }
+    ],
+    tooltip: { shared: true },
+    series: [
+      {
+        name: 'Orders',
+        type: 'column',
+        yAxis: 0,
+        data: pickRange(ordersMerged)
+      },
+      {
+        name: 'Customers',
+        type: 'spline',
+        yAxis: 1,
+        data: pickRange(customersMerged)
+      }
+    ]
+  }
 
   const uploadProofs = async (files: any[], type: string, monthKey: string) => {
     const urls: string[] = []
@@ -372,62 +596,207 @@ export const MonthlyPerformanceForm: React.FC = () => {
       <Helmet>
         <title>Monthly Metrics</title>
       </Helmet>
-
-      <Title level={3} style={{ marginBottom: 16 }}>
-        📈 Monthly Performance Dashboard
-      </Title>
-
+      <Alert
+        type='info'
+        showIcon
+        style={{ marginBottom: 16 }}
+        message='📈 Monthly Performance Dashboard'
+        description='Upload your month-on-month performance data here to keep your progress up to date.'
+      />
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title='Total Revenue'
-              value={totalRevenue}
-              prefix={<DollarCircleOutlined style={{ color: '#3f8600' }} />}
-            />
-          </Card>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Card
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff'
+              }}
+            >
+              <Statistic
+                title='Total Revenue'
+                value={totalRevenue}
+                prefix={<DollarCircleOutlined style={{ color: '#3f8600' }} />}
+              />
+            </Card>
+          </motion.div>
         </Col>
         <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title='Current Employees'
-              value={totalEmployees}
-              prefix={<TeamOutlined style={{ color: '#1890ff' }} />}
-            />
-          </Card>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Card
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff'
+              }}
+            >
+              <Statistic
+                title='Current Employees'
+                value={totalEmployees}
+                prefix={<TeamOutlined style={{ color: '#1890ff' }} />}
+              />
+            </Card>
+          </motion.div>
         </Col>
         <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title='Total Orders'
-              value={totalOrders}
-              prefix={<ShoppingCartOutlined style={{ color: '#cf1322' }} />}
-            />
-          </Card>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Card
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff'
+              }}
+            >
+              <Statistic
+                title='Total Orders'
+                value={totalOrders}
+                prefix={<ShoppingCartOutlined style={{ color: '#cf1322' }} />}
+              />
+            </Card>
+          </motion.div>
         </Col>
       </Row>
 
-      <Card
-        title='📊 Historical Monthly Metrics'
-        extra={
-          <Button
-            type='primary'
-            icon={<PlusOutlined />}
-            onClick={() => setModalVisible(true)}
-          >
-            Add New
-          </Button>
-        }
-      >
-        <Table
-          columns={columns}
-          dataSource={data}
-          pagination={{ pageSize: 5 }}
-        />
-      </Card>
+      <Tabs
+        centered
+        defaultActiveKey='data'
+        items={[
+          {
+            key: 'data',
+            label: 'Data',
+            children: (
+              <>
+                {/* Historical table */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4 }}
+                >
+                  <Card
+                    title='📊 Historical Monthly Metrics'
+                    extra={
+                      <Button
+                        type='primary'
+                        icon={<PlusOutlined />}
+                        onClick={() => setModalVisible(true)}
+                      >
+                        {`Upload ${thisMonth} Performance`}
+                      </Button>
+                    }
+                    style={{
+                      boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                      transition: 'all 0.3s ease',
+                      borderRadius: 8,
+                      border: '1px solid #d6e4ff'
+                    }}
+                  >
+                    <Table
+                      columns={columns}
+                      dataSource={data}
+                      pagination={{ pageSize: 5 }}
+                    />
+                  </Card>
+                </motion.div>
+              </>
+            )
+          },
+          {
+            key: 'analytics',
+            label: 'Analytics',
+            children: (
+              <>
+                <Space style={{ marginBottom: 12 }}>
+                  <DatePicker.RangePicker
+                    picker='month'
+                    value={range}
+                    onChange={vals => {
+                      if (!vals || !vals[0] || !vals[1]) return
+                      // (Optional) keep same-year constraint
+                      if (vals[0].year() !== vals[1].year()) {
+                        message.warning(
+                          'Please select months within the same year for now.'
+                        )
+                        return
+                      }
+                      setRange(vals as [Dayjs, Dayjs])
+                    }}
+                    allowEmpty={[false, false]}
+                  />
+                </Space>
+
+                <Row gutter={[16, 16]}>
+                  <Col xs={24} lg={12}>
+                    <Card
+                      hoverable
+                      style={{
+                        boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                        borderRadius: 8,
+                        border: '1px solid #d6e4ff'
+                      }}
+                    >
+                      <HighchartsReact
+                        highcharts={Highcharts}
+                        options={revenueTrendOptions}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={24} lg={12}>
+                    <Card
+                      hoverable
+                      style={{
+                        boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                        borderRadius: 8,
+                        border: '1px solid #d6e4ff'
+                      }}
+                    >
+                      <HighchartsReact
+                        highcharts={Highcharts}
+                        options={employeesStackedOptions}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={24}>
+                    <Card
+                      hoverable
+                      style={{
+                        boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                        borderRadius: 8,
+                        border: '1px solid #d6e4ff'
+                      }}
+                    >
+                      <HighchartsReact
+                        highcharts={Highcharts}
+                        options={ordersCustomersDualAxis}
+                      />
+                    </Card>
+                  </Col>
+                </Row>
+              </>
+            )
+          }
+        ]}
+      />
 
       <Modal
-        title='Add Monthly Performance Data'
+        title={`Add Monthly Performance — ${thisMonth}`}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         onOk={() => form.submit()}
@@ -435,27 +804,34 @@ export const MonthlyPerformanceForm: React.FC = () => {
         okButtonProps={{ loading }}
       >
         <Form layout='vertical' form={form} onFinish={handleSubmit}>
-          <Form.Item
-            name='revenue'
-            label='Revenue (R)'
-            rules={[{ required: true, message: 'Please enter revenue' }]}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item
-            name='revenueProof'
-            label='Bank Statement (Proof of Revenue)'
-            rules={[
-              { required: true, message: 'Please upload bank statement' }
-            ]}
-          >
-            <Upload multiple beforeUpload={() => false}>
-              <Button>Upload Bank Statement</Button>
-            </Upload>
-          </Form.Item>
+          <Row gutter={[12, 12]}>
+            <Col xs={24}>
+              <Form.Item
+                name='revenue'
+                label='Revenue (R)'
+                rules={[{ required: true, message: 'Please enter revenue' }]}
+              >
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
 
-          <Row gutter={16}>
-            <Col span={12}>
+            <Col xs={24}>
+              <Form.Item
+                name='revenueProof'
+                label='Bank Statement (Proof of Revenue)'
+                rules={[
+                  { required: true, message: 'Please upload bank statement' }
+                ]}
+                valuePropName='fileList'
+                getValueFromEvent={e => (Array.isArray(e) ? e : e?.fileList)}
+              >
+                <Upload multiple beforeUpload={() => false}>
+                  <Button block>Upload Bank Statement</Button>
+                </Upload>
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} sm={12}>
               <Form.Item
                 name='headPermanent'
                 label='Permanent Employees'
@@ -464,7 +840,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 name='headTemporary'
                 label='Temporary Employees'
@@ -473,51 +849,47 @@ export const MonthlyPerformanceForm: React.FC = () => {
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
+
+            <Col xs={24}>
+              <Form.Item
+                name='employeeProof'
+                label='Contracts/Payslips (Employee Proof)'
+                rules={[
+                  { required: true, message: 'Please upload employee proof' }
+                ]}
+                valuePropName='fileList'
+                getValueFromEvent={e => (Array.isArray(e) ? e : e?.fileList)}
+              >
+                <Upload multiple beforeUpload={() => false}>
+                  <Button block>Upload Contracts/Payslips</Button>
+                </Upload>
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} sm={12}>
+              <Form.Item name='orders' label='Orders Submitted'>
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item name='customers' label='New Customers'>
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} sm={12}>
+              <Form.Item name='traffic' label='Website Traffic'>
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item name='networking' label='Networking Events'>
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
           </Row>
-
-          <Form.Item
-            name='employeeProof'
-            label='Contracts/Payslips (Employee Proof)'
-            rules={[
-              { required: true, message: 'Please upload employee proof' }
-            ]}
-          >
-            <Upload multiple beforeUpload={() => false}>
-              <Button>Upload Contracts/Payslips</Button>
-            </Upload>
-          </Form.Item>
-
-          <Form.Item
-            name='orders'
-            label='Orders Submitted'
-            rules={[{ required: true }]}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item
-            name='customers'
-            label='New Customers'
-            rules={[{ required: true }]}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item
-            name='traffic'
-            label='Website Traffic'
-            rules={[{ required: true }]}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item
-            name='networking'
-            label='Networking Events'
-            rules={[{ required: true }]}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
         </Form>
       </Modal>
-
       <Modal
         title='Preview Transactions Before Saving'
         open={previewVisible}
@@ -539,7 +911,6 @@ export const MonthlyPerformanceForm: React.FC = () => {
           scroll={{ y: 300 }}
         />
       </Modal>
-
       <Modal
         open={progressVisible}
         footer={null}

@@ -13,13 +13,16 @@ import {
   Badge,
   Select,
   Spin,
-  Alert
+  Alert,
+  Rate,
+  Tooltip
 } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import {
   BellOutlined,
   CheckCircleOutlined,
+  ExpandAltOutlined,
   FileTextOutlined,
   TeamOutlined
 } from '@ant-design/icons'
@@ -38,6 +41,7 @@ import { db, auth } from '@/firebase'
 import dayjs from 'dayjs'
 import { v4 as uuidv4 } from 'uuid'
 import { Helmet } from 'react-helmet'
+import { motion } from 'framer-motion'
 
 const { Title } = Typography
 const { Option } = Select
@@ -496,7 +500,7 @@ export const IncubateeDashboard: React.FC = () => {
         comments: feedbackComments
       },
       confirmedAt: new Date(),
-      createdAt: new Date(selectedIntervention.createdAt || Date.now()),
+      createdAt: selectedIntervention.createdAt?.toDate?.() || new Date(),
       updatedAt: new Date(),
       interventionKey: uuidv4()
     }
@@ -622,7 +626,7 @@ export const IncubateeDashboard: React.FC = () => {
 
   const avgRevenueChart: Highcharts.Options = {
     chart: { type: 'spline' },
-    title: { text: 'Total Revenue vs Avg Revenue' },
+    title: { text: 'Total Revenue vs Average Revenue' },
     xAxis: { categories: months },
     yAxis: { title: { text: 'Revenue (ZAR)' } },
     plotOptions: {
@@ -652,7 +656,7 @@ export const IncubateeDashboard: React.FC = () => {
         }
       },
       {
-        name: 'Avg Revenue',
+        name: 'Average Revenue',
         type: 'spline',
         data: avgRevenueData,
         color: '#faad14',
@@ -670,49 +674,94 @@ export const IncubateeDashboard: React.FC = () => {
 
   return (
     <Spin spinning={loading} tip='Loading...'>
-      <div style={{ padding: 24 }}>
+      <div style={{ padding: 24, minHeight: '100vh' }}>
         <Helmet>
           <title>Smart Incubation | Incubatee Dashboard</title>
         </Helmet>
 
-        <Title level={3}>Incubatee Dashboard</Title>
-
         <Row gutter={[16, 16]}>
-          <Row gutter={[16, 16]}>
-            {/* Metrics Section */}
-            <Col xs={24} sm={8}>
-              <Card>
-                <Statistic
-                  title='Participation Rate'
-                  value={`${participation}%`}
-                  prefix={<CheckCircleOutlined />}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Card>
-                <Statistic
-                  title='Outstanding Documents'
-                  value={outstandingDocs}
-                  prefix={<FileTextOutlined />}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Card>
-                <Statistic
-                  title='Total Workers'
-                  value={
-                    permHeadcount.reduce((a, b) => a + b, 0) +
-                    tempHeadcount.reduce((a, b) => a + b, 0)
-                  }
-                  prefix={<TeamOutlined />}
-                />
-              </Card>
+          <Row gutter={[16, 16]} style={{ width: '100%' }}>
+            <Col xs={24} md={8}>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <Card
+                  hoverable
+                  style={{
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                    transition: 'all 0.3s ease',
+                    borderRadius: 8,
+                    border: '1px solid #d6e4ff',
+                    height: '100%'
+                  }}
+                >
+                  <Statistic
+                    title='Participation Rate'
+                    value={`${participation}%`}
+                    prefix={<CheckCircleOutlined />}
+                  />
+                </Card>
+              </motion.div>
             </Col>
 
-            {/* New Tool Cards */}
-            <Col xs={24} md={12}>
+            <Col xs={24} md={8}>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <Card
+                  hoverable
+                  style={{
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                    transition: 'all 0.3s ease',
+                    borderRadius: 8,
+                    border: '1px solid #d6e4ff',
+                    height: '100%'
+                  }}
+                >
+                  <Statistic
+                    title='Outstanding Documents'
+                    value={outstandingDocs}
+                    prefix={<FileTextOutlined />}
+                  />
+                </Card>
+              </motion.div>
+            </Col>
+
+            <Col xs={24} md={8}>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <Card
+                  hoverable
+                  style={{
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                    transition: 'all 0.3s ease',
+                    borderRadius: 8,
+                    border: '1px solid #d6e4ff',
+                    height: '100%'
+                  }}
+                >
+                  <Statistic
+                    title='Total Workers'
+                    value={
+                      permHeadcount.reduce((a, b) => a + b, 0) +
+                      tempHeadcount.reduce((a, b) => a + b, 0)
+                    }
+                    prefix={<TeamOutlined />}
+                  />
+                </Card>
+              </motion.div>
+            </Col>
+          </Row>
+
+          {/* New Tool Cards */}
+          {/* <Col xs={24} md={12}>
               <Card
                 title='🌱 Sozo Dream Lab AI'
                 type='inner'
@@ -749,108 +798,81 @@ export const IncubateeDashboard: React.FC = () => {
                 Manage your finances better and get advanced AI driven data
                 analytics .
               </Card>
-            </Col>
-          </Row>
+            </Col> */}
 
           <Col xs={24}>
-            <Card title='Pending Interventions'>
-              <List
-                itemLayout='horizontal'
-                dataSource={pendingInterventions}
-                renderItem={item => (
-                  <List.Item
-                    actions={
-                      item.type === 'assignment'
-                        ? [
-                            <Button
-                              type='link'
-                              onClick={() => handleAccept(item.id)}
-                            >
-                              Accept
-                            </Button>,
-                            <Button
-                              danger
-                              type='link'
-                              onClick={() => {
-                                setSelectedInterventionId(item.id)
-                                setDeclineModalVisible(true)
-                              }}
-                            >
-                              Decline
-                            </Button>
-                          ]
-                        : [
-                            <Button
-                              type='link'
-                              onClick={() => {
-                                setSelectedIntervention(item.full)
-                                setConfirmModalVisible(true)
-                              }}
-                            >
-                              Confirm
-                            </Button>,
-                            <Button
-                              danger
-                              type='link'
-                              onClick={() => {
-                                setSelectedIntervention(item.full)
-                                setIsRejectModalVisible(true)
-                              }}
-                            >
-                              Reject
-                            </Button>
-                          ]
-                    }
-                  >
-                    <List.Item.Meta
-                      title={item.title}
-                      description={`Due: ${item.date}`}
-                    />
-                  </List.Item>
-                )}
-              />
-            </Card>
-          </Col>
-
-          <Col xs={24}>
-            <Row gutter={[16, 16]}>
-              <Col xs={24} md={12}>
-                <Card
-                  title='Revenue vs Workforce'
-                  extra={
-                    <Button
-                      type='link'
-                      onClick={() => setExpandedChart('revenue')}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <Card
+                hoverable
+                style={{
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                  transition: 'all 0.3s ease',
+                  borderRadius: 8,
+                  border: '1px solid #d6e4ff'
+                }}
+                title='Pending Interventions'
+              >
+                <List
+                  itemLayout='horizontal'
+                  dataSource={pendingInterventions}
+                  renderItem={item => (
+                    <List.Item
+                      actions={
+                        item.type === 'assignment'
+                          ? [
+                              <Button
+                                type='link'
+                                onClick={() => handleAccept(item.id)}
+                              >
+                                Accept
+                              </Button>,
+                              <Button
+                                danger
+                                type='link'
+                                onClick={() => {
+                                  setSelectedInterventionId(item.id)
+                                  setDeclineModalVisible(true)
+                                }}
+                              >
+                                Decline
+                              </Button>
+                            ]
+                          : [
+                              <Button
+                                type='link'
+                                onClick={() => {
+                                  setSelectedIntervention(item.full)
+                                  setConfirmModalVisible(true)
+                                }}
+                              >
+                                Confirm
+                              </Button>,
+                              <Button
+                                danger
+                                type='link'
+                                onClick={() => {
+                                  setSelectedIntervention(item.full)
+                                  setIsRejectModalVisible(true)
+                                }}
+                              >
+                                Reject
+                              </Button>
+                            ]
+                      }
                     >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={revenueChart}
-                  />
-                </Card>
-              </Col>
-              <Col xs={24} md={12}>
-                <Card
-                  title='Total Revenue vs Avg Revenue'
-                  extra={
-                    <Button
-                      type='link'
-                      onClick={() => setExpandedChart('avgRevenue')}
-                    >
-                      Expand
-                    </Button>
-                  }
-                >
-                  <HighchartsReact
-                    highcharts={Highcharts}
-                    options={avgRevenueChart}
-                  />
-                </Card>
-              </Col>
-            </Row>
+                      <List.Item.Meta
+                        title={item.title}
+                        description={`Due: ${item.date}`}
+                      />
+                    </List.Item>
+                  )}
+                />
+              </Card>
+            </motion.div>
           </Col>
         </Row>
 
@@ -948,7 +970,7 @@ export const IncubateeDashboard: React.FC = () => {
           title={
             expandedChart === 'revenue'
               ? 'Expanded: Revenue vs Workforce'
-              : 'Expanded: Total Revenue vs Avg Revenue'
+              : 'Expanded: Total Revenue vs Average Revenue'
           }
           open={!!expandedChart}
           onCancel={() => setExpandedChart(null)}
@@ -1009,18 +1031,11 @@ export const IncubateeDashboard: React.FC = () => {
           onChange={e => setFeedbackComments(e.target.value)}
           style={{ marginBottom: 8 }}
         />
-        <Select
-          placeholder='Rating'
+        <Rate
           value={feedbackRating}
-          onChange={val => setFeedbackRating(val)}
-          style={{ width: '100%' }}
-        >
-          {[5, 4, 3, 2, 1].map(star => (
-            <Option key={star} value={star}>
-              {`${star} Star${star !== 1 ? 's' : ''}`}
-            </Option>
-          ))}
-        </Select>
+          onChange={setFeedbackRating}
+          style={{ marginBottom: 8 }}
+        />
       </Modal>
     </Spin>
   )

@@ -145,11 +145,14 @@ const IncubateeGrowthPlanPage = () => {
     }
   }
 
-  if (loading) return <Spin tip='Loading...' style={{ marginTop: 48 }} />
+  if (loading)
+    return (
+      <Spin tip='Loading...' style={{ marginTop: 48, minHeight: '100vh' }} />
+    )
   if (!participant || !application) return <Text>No data found</Text>
 
   return (
-    <Card>
+    <Card style={{ padding: 24, minHeight: '100vh' }}>
       <div
         style={{
           display: 'flex',

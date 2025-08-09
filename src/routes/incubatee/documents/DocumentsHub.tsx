@@ -10,20 +10,28 @@ import {
   Layout,
   Space,
   Modal,
-  Select
+  Select,
+  Alert,
+  Col,
+  Row,
+  Divider,
+  Tooltip
 } from 'antd'
 import {
   UploadOutlined,
   ExclamationCircleOutlined,
   ClockCircleOutlined,
   CheckCircleOutlined,
-  PlusOutlined
+  PlusOutlined,
+  EyeOutlined
 } from '@ant-design/icons'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { onAuthStateChanged, getAuth } from 'firebase/auth'
 import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
 import moment from 'moment'
+import { motion } from 'framer-motion'
+import dayjs from 'dayjs'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -44,7 +52,7 @@ export const DocumentHub: React.FC = () => {
 
   const [missingCount, setMissingCount] = useState(0)
   const [expiredCount, setExpiredCount] = useState(0)
-  const [invalidCount, setInvalidCount] = useState(0)
+  const [validCount, setValidCount] = useState(0)
   const [missingDocsList, setMissingDocsList] = useState<string[]>([])
 
   const [isModalVisible, setIsModalVisible] = useState(false)
@@ -52,10 +60,18 @@ export const DocumentHub: React.FC = () => {
   const [uploadFile, setUploadFile] = useState<any>(null)
 
   useEffect(() => {
-    const fetchDocuments = async () => {
-      const auth = getAuth()
-      onAuthStateChanged(auth, async user => {
-        if (!user) return
+    const auth = getAuth()
+    setLoading(true)
+
+    const unsub = onAuthStateChanged(auth, async user => {
+      try {
+        if (!user) {
+          setComplianceDocs([])
+          setMissingCount(documentTypes.length)
+          setExpiredCount(0)
+          setValidCount(0)
+          return
+        }
 
         const participantSnap = await getDocs(
           query(
@@ -63,81 +79,144 @@ export const DocumentHub: React.FC = () => {
             where('email', '==', user.email)
           )
         )
-
-        if (participantSnap.empty) return
+        if (participantSnap.empty) {
+          setComplianceDocs([])
+          setMissingCount(documentTypes.length)
+          return
+        }
 
         const participantId = participantSnap.docs[0].id
-
         const appSnap = await getDocs(
           query(
             collection(db, 'applications'),
             where('participantId', '==', participantId)
           )
         )
-
-        if (appSnap.empty) return
+        if (appSnap.empty) {
+          setComplianceDocs([])
+          setMissingCount(documentTypes.length)
+          return
+        }
 
         const appData = appSnap.docs[0].data()
-        const docs = appData.complianceDocuments || []
+        const docsRaw = appData.complianceDocuments || []
+        const docs = Array.isArray(docsRaw) ? docsRaw : Object.values(docsRaw)
 
-        const now = moment()
-        let missing = 0
-        let expired = 0
-        let invalid = 0
+        const presentTypes = docs.map((d: any) => d.type)
+        const statusOf = (s: any) => (s || 'missing').toString().toLowerCase()
+        const hasFileForType = (type: string) =>
+          docs.some(d => d.type === type && !!(d.url || d.link || d.fileUrl))
 
-        const presentTypes = docs.map((doc: any) => doc.type)
+        const isExplicitMissing = (type: string) =>
+          docs.some(d => d.type === type && statusOf(d.status) === 'missing')
+
+        // Missing if no file OR explicitly marked missing
         const missingTypes = documentTypes.filter(
-          dt => !presentTypes.includes(dt)
+          dt => !hasFileForType(dt) || isExplicitMissing(dt)
         )
-        setMissingDocsList(missingTypes)
 
+        setMissingDocsList(missingTypes)
+        setMissingCount(missingTypes.length)
+
+        let expired = 0,
+          valid = 0
         const normalizedDocs = docs.map((doc: any, index: number) => {
+          const statusLower = (doc.status || 'missing').toString().toLowerCase()
           const expiryDate = formatExpiryDate(doc.expiryDate)
           const isExpired =
             (expiryDate !== '—' && moment(expiryDate).isBefore(moment())) ||
-            doc.status === 'expired'
+            statusLower === 'expired'
 
-          if (!doc.status || doc.status === 'missing') {
-            missing++
-          } else if (isExpired) {
-            expired++
-          } else if (
-            !['valid', 'approved'].includes(doc.status?.toLowerCase())
-          ) {
-            invalid++
-          }
+          if (isExpired) expired++
+          else if (['valid', 'approved'].includes(statusLower)) valid++
 
           return {
-            key: `${doc.type}-${index}`, // unique key
+            key: `${doc.type}-${index}`,
             type: doc.type,
-            status: doc.status || 'missing',
-            expiry: expiryDate
+            status: statusLower,
+            expiry: expiryDate,
+            url: doc.url || doc.link || doc.fileUrl || null,
+            fileName: doc.fileName || null
           }
         })
 
-        setMissingCount(missing)
         setExpiredCount(expired)
-        setInvalidCount(invalid)
+        setValidCount(valid)
         setComplianceDocs(normalizedDocs)
+      } catch (e) {
+        console.error(e)
+        message.error('Failed to load documents')
+      } finally {
         setLoading(false)
-      })
-    }
+      }
+    })
 
-    fetchDocuments()
+    return () => unsub()
   }, [])
 
   const formatExpiryDate = (expiry: any) => {
     if (!expiry) return '—'
-    if (expiry.toDate && typeof expiry.toDate === 'function') {
+
+    // Firestore Timestamp (with toDate())
+    if (expiry?.toDate && typeof expiry.toDate === 'function') {
       return moment(expiry.toDate()).format('YYYY-MM-DD')
     }
-    if (expiry instanceof Date) {
+
+    // Firestore { seconds, nanoseconds } shape
+    if (typeof expiry === 'object' && typeof expiry?.seconds === 'number') {
+      const d = new Date(expiry.seconds * 1000)
+      return isNaN(d.getTime()) ? '—' : moment(d).format('YYYY-MM-DD')
+    }
+
+    // moment()
+    if (moment.isMoment(expiry)) {
+      return expiry.isValid() ? expiry.format('YYYY-MM-DD') : '—'
+    }
+
+    // dayjs()
+    if (typeof dayjs.isDayjs === 'function' && dayjs.isDayjs(expiry)) {
+      return expiry.isValid()
+        ? moment(expiry.toDate()).format('YYYY-MM-DD')
+        : '—'
+    }
+
+    // Native Date
+    if (expiry instanceof Date && !isNaN(expiry.getTime())) {
       return moment(expiry).format('YYYY-MM-DD')
     }
+
+    // Number (ms or seconds)
+    if (typeof expiry === 'number') {
+      const ms = expiry.toString().length === 10 ? expiry * 1000 : expiry
+      return moment(ms).isValid() ? moment(ms).format('YYYY-MM-DD') : '—'
+    }
+
+    // String (trim + strict parse across common formats & ISO)
+    if (typeof expiry === 'string') {
+      const s = expiry.trim()
+      const m = moment(
+        s,
+        [
+          moment.ISO_8601,
+          'YYYY-MM-DD',
+          'YYYY/MM/DD',
+          'DD/MM/YYYY',
+          'MM/DD/YYYY'
+        ],
+        true // strict
+      )
+      if (m.isValid()) return m.format('YYYY-MM-DD')
+
+      // last-resort parse
+      const d = new Date(s)
+      return isNaN(d.getTime()) ? '—' : moment(d).format('YYYY-MM-DD')
+    }
+
     return '—'
   }
 
   const getStatusTag = (status: string) => {
+    const s = (status || '').toLowerCase()
     const colorMap: any = {
       valid: 'green',
       approved: 'blue',
@@ -146,39 +225,62 @@ export const DocumentHub: React.FC = () => {
       pending: 'gold',
       rejected: 'volcano'
     }
-    return (
-      <Tag color={colorMap[status] || 'default'}>{status.toUpperCase()}</Tag>
-    )
+    return <Tag color={colorMap[s] || 'default'}>{s.toUpperCase() || '—'}</Tag>
   }
 
   const columns = [
-    {
-      title: 'Document Type',
-      dataIndex: 'type',
-      key: 'type'
-    },
+    { title: 'Document Type', dataIndex: 'type', key: 'type' },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
       render: getStatusTag
     },
-    {
-      title: 'Expiry Date',
-      dataIndex: 'expiry',
-      key: 'expiry'
-    },
+    { title: 'Expiry Date', dataIndex: 'expiry', key: 'expiry' },
     {
       title: 'Actions',
       key: 'actions',
-      render: (_, record) => (
-        <Upload
-          beforeUpload={() => false}
-          multiple={false}
-          showUploadList={false}
-        >
-          <Button icon={<UploadOutlined />}>Replace</Button>
-        </Upload>
+      render: (_: any, record: any) => (
+        <Space>
+          {record.url ? (
+            <Tooltip title='Open current file'>
+              <Button
+                type='text'
+                shape='circle'
+                icon={<EyeOutlined />}
+                onClick={() =>
+                  window.open(record.url, '_blank', 'noopener,noreferrer')
+                }
+              />
+            </Tooltip>
+          ) : (
+            <Tooltip title='No file uploaded yet'>
+              <Button
+                type='text'
+                shape='circle'
+                icon={<EyeOutlined />}
+                disabled
+              />
+            </Tooltip>
+          )}
+
+          <Upload
+            beforeUpload={file => {
+              // TODO: call your uploader with (record.type, file)
+              message.loading({
+                content: `Uploading ${file.name}...`,
+                key: record.key
+              })
+              return false // prevent auto upload
+            }}
+            showUploadList={false}
+            maxCount={1}
+          >
+            <Tooltip title='Replace document'>
+              <Button type='text' shape='circle' icon={<UploadOutlined />} />
+            </Tooltip>
+          </Upload>
+        </Space>
       )
     }
   ]
@@ -196,51 +298,136 @@ export const DocumentHub: React.FC = () => {
     setUploadFile(null)
   }
 
+  if (loading) {
+    return (
+      <Layout style={{ background: '#fff', minHeight: '100vh', padding: 24 }}>
+        <Helmet>
+          <title>Documents Tracking</title>
+        </Helmet>
+
+        <Alert
+          type="info"
+          showIcon
+          message="Checking document statuses…"
+          description="Hang tight while we load your compliance documents."
+          style={{ marginBottom: 16 }}
+        />
+
+        <Card loading style={{ borderRadius: 8, border: '1px solid #d6e4ff' }} />
+        <div style={{ height: 16 }} />
+        <Card loading style={{ borderRadius: 8, border: '1px solid #d6e4ff' }} />
+      </Layout>
+    )
+  }
+
   return (
     <Layout style={{ background: '#fff', minHeight: '100vh', padding: 24 }}>
       <Helmet>
         <title>Documents Tracking</title>
       </Helmet>
 
-      <Title level={3}>Document Compliance Tracker</Title>
+      {/* Informational alert */}
+      <Alert
+        type='info'
+        showIcon
+        message='Upload your compliance documents here'
+        description='To proceed in the program, please upload all required documents. You can drag & drop files or use the upload button. Expired or invalid documents should be replaced.'
+        style={{ marginBottom: 16 }}
+      />
 
-      <Space size='middle' style={{ marginBottom: 24, flexWrap: 'wrap' }}>
-        <Card style={{ minWidth: 200 }}>
-          <Space direction='horizontal' align='center'>
-            <ExclamationCircleOutlined style={{ fontSize: 24, color: 'red' }} />
-            <div>
-              <Title level={4} style={{ margin: 0 }}>
-                {missingCount ? missingCount : missingDocsList.length}
-              </Title>
-              <Text>Unsubmitted</Text>
-            </div>
-          </Space>
-        </Card>
+      {/* Metrics row (full width, responsive) */}
+      <Row gutter={[16, 16]} style={{ width: '100%', marginBottom: 24 }}>
+        <Col xs={24} md={8}>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Card
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff',
+                height: '100%'
+              }}
+            >
+              <Space align='center'>
+                <CheckCircleOutlined style={{ fontSize: 24, color: 'green' }} />
+                <div>
+                  <Title level={4} style={{ margin: 0 }}>
+                    {validCount}
+                  </Title>
+                  <Text type='secondary'>Valid</Text>
+                </div>
+              </Space>
+            </Card>
+          </motion.div>
+        </Col>
 
-        <Card style={{ minWidth: 200 }}>
-          <Space direction='horizontal' align='center'>
-            <ClockCircleOutlined style={{ fontSize: 24, color: 'orange' }} />
-            <div>
-              <Title level={4} style={{ margin: 0 }}>
-                {expiredCount}
-              </Title>
-              <Text type='warning'>Expired</Text>
-            </div>
-          </Space>
-        </Card>
+        <Col xs={24} md={8}>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Card
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff',
+                height: '100%'
+              }}
+            >
+              <Space align='center'>
+                <ExclamationCircleOutlined
+                  style={{ fontSize: 24, color: 'red' }}
+                />
+                <div>
+                  <Title level={4} style={{ margin: 0 }}>
+                    {missingCount ? missingCount : missingDocsList.length}
+                  </Title>
+                  <Text>Unsubmitted</Text>
+                </div>
+              </Space>
+            </Card>
+          </motion.div>
+        </Col>
 
-        <Card style={{ minWidth: 200 }}>
-          <Space direction='horizontal' align='center'>
-            <CheckCircleOutlined style={{ fontSize: 24, color: 'volcano' }} />
-            <div>
-              <Title level={4} style={{ margin: 0 }}>
-                {invalidCount}
-              </Title>
-              <Text type='secondary'>Invalid</Text>
-            </div>
-          </Space>
-        </Card>
-      </Space>
+        <Col xs={24} md={8}>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Card
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff',
+                height: '100%'
+              }}
+            >
+              <Space align='center'>
+                <ClockCircleOutlined
+                  style={{ fontSize: 24, color: 'orange' }}
+                />
+                <div>
+                  <Title level={4} style={{ margin: 0 }}>
+                    {expiredCount}
+                  </Title>
+                  <Text type='warning'>Expired</Text>
+                </div>
+              </Space>
+            </Card>
+          </motion.div>
+        </Col>
+      </Row>
 
       <div
         style={{
@@ -249,24 +436,40 @@ export const DocumentHub: React.FC = () => {
           marginBottom: 12
         }}
       >
-        <Title level={4}>Compliance Documents</Title>
-        <Button
-          type='primary'
-          icon={<PlusOutlined />}
-          onClick={() => setIsModalVisible(true)}
-        >
-          Add New Document
-        </Button>
+        <Divider>Compliance Documents</Divider>
       </div>
 
-      <Card>
-        <Table
-          columns={columns}
-          dataSource={complianceDocs}
-          loading={loading}
-          pagination={false}
-        />
-      </Card>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+      >
+        <Card
+          hoverable
+          style={{
+            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+            transition: 'all 0.3s ease',
+            borderRadius: 8,
+            border: '1px solid #d6e4ff'
+          }}
+          extra={
+            <Button
+              type='primary'
+              icon={<PlusOutlined />}
+              onClick={() => setIsModalVisible(true)}
+            >
+              Add New Document
+            </Button>
+          }
+        >
+          <Table
+            columns={columns}
+            dataSource={complianceDocs}
+            loading={loading}
+            pagination={false}
+          />
+        </Card>
+      </motion.div>
 
       <Modal
         title='Upload New Document'

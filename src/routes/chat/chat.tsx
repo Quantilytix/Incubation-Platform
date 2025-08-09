@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
   Layout,
-  Menu,
   Avatar,
   Input,
   Button,
@@ -11,38 +10,75 @@ import {
   Spin,
   message as AntdMessage
 } from 'antd'
-import {
-  SendOutlined,
-  AudioOutlined,
-  PauseOutlined,
-  PlayCircleOutlined,
-  MessageOutlined,
-  FileTextOutlined,
-  ProjectOutlined,
-  SolutionOutlined,
-  BellOutlined
-} from '@ant-design/icons'
+import { SendOutlined } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import { useGetIdentity } from '@refinedev/core'
-import { doc, query,where, collection , getDoc, getDocs } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where
+} from 'firebase/firestore'
 import { db } from '@/firebase'
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 
-const { Header, Sider, Content } = Layout
+const { Header, Content } = Layout
 const { Text } = Typography
 
-const GPT_OPTIONS = [
-  'Chat',
-  'Report',
-  'Marketing Plan',
-  'Business Plan',
-  'Notifications'
-]
+// --- Typing Indicator (ChatGPT-style) ---
+const TypingIndicator: React.FC = () => (
+  <div
+    style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 8,
+      padding: '10px 12px',
+      borderRadius: 12,
+      background: '#fafafa',
+      boxShadow: '0 2px 10px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.06)'
+    }}
+    aria-live='polite'
+    aria-label='Assistant is typing'
+  >
+    <Avatar style={{ backgroundColor: '#1890ff' }}>🤖</Avatar>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ fontSize: 12, color: '#999', marginRight: 4 }}>
+        Assistant is typing
+      </span>
+      <span className='dots'>
+        <span className='dot' />
+        <span className='dot' />
+        <span className='dot' />
+      </span>
+    </div>
+    {/* keyframes */}
+    <style>
+      {`
+        .dots { display:inline-flex; gap:4px; }
+        .dot {
+          width: 6px; height: 6px; border-radius: 50%;
+          background: #8c8c8c; display:inline-block;
+          animation: dotFade 1.2s infinite ease-in-out;
+          opacity: 0.4;
+        }
+        .dot:nth-child(1) { animation-delay: 0s; }
+        .dot:nth-child(2) { animation-delay: 0.15s; }
+        .dot:nth-child(3) { animation-delay: 0.3s; }
+        @keyframes dotFade {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+          30% { transform: translateY(-4px); opacity: 1; }
+        }
+      `}
+    </style>
+  </div>
+)
 
 const Chat = () => {
-  const { data: identity } = useGetIdentity()
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [selectedGPT, setSelectedGPT] = useState('Chat')
+  const { user } = useFullIdentity()
 
+  const [userRole, setUserRole] = useState<string | null>(null)
   const [messages, setMessages] = useState<any[]>([
     {
       id: 1,
@@ -58,113 +94,94 @@ const Chat = () => {
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
-  const [userActualId, setUserActualId] = useState<string>('unknown')
-  const [recording, setRecording] = useState(false)
-  const [audioUrl, setAudioUrl] = useState<string | null>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
-  const [transcript, setTranscript] = useState('')
+
+  // one true center width for BOTH chat area and composer
+  const trackWidth = 'min(1100px, calc(100% - clamp(20px, 6vw, 120px)))'
 
   useEffect(() => {
-    const fetchRoleAndParticipantId = async () => {
-      if (!identity?.email) return
-
+    const fetchMeta = async () => {
+      if (!user?.email) return
       try {
-        const userDoc = await getDoc(doc(db, 'users', identity.id))
+        const userDoc = await getDoc(doc(db, 'users', user?.id))
         const role = userDoc.data()?.role?.toLowerCase?.()
         setUserRole(role || null)
 
-        let actualId = 'unknown'
-
+        // touch relevant collections (if needed elsewhere)
         if (role === 'incubatee') {
-          const snap = await getDocs(
+          await getDocs(
             query(
               collection(db, 'participants'),
-              where('email', '==', identity.email)
+              where('email', '==', user.email)
             )
           )
-          if (!snap.empty) {
-            actualId = snap.docs[0].data().participantId || 'unknown'
-          }
         } else if (role === 'operations') {
-          const snap = await getDocs(
+          await getDocs(
             query(
               collection(db, 'operationStaff'),
-              where('email', '==', identity.email)
+              where('email', '==', user.email)
             )
           )
-          if (!snap.empty) {
-            actualId = snap.docs[0].id
-          }
         } else if (role === 'consultant') {
-          const snap = await getDocs(
+          await getDocs(
             query(
               collection(db, 'consultants'),
-              where('email', '==', identity.email)
+              where('email', '==', user.email)
             )
           )
-          if (!snap.empty) {
-            actualId = snap.docs[0].data().id || 'unknown'
-          }
-        } else if (role === 'director') {
-          actualId = identity.id
         }
-
-        setUserActualId(actualId) // 👈 Add this state
       } catch (err) {
-        console.error('Error fetching role-specific ID:', err)
+        console.error('Error fetching role info:', err)
       }
     }
-
-    fetchRoleAndParticipantId()
-  }, [identity])
+    fetchMeta()
+  }, [user])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, isTyping])
 
   const sendToAI = async (query: string) => {
+    if (!user?.companyCode) return '⚠️ No company code found.'
     try {
-      const response = await fetch('https://rairo-incu-api.hf.space/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userActualId,
-          role: userRole || 'guest',
-          user_query: query,
-          context: messages.map(m => ({
-            role: m.sender === 'user' ? 'user' : 'assistant',
-            content: m.content
-          }))
-        })
-      })
-
+      const response = await fetch(
+        'https://yoursdvniel-smartinc-api.hf.space/chat',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: userRole || 'guest',
+            message: query,
+            companyCode: user?.companyCode,
+            userId: user?.id
+          })
+        }
+      )
       if (!response.ok) {
         const errorText = await response.text()
         console.error('API error:', errorText)
         throw new Error(`Status ${response.status}`)
       }
-
       const data = await response.json()
       return data.reply || '🤖 No response received.'
     } catch (err) {
+      console.error(err)
       AntdMessage.error('AI request failed.')
       return '⚠️ Could not reach AI.'
     }
   }
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (raw: string) => {
+    const content = raw.trim()
+    if (!content) return
     const userMessage = {
       id: messages.length + 1,
       sender: 'user',
-      avatar: null,
       content,
       timestamp: new Date().toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit'
       })
     }
-
     setMessages(prev => [...prev, userMessage])
     setIsTyping(true)
     setInput('')
@@ -187,224 +204,160 @@ const Chat = () => {
     setIsTyping(false)
   }
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = mediaRecorder
-      audioChunksRef.current = []
-
-      mediaRecorder.ondataavailable = e => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data)
-      }
-
-      mediaRecorder.onstop = async () => {
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        const url = URL.createObjectURL(blob)
-        setAudioUrl(url)
-
-        const formData = new FormData()
-        formData.append('file', blob, 'audio.webm')
-        formData.append('model', 'whisper-1')
-
-        try {
-          const res = await fetch(
-            'https://api.openai.com/v1/audio/transcriptions',
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer f5907e035ada4f3db45711f7e75fac72`
-              },
-              body: formData
-            }
-          )
-
-          const data = await res.json()
-          setTranscript(data.text || '')
-        } catch (err) {
-          AntdMessage.error('Transcription failed')
-          setTranscript('')
-        }
-      }
-
-      mediaRecorder.start()
-      setRecording(true)
-    } catch (err) {
-      AntdMessage.error('Microphone permission denied.')
-    }
-  }
-
-  const stopRecording = () => {
-    mediaRecorderRef.current?.stop()
-    setRecording(false)
-  }
-
-  const discardAudio = () => {
-    setAudioUrl(null)
-    setTranscript('')
-  }
-
-  const gptIconMap: Record<string, React.ReactNode> = {
-    Chat: <MessageOutlined />,
-    Report: <FileTextOutlined />,
-    'Marketing Plan': <ProjectOutlined />,
-    'Business Plan': <SolutionOutlined />,
-    Notifications: <BellOutlined />
-  }
-
   return (
     <>
       <Helmet>
         <title>Chat Assistant | Incubation Platform</title>
       </Helmet>
 
-      <Layout style={{ height: '100vh' }}>
-        <Sider width={220} style={{ backgroundColor: '#fff' }}>
-          <Menu
-            mode='vertical'
-            selectedKeys={[selectedGPT]}
-            onClick={({ key }) => setSelectedGPT(key)}
-          >
-            {GPT_OPTIONS.map(opt => (
-              <Menu.Item key={opt} icon={gptIconMap[opt]}>
-                {opt}
-              </Menu.Item>
-            ))}
-          </Menu>
-        </Sider>
+      <Layout
+        style={{ height: '100vh', overflow: 'hidden', background: '#fff' }}
+      >
+        <Header
+          style={{
+            background: '#fff',
+            paddingInline: 'clamp(12px, 3vw, 32px)',
+            display: 'flex',
+            alignItems: 'center',
+            borderBottom: '1px solid rgba(0,0,0,0.06)'
+          }}
+        >
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            Assistant
+          </Typography.Title>
+        </Header>
 
-        <Layout>
-          <Header style={{ backgroundColor: '#fff', paddingLeft: 24 }}>
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              {selectedGPT} Assistant
-            </Typography.Title>
-          </Header>
-
-          <Content
+        <Content
+          style={{
+            position: 'relative',
+            height: '100%',
+            overflow: 'hidden',
+            background: '#fff'
+          }}
+        >
+          {/* Scrollable conversation area, centered */}
+          <div
             style={{
-              padding: 0,
               height: '100%',
+              overflowY: 'auto',
+              padding: 'clamp(12px, 2.5vw, 28px) 0 160px',
               display: 'flex',
-              flexDirection: 'column',
-              backgroundColor: '#fff'
+              justifyContent: 'center',
+              background: '#fff'
             }}
           >
-            {/* Chat Area */}
-            <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+            <div style={{ width: trackWidth }}>
               <List
                 dataSource={messages}
                 renderItem={msg => (
-                  <List.Item
-                    style={{
-                      justifyContent:
-                        msg.sender === 'user' ? 'flex-end' : 'flex-start'
-                    }}
-                  >
-                    <Space
-                      direction='horizontal'
+                  <List.Item style={{ border: 'none', paddingInline: 0 }}>
+                    <div
                       style={{
-                        maxWidth: '70%',
-                        background:
-                          msg.sender === 'user' ? '#e6f7ff' : '#fafafa',
-                        padding: 12,
-                        borderRadius: 10
+                        display: 'flex',
+                        width: '100%',
+                        justifyContent:
+                          msg.sender === 'user' ? 'flex-end' : 'flex-start'
                       }}
                     >
-                      {msg.sender === 'system' && (
-                        <Avatar style={{ backgroundColor: '#1890ff' }}>
-                          {msg.avatar}
-                        </Avatar>
-                      )}
-                      <div>
-                        <Text style={{ whiteSpace: 'pre-wrap' }}>
-                          {msg.content}
-                        </Text>
-                        <div
-                          style={{
-                            fontSize: '0.75rem',
-                            color: '#999',
-                            marginTop: 4
-                          }}
-                        >
-                          {msg.timestamp}
+                      <Space
+                        align='start'
+                        style={{
+                          maxWidth: 'min(78%, 900px)',
+                          background:
+                            msg.sender === 'user' ? '#e6f7ff' : '#fafafa',
+                          padding: '12px 14px',
+                          borderRadius: 12,
+                          boxShadow:
+                            '0 2px 10px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.06)'
+                        }}
+                      >
+                        {msg.sender === 'system' && (
+                          <Avatar style={{ backgroundColor: '#1890ff' }}>
+                            {msg.avatar}
+                          </Avatar>
+                        )}
+                        <div>
+                          <Text style={{ whiteSpace: 'pre-wrap' }}>
+                            {msg.content}
+                          </Text>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: '#999',
+                              marginTop: 6
+                            }}
+                          >
+                            {msg.timestamp}
+                          </div>
                         </div>
-                      </div>
-                    </Space>
+                      </Space>
+                    </div>
                   </List.Item>
                 )}
               />
+
+              {/* ChatGPT-style typing indicator */}
               {isTyping && (
-                <div style={{ display: 'flex', marginTop: 12 }}>
-                  <Spin style={{ marginRight: 8 }} />
-                  <Text type='secondary'>Quant is typing...</Text>
+                <div style={{ display: 'flex', marginTop: 6 }}>
+                  <TypingIndicator />
                 </div>
               )}
+
               <div ref={messagesEndRef} />
             </div>
+          </div>
 
-            {/* Input Section */}
-            <div style={{ padding: 16, borderTop: '1px solid #eee' }}>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Input.TextArea
-                  rows={2}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onPressEnter={e => {
-                    if (!e.shiftKey) {
-                      e.preventDefault()
-                      handleSendMessage(input)
-                    }
-                  }}
-                  placeholder='Type a message...'
-                  style={{ resize: 'none', flex: 1 }}
-                />
-                <Button
-                  type='primary'
-                  icon={<SendOutlined />}
-                  onClick={() => handleSendMessage(input)}
-                />
-              </div>
-
-              <div style={{ marginTop: 12 }}>
-                <Space>
-                  {!recording ? (
-                    <Button icon={<AudioOutlined />} onClick={startRecording}>
-                      Record
-                    </Button>
-                  ) : (
-                    <Button
-                      icon={<PauseOutlined />}
-                      onClick={stopRecording}
-                      danger
-                    >
-                      Stop
-                    </Button>
-                  )}
-
-                  {audioUrl && (
-                    <>
-                      <audio controls src={audioUrl} />
-                      <Button
-                        icon={<PlayCircleOutlined />}
-                        onClick={() => new Audio(audioUrl).play()}
-                      >
-                        Replay
-                      </Button>
-                      <Button
-                        type='primary'
-                        icon={<SendOutlined />}
-                        onClick={() => handleSendMessage('[Audio Sent]')}
-                      >
-                        Send to AI
-                      </Button>
-                      <Button onClick={discardAudio}>Discard</Button>
-                    </>
-                  )}
-                </Space>
-              </div>
+          {/* Floating, ALWAYS-centered composer */}
+          <div
+            style={{
+              position: 'fixed',
+              left: '50%',
+              bottom: 'clamp(12px, 3vw, 32px)',
+              transform: 'translateX(-50%)',
+              width: trackWidth,
+              zIndex: 10,
+              background: '#fff',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              border: '1px solid rgba(24, 144, 255, 0.12)',
+              boxShadow:
+                '0 10px 30px rgba(24, 144, 255, 0.12), 0 6px 16px rgba(0,0,0,0.06)',
+              borderRadius: 16,
+              padding: 'clamp(8px, 1.5vw, 14px)'
+            }}
+          >
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              <Input.TextArea
+                autoSize={{ minRows: 1, maxRows: 8 }}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onPressEnter={e => {
+                  if (!e.shiftKey) {
+                    e.preventDefault()
+                    handleSendMessage(input)
+                  }
+                }}
+                placeholder='Type your message… (Shift+Enter for a new line)'
+                style={{
+                  resize: 'none',
+                  borderRadius: 12,
+                  border: '1px solid rgba(0,0,0,0.06)',
+                  boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.03)',
+                  paddingInline: '12px'
+                }}
+              />
+              <Button
+                type='primary'
+                icon={<SendOutlined />}
+                onClick={() => handleSendMessage(input)}
+                disabled={!input.trim()}
+                style={{ paddingInline: 'clamp(10px, 2vw, 16px)' }}
+              >
+                Send
+              </Button>
             </div>
-          </Content>
-        </Layout>
+          </div>
+        </Content>
       </Layout>
     </>
   )

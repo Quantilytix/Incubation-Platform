@@ -44,6 +44,8 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { db } from '@/firebase'
 import { v4 as uuidv4 } from 'uuid'
 import dayjs from 'dayjs'
+import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -111,6 +113,9 @@ interface InterventionRequest {
 }
 
 const InterventionsTrackingView: React.FC = () => {
+  const [application, setApplication] = useState<any>(null)
+  const [appLoaded, setAppLoaded] = useState(false)
+  const navigate = useNavigate()
   const [requiredInterventions, setRequiredInterventions] = useState<
     RequiredIntervention[]
   >([])
@@ -134,12 +139,22 @@ const InterventionsTrackingView: React.FC = () => {
   const [rejectCompletionForm] = Form.useForm()
   const [declineForm] = Form.useForm()
   const [declineTargetId, setDeclineTargetId] = useState<string | null>(null)
+  const confirmedByOps = !!application?.interventions?.confirmedBy?.operations
+  const confirmedByIncubatee =
+    !!application?.interventions?.confirmedBy?.incubatee
 
+  const motivationalGif = '/public/assets/images/motivation.gif'
+
+  // 1) In your useEffect for loading the application:
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
-      if (!user) return
-
       try {
+        if (!user) {
+          setApplication(null)
+          setAppLoaded(true) // <- mark loaded even if no user
+          return
+        }
+
         const appSnap = await getDocs(
           query(
             collection(db, 'applications'),
@@ -148,24 +163,17 @@ const InterventionsTrackingView: React.FC = () => {
         )
 
         if (!appSnap.empty) {
-          const appDoc = appSnap.docs[0]
-          const appData = appDoc.data()
-
-          console.log('📥 Full App Data:', appData)
-
-          const pid = appData.participantId
-          const required = appData?.interventions?.required || []
-
-          setParticipantId(pid)
-          setRequiredInterventions(required)
-
-          console.log('✅ Set Participant ID:', pid)
-          console.log('✅ Set Required Interventions:', required)
+          const appData = appSnap.docs[0].data()
+          setApplication(appData)
+          setParticipantId(appData.participantId)
+          setRequiredInterventions(appData?.interventions?.required || [])
         } else {
-          console.warn('❌ No application found for this user.')
+          setApplication(null)
         }
       } catch (err) {
         console.error('🔥 Failed to load application data:', err)
+      } finally {
+        setAppLoaded(true) // <- ALWAYS flip here
       }
     })
 
@@ -520,6 +528,7 @@ const InterventionsTrackingView: React.FC = () => {
       deriveDisplayStatus(item).toLowerCase() === filters.status.toLowerCase()
     )
   })
+
   const getUnassignedInterventions = (): AssignedIntervention[] => {
     return requiredInterventions
       .filter(
@@ -778,174 +787,326 @@ const InterventionsTrackingView: React.FC = () => {
     ? Math.round((completedCount / totalRequired) * 100)
     : 0
 
+  // 2) EARLY RETURN at top of component render (before your current return)
+  if (!appLoaded) {
+    return (
+      <div style={{ padding: 20, minHeight: '100vh' }}>
+        <Helmet>
+          <title>Interventions Tracking</title>
+        </Helmet>
+        <Alert
+          type='info'
+          showIcon
+          message='Loading your diagnostic status…'
+          description='Hang tight while we check your Diagnostic Plan and interventions.'
+          style={{ marginBottom: 16 }}
+        />
+        <Card
+          loading
+          style={{
+            borderRadius: 8,
+            border: '1px solid #d6e4ff',
+            marginBottom: 12
+          }}
+        />
+        <Card
+          loading
+          style={{ borderRadius: 8, border: '1px solid #d6e4ff' }}
+        />
+      </div>
+    )
+  }
+
   return (
-    <div style={{ padding: '20px' }}>
+    <div style={{ padding: '20px', minHeight: '100vh' }}>
       <Helmet>
         <title>Interventions Tracking</title>
       </Helmet>
 
-      <Title level={3}>Interventions Tracking</Title>
-      <Text type='secondary'>
-        Track and manage your assigned interventions.
-      </Text>
-      <Divider />
-
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={6}>
-          <Card>
-            <Row align='middle' gutter={8}>
-              <Col>
-                <FileSearchOutlined style={{ fontSize: 24 }} />
-              </Col>
-              <Col>
-                <Text>Total Required</Text>
-                <Title level={4} style={{ margin: 0 }}>
-                  {totalRequired}
-                </Title>
-              </Col>
-            </Row>
-          </Card>
-        </Col>
-
-        <Col span={6}>
-          <Card>
-            <Row align='middle' gutter={8}>
-              <Col>
-                <ClockCircleOutlined style={{ fontSize: 24 }} />
-              </Col>
-              <Col>
-                <Text>Ongoing</Text>
-                <Title level={4} style={{ margin: 0 }}>
-                  {ongoingCount}
-                </Title>
-              </Col>
-            </Row>
-          </Card>
-        </Col>
-
-        <Col span={6}>
-          <Card>
-            <Row align='middle' gutter={8}>
-              <Col>
-                <CheckCircleOutlined style={{ fontSize: 24 }} />
-              </Col>
-              <Col>
-                <Text>Completed</Text>
-                <Title level={4} style={{ margin: 0 }}>
-                  {completedCount}
-                </Title>
-              </Col>
-            </Row>
-          </Card>
-        </Col>
-
-        <Col span={6}>
-          <Card>
-            <Row align='middle' gutter={8}>
-              <Col span={24}>
-                <LineChartOutlined style={{ fontSize: 24 }} />
-                <Text style={{ marginLeft: 8 }}>Completion Rate</Text>
-              </Col>
-              <Col span={24}>
-                <Progress percent={completionRate} />
-              </Col>
-            </Row>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Filters */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        <Col xs={24} sm={12}>
-          <Select
-            placeholder='Filter by Status'
-            value={filters.status}
-            onChange={value => setFilters({ ...filters, status: value })}
-            style={{ width: '100%' }}
+      {/* Awaiting/Confirming Diagnostic Plan gate */}
+      {appLoaded && (!confirmedByOps || !confirmedByIncubatee) && (
+        <div style={{ padding: 20, minHeight: '60vh' }}>
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 16,
+              background: 'transparent' // makes background fully transparent
+            }}
           >
-            <Option value='all'>All</Option>
-            <Option value='pending assignment'>Pending Assignment</Option>
-            <Option value='awaiting consultant'>Awaiting Consultant</Option>
-            <Option value='awaiting your acceptance'>
-              Awaiting Your Acceptance
-            </Option>
-            <Option value='in progress'>In Progress</Option>
-            <Option value='awaiting confirmation'>Awaiting Confirmation</Option>
-            <Option value='completed'>Completed</Option>
-            <Option value='declined'>Declined</Option>
-            <Option value='rejected'>Rejected</Option>
-          </Select>
-        </Col>
-        <Col xs={24} sm={12}>
-          <Button
-            type='primary'
-            icon={<PlusOutlined />}
-            onClick={() => setIsRequestModalVisible(true)}
-            block
-          >
-            Request New Intervention
-          </Button>
-        </Col>
-      </Row>
+            <img
+              src={motivationalGif}
+              alt='Keep going!'
+              style={{
+                maxWidth: 420,
+                width: '100%',
+                borderRadius: 12,
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                border: '1px solid #d6e4ff'
+              }}
+            />
 
-      {/* Assigned Interventions Table */}
-      <Card>
-        <Table
-          dataSource={getFilteredInterventions()}
-          columns={interventionColumns}
-          rowKey='id'
-          pagination={{ pageSize: 5 }}
-          expandable={{
-            expandedRowRender: (record: AssignedIntervention) => (
-              <div style={{ padding: '12px 24px' }}>
-                <p>
-                  <strong>Description:</strong>{' '}
-                  {record.description || (
-                    <Text type='secondary'>No description provided.</Text>
-                  )}
-                </p>
+            {confirmedByOps && !confirmedByIncubatee ? (
+              <Alert
+                type='warning'
+                showIcon
+                message='Please confirm your Diagnostic Plan'
+                description='To start monitoring your intervention assignments, confirm your Diagnostic Plan.'
+                action={
+                  <Button
+                    type='primary'
+                    onClick={() => navigate('/incubatee/interventions')}
+                  >
+                    Go
+                  </Button>
+                }
+                style={{ maxWidth: 600, width: '100%' }}
+              />
+            ) : (
+              <Alert
+                type='info'
+                showIcon
+                message='We’re finalizing your Diagnostic Plan'
+                description='Hold on a moment while we wrap things up. You’ll be able to track your interventions as soon as the plan is confirmed.'
+                style={{ maxWidth: 600, width: '100%' }}
+              />
+            )}
+          </motion.div>
+        </div>
+      )}
 
-                {record.resources?.length > 0 && (
-                  <>
-                    <Divider />
-                    <strong>Resources:</strong>
-                    <ul>
-                      {record.resources?.map((res, idx) => (
-                        <li key={idx}>
-                          {res.type === 'link' ? '🔗' : '📄'}{' '}
-                          <a
-                            href={res.link}
-                            target='_blank'
-                            rel='noopener noreferrer'
-                          >
-                            {res.label}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
+      {appLoaded && (!confirmedByOps || !confirmedByIncubatee) ? null : (
+        <>
+          {/* Header */}
+          <Alert
+            type='info'
+            showIcon
+            message='Interventions Tracking'
+            description='Track and manage your assigned interventions.'
+            style={{ marginBottom: 16 }}
+          />
+          <Divider />
 
-                {record.feedback && (
-                  <>
-                    <Divider />
-                    <strong>
-                      Feedback (comments consultant's professionalism,
-                      intervention quality, etc):
-                    </strong>
+          <Row gutter={16} style={{ marginBottom: 24 }}>
+            <Col span={6}>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <Card
+                  hoverable
+                  style={{
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                    transition: 'all 0.3s ease',
+                    borderRadius: 8,
+                    border: '1px solid #d6e4ff'
+                  }}
+                >
+                  <Row align='middle' gutter={8}>
+                    <Col>
+                      <FileSearchOutlined style={{ fontSize: 24 }} />
+                    </Col>
+                    <Col>
+                      <Text>Total Required</Text>
+                      <Title level={4} style={{ margin: 0 }}>
+                        {totalRequired}
+                      </Title>
+                    </Col>
+                  </Row>
+                </Card>
+              </motion.div>
+            </Col>
+
+            <Col span={6}>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <Card
+                  hoverable
+                  style={{
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                    transition: 'all 0.3s ease',
+                    borderRadius: 8,
+                    border: '1px solid #d6e4ff'
+                  }}
+                >
+                  <Row align='middle' gutter={8}>
+                    <Col>
+                      <ClockCircleOutlined style={{ fontSize: 24 }} />
+                    </Col>
+                    <Col>
+                      <Text>Ongoing</Text>
+                      <Title level={4} style={{ margin: 0 }}>
+                        {ongoingCount}
+                      </Title>
+                    </Col>
+                  </Row>
+                </Card>
+              </motion.div>
+            </Col>
+
+            <Col span={6}>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <Card
+                  hoverable
+                  style={{
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                    transition: 'all 0.3s ease',
+                    borderRadius: 8,
+                    border: '1px solid #d6e4ff'
+                  }}
+                >
+                  <Row align='middle' gutter={8}>
+                    <Col>
+                      <CheckCircleOutlined style={{ fontSize: 24 }} />
+                    </Col>
+                    <Col>
+                      <Text>Completed</Text>
+                      <Title level={4} style={{ margin: 0 }}>
+                        {completedCount}
+                      </Title>
+                    </Col>
+                  </Row>
+                </Card>
+              </motion.div>
+            </Col>
+
+            <Col span={6}>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <Card
+                  hoverable
+                  style={{
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                    transition: 'all 0.3s ease',
+                    borderRadius: 8,
+                    border: '1px solid #d6e4ff'
+                  }}
+                >
+                  <Row align='middle' gutter={8}>
+                    <Col span={24}>
+                      <LineChartOutlined style={{ fontSize: 24 }} />
+                      <Text style={{ marginLeft: 8 }}>Completion Rate</Text>
+                    </Col>
+                    <Col span={24}>
+                      <Progress percent={completionRate} />
+                    </Col>
+                  </Row>
+                </Card>
+              </motion.div>
+            </Col>
+          </Row>
+
+          {/* Filters */}
+          <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+            <Col xs={24} sm={12}>
+              <Select
+                placeholder='Filter by Status'
+                value={filters.status}
+                onChange={value => setFilters({ ...filters, status: value })}
+                style={{ width: '100%' }}
+              >
+                <Option value='all'>All</Option>
+                <Option value='pending assignment'>Pending Assignment</Option>
+                <Option value='awaiting consultant'>Awaiting Consultant</Option>
+                <Option value='awaiting your acceptance'>
+                  Awaiting Your Acceptance
+                </Option>
+                <Option value='in progress'>In Progress</Option>
+                <Option value='awaiting confirmation'>
+                  Awaiting Confirmation
+                </Option>
+                <Option value='completed'>Completed</Option>
+                <Option value='declined'>Declined</Option>
+                <Option value='rejected'>Rejected</Option>
+              </Select>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Button
+                type='primary'
+                icon={<PlusOutlined />}
+                onClick={() => setIsRequestModalVisible(true)}
+                block
+              >
+                Request New Intervention
+              </Button>
+            </Col>
+          </Row>
+
+          {/* Assigned Interventions Table */}
+          <Card>
+            <Table
+              dataSource={getFilteredInterventions()}
+              columns={interventionColumns}
+              rowKey='id'
+              pagination={{ pageSize: 5 }}
+              expandable={{
+                expandedRowRender: (record: AssignedIntervention) => (
+                  <div style={{ padding: '12px 24px' }}>
                     <p>
-                      <Rate disabled value={record.feedback.rating} />
+                      <strong>Description:</strong>{' '}
+                      {record.description || (
+                        <Text type='secondary'>No description provided.</Text>
+                      )}
                     </p>
-                    <Text>
-                      {record.feedback.comments || 'No comments provided.'}
-                    </Text>
-                  </>
-                )}
-              </div>
-            )
-          }}
-        />
-      </Card>
+
+                    {record.resources?.length > 0 && (
+                      <>
+                        <Divider />
+                        <strong>Resources:</strong>
+                        <ul>
+                          {record.resources?.map((res, idx) => (
+                            <li key={idx}>
+                              {res.type === 'link' ? '🔗' : '📄'}{' '}
+                              <a
+                                href={res.link}
+                                target='_blank'
+                                rel='noopener noreferrer'
+                              >
+                                {res.label}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+
+                    {record.feedback && (
+                      <>
+                        <Divider />
+                        <strong>
+                          Feedback (comments consultant's professionalism,
+                          intervention quality, etc):
+                        </strong>
+                        <p>
+                          <Rate disabled value={record.feedback.rating} />
+                        </p>
+                        <Text>
+                          {record.feedback.comments || 'No comments provided.'}
+                        </Text>
+                      </>
+                    )}
+                  </div>
+                )
+              }}
+            />
+          </Card>
+        </>
+      )}
 
       {/* Request Intervention Modal */}
       <Modal

@@ -56,88 +56,88 @@ const eligibilityLabels = {
   blackOwnedPercent: label => `Min black ownership: ${label}%`,
   custom: label => <span style={{ fontStyle: 'italic' }}>{label}</span>
 }
-  
-  function checkEligibility (participant, criteria = {}) {
-    if (!criteria || Object.keys(criteria).length === 0) return null // Open to all
 
-    // Min/Max Age
-    if (criteria.minAge && participant.age < criteria.minAge)
-      return `Minimum age is ${criteria.minAge}`
-    if (criteria.maxAge && participant.age > criteria.maxAge)
-      return `Maximum age is ${criteria.maxAge}`
+function checkEligibility (participant, criteria = {}) {
+  if (!criteria || Object.keys(criteria).length === 0) return null // Open to all
 
-    // Gender
-    if (
-      criteria.gender &&
-      criteria.gender.length &&
-      !criteria.gender.includes(participant.gender)
-    )
-      return `Eligible gender(s): ${criteria.gender.join(', ')}`
+  // Min/Max Age
+  if (criteria.minAge && participant.age < criteria.minAge)
+    return `Minimum age is ${criteria.minAge}`
+  if (criteria.maxAge && participant.age > criteria.maxAge)
+    return `Maximum age is ${criteria.maxAge}`
 
-    // Sector
-    if (
-      criteria.sector &&
-      criteria.sector.length &&
-      !criteria.sector.includes(participant.sector)
-    )
-      return `Sector must be one of: ${criteria.sector.join(', ')}`
+  // Gender
+  if (
+    criteria.gender &&
+    criteria.gender.length &&
+    !criteria.gender.includes(participant.gender)
+  )
+    return `Eligible gender(s): ${criteria.gender.join(', ')}`
 
-    // Province
-    if (
-      criteria.province &&
-      criteria.province.length &&
-      !criteria.province.includes(participant.province)
-    )
-      return `Province must be one of: ${criteria.province.join(', ')}`
+  // Sector
+  if (
+    criteria.sector &&
+    criteria.sector.length &&
+    !criteria.sector.includes(participant.sector)
+  )
+    return `Sector must be one of: ${criteria.sector.join(', ')}`
 
-    // BEE Level
-    if (
-      criteria.beeLevel &&
-      criteria.beeLevel.length &&
-      !criteria.beeLevel.includes(participant.beeLevel)
-    )
-      return `Allowed BEE Levels: ${criteria.beeLevel.join(', ')}`
+  // Province
+  if (
+    criteria.province &&
+    criteria.province.length &&
+    !criteria.province.includes(participant.province)
+  )
+    return `Province must be one of: ${criteria.province.join(', ')}`
 
-    // Years of trading
-    if (
-      criteria.minYearsOfTrading &&
-      participant.yearsOfTrading < criteria.minYearsOfTrading
-    )
-      return `At least ${criteria.minYearsOfTrading} year(s) of trading required`
+  // BEE Level
+  if (
+    criteria.beeLevel &&
+    criteria.beeLevel.length &&
+    !criteria.beeLevel.includes(participant.beeLevel)
+  )
+    return `Allowed BEE Levels: ${criteria.beeLevel.join(', ')}`
 
-    // Ownership
-    if (
-      criteria.youthOwnedPercent !== undefined &&
-      +participant.youthOwnedPercent < +criteria.youthOwnedPercent
-    )
-      return `At least ${criteria.youthOwnedPercent}% youth ownership required`
-    if (
-      criteria.blackOwnedPercent !== undefined &&
-      +participant.blackOwnedPercent < +criteria.blackOwnedPercent
-    )
-      return `At least ${criteria.blackOwnedPercent}% black ownership required`
-    if (
-      criteria.femaleOwnedPercent !== undefined &&
-      +participant.femaleOwnedPercent < +criteria.femaleOwnedPercent
-    )
-      return `At least ${criteria.femaleOwnedPercent}% female ownership required`
+  // Years of trading
+  if (
+    criteria.minYearsOfTrading &&
+    participant.yearsOfTrading < criteria.minYearsOfTrading
+  )
+    return `At least ${criteria.minYearsOfTrading} year(s) of trading required`
 
-    // Custom note (doesn't block, just show)
-    return null
+  // Ownership
+  if (
+    criteria.youthOwnedPercent !== undefined &&
+    +participant.youthOwnedPercent < +criteria.youthOwnedPercent
+  )
+    return `At least ${criteria.youthOwnedPercent}% youth ownership required`
+  if (
+    criteria.blackOwnedPercent !== undefined &&
+    +participant.blackOwnedPercent < +criteria.blackOwnedPercent
+  )
+    return `At least ${criteria.blackOwnedPercent}% black ownership required`
+  if (
+    criteria.femaleOwnedPercent !== undefined &&
+    +participant.femaleOwnedPercent < +criteria.femaleOwnedPercent
+  )
+    return `At least ${criteria.femaleOwnedPercent}% female ownership required`
+
+  // Custom note (doesn't block, just show)
+  return null
+}
+
+function renderEligibilityCriteria (criteria) {
+  if (!criteria || Object.keys(criteria).length === 0) {
+    return <li>Open to all (no restrictions)</li>
   }
-
-  function renderEligibilityCriteria (criteria) {
-    if (!criteria || Object.keys(criteria).length === 0) {
-      return <li>Open to all (no restrictions)</li>
-    }
-    return Object.entries(criteria).map(([key, value]) => (
-      <li key={key}>
-        {eligibilityLabels[key]
-          ? eligibilityLabels[key](value)
-          : `${key}: ${value}`}
-      </li>
-    ))
-  }
+  return Object.entries(criteria).map(([key, value]) => (
+    <li key={key}>
+      {eligibilityLabels[key]
+        ? eligibilityLabels[key](value)
+        : `${key}: ${value}`}
+    </li>
+  ))
+}
 
 const SMEDashboard = () => {
   const [recommended, setRecommended] = useState<any[]>([])
