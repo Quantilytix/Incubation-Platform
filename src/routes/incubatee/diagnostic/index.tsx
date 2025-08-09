@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   Card,
   Typography,
@@ -8,7 +8,9 @@ import {
   message,
   Button,
   Modal,
-  Alert
+  Alert,
+  Input,
+  Tag
 } from 'antd'
 import {
   collection,
@@ -24,6 +26,7 @@ import dayjs from 'dayjs'
 import { SHA256 } from 'crypto-js'
 
 const { Title, Text } = Typography
+const { TextArea } = Input
 
 const IncubateeGrowthPlanPage = () => {
   const [loading, setLoading] = useState(true)
@@ -33,13 +36,23 @@ const IncubateeGrowthPlanPage = () => {
   const [confirmModalOpen, setConfirmModalOpen] = useState(false)
   const [userSignatureURL, setUserSignatureURL] = useState<string | null>(null)
 
+  // --- Motivation editor state ---
+  const [motivation, setMotivation] = useState<string>('')
+  const [savingMotivation, setSavingMotivation] = useState(false)
+  const [motivationPristine, setMotivationPristine] = useState(true)
+
+  // 🔒 Lock editor once incubatee has confirmed
+  const isLocked = useMemo(
+    () => Boolean(application?.interventions?.confirmedBy?.incubatee),
+    [application]
+  )
+
   useEffect(() => {
     const fetchData = async () => {
       const user = auth.currentUser
       if (!user?.email) return message.error('User not authenticated')
 
       try {
-        // Get participant
         const partSnap = await getDocs(
           query(
             collection(db, 'participants'),
@@ -51,7 +64,6 @@ const IncubateeGrowthPlanPage = () => {
         const partData = { ...partDoc.data(), docId: partDoc.id }
         setParticipant(partData)
 
-        // Get application
         const appSnap = await getDocs(
           query(
             collection(db, 'applications'),
@@ -64,7 +76,9 @@ const IncubateeGrowthPlanPage = () => {
         const appData = { ...appDoc.data(), docId: appDoc.id }
         setApplication(appData)
 
-        // 🔍 Fetch digital signature image
+        setMotivation(appData.motivation || '')
+        setMotivationPristine(true)
+
         const userSnap = await getDocs(
           query(collection(db, 'users'), where('email', '==', user.email))
         )
@@ -73,10 +87,8 @@ const IncubateeGrowthPlanPage = () => {
           setUserSignatureURL(userData.signatureURL || null)
         }
 
-        // Normalize interventions
         const required: any[] = appData?.interventions?.required || []
         const formatted: any[] = []
-
         for (const entry of required) {
           if (typeof entry === 'string') {
             const snap = await getDoc(doc(db, 'interventions', entry))
@@ -96,7 +108,6 @@ const IncubateeGrowthPlanPage = () => {
             })
           }
         }
-
         setInterventions(formatted)
       } catch (err) {
         console.error('Error:', err)
@@ -105,9 +116,35 @@ const IncubateeGrowthPlanPage = () => {
         setLoading(false)
       }
     }
-
     fetchData()
   }, [])
+
+  const saveMotivation = async () => {
+    if (!application?.docId) return
+    if (isLocked) return // safety: no writes when locked
+
+    const trimmed = (motivation || '').trim()
+    if (!trimmed) return message.warning('Motivation cannot be empty')
+    if (trimmed.length > 2000)
+      return message.warning('Keep motivation under 2000 characters')
+
+    try {
+      setSavingMotivation(true)
+      const ref = doc(db, 'applications', application.docId)
+      await updateDoc(ref, {
+        motivation: trimmed,
+        motivationUpdatedAt: new Date().toISOString()
+      })
+      setApplication((prev: any) => ({ ...prev, motivation: trimmed }))
+      setMotivationPristine(true)
+      message.success('Motivation updated')
+    } catch (e) {
+      console.error(e)
+      message.error('Failed to update motivation')
+    } finally {
+      setSavingMotivation(false)
+    }
+  }
 
   const handleConfirm = async () => {
     try {
@@ -156,8 +193,8 @@ const IncubateeGrowthPlanPage = () => {
       <div
         style={{
           display: 'flex',
-          alignItems: 'center', // vertically align image and text
-          justifyContent: 'center', // center the whole box
+          alignItems: 'center',
+          justifyContent: 'center',
           border: '1px solid #d9d9d9',
           borderRadius: 8,
           padding: 24,
@@ -166,7 +203,6 @@ const IncubateeGrowthPlanPage = () => {
           boxSizing: 'border-box'
         }}
       >
-        {/* Logo box */}
         <div
           style={{
             width: 200,
@@ -185,7 +221,6 @@ const IncubateeGrowthPlanPage = () => {
           />
         </div>
 
-        {/* Text section */}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <Text style={{ fontSize: 18, fontWeight: 500 }}>
             {participant.beneficiaryName || 'Participant'}
@@ -208,6 +243,62 @@ const IncubateeGrowthPlanPage = () => {
       {participant.dateOfRegistration?.toDate
         ? dayjs(participant.dateOfRegistration.toDate()).format('YYYY-MM-DD')
         : participant.dateOfRegistration || 'N/A'}
+      {/* ===== Motivation editor ===== */}
+      <Divider>Motivation</Divider>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          marginBottom: 8
+        }}
+      >
+        {isLocked ? (
+          <Tag color='default'>Locked after participant confirmation</Tag>
+        ) : (
+          <Tag color='blue'>Editable</Tag>
+        )}
+        {application.motivationUpdatedAt && (
+          <Text type='secondary'>
+            Last updated:{' '}
+            {dayjs(application.motivationUpdatedAt).format('YYYY-MM-DD HH:mm')}
+          </Text>
+        )}
+      </div>
+      <TextArea
+        autoSize={{ minRows: 4, maxRows: 10 }}
+        maxLength={2000}
+        value={motivation}
+        onChange={e => {
+          if (isLocked) return
+          setMotivation(e.target.value)
+          setMotivationPristine(
+            e.target.value === (application?.motivation || '')
+          )
+        }}
+        placeholder='Describe your motivation for joining the incubation programme...'
+        disabled={isLocked}
+      />
+      <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+        <Button
+          type='primary'
+          loading={savingMotivation}
+          disabled={isLocked || motivationPristine || savingMotivation}
+          onClick={saveMotivation}
+        >
+          Save Motivation
+        </Button>
+        <Button
+          disabled={isLocked || motivationPristine}
+          onClick={() => {
+            if (isLocked) return
+            setMotivation(application?.motivation || '')
+            setMotivationPristine(true)
+          }}
+        >
+          Reset
+        </Button>
+      </div>
       {!application.interventions?.confirmedBy?.operations ? (
         <>
           <div
@@ -260,7 +351,6 @@ const IncubateeGrowthPlanPage = () => {
           {application.interventions?.confirmedBy?.incubatee ? (
             <>
               <Divider>Participant Confirmation</Divider>
-
               <Text strong>Cryptographic Signature:</Text>
               <br />
               <Text copyable>{application.digitalSignature}</Text>
