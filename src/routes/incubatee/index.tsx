@@ -27,6 +27,10 @@ import {
   TeamOutlined
 } from '@ant-design/icons'
 import {
+  arrayUnion,
+  arrayRemove,
+  writeBatch,
+  Timestamp,
   doc,
   getDoc,
   collection,
@@ -341,38 +345,77 @@ export const IncubateeDashboard: React.FC = () => {
   }
 
   const handleAccept = async (interventionId: string) => {
-    const ref = doc(db, 'assignedInterventions', interventionId)
-    const snap = await getDoc(ref)
-    if (!snap.exists()) return
+    try {
+      const ref = doc(db, 'assignedInterventions', interventionId)
+      const snap = await getDoc(ref)
+      if (!snap.exists()) return
 
-    const data = snap.data()
+      const data = snap.data()
 
-    await updateDoc(ref, {
-      userStatus: 'accepted',
-      updatedAt: new Date().toISOString()
-    })
+      // find the participant's application
+      const appSnap = await getDocs(
+        query(
+          collection(db, 'applications'),
+          where('participantId', '==', data.participantId)
+        )
+      )
+      if (appSnap.empty) {
+        message.warning('Application not found for this participant.')
+      }
 
-    await addDoc(collection(db, 'notifications'), {
-      participantId: data.participantId,
-      consultantId: data.consultantId,
-      interventionId,
-      interventionTitle: data.interventionTitle,
-      type: 'intervention-accepted',
-      recipientRoles: ['projectadmin', 'consultant', 'beneficiary'],
-      message: {
-        consultant: `Beneficiary ${data.beneficiaryName} accepted the intervention: ${data.interventionTitle}.`,
-        projectadmin: `Beneficiary ${data.beneficiaryName} accepted the intervention.`,
-        beneficiary: `You accepted the intervention: ${data.interventionTitle}.`
-      },
-      createdAt: new Date(),
-      readBy: {}
-    })
+      const assignedObj = {
+        id: data.interventionId || interventionId,
+        title: data.interventionTitle,
+        consultantId: data.consultantId,
+        groupId: data.groupId || null,
+        assignedAt: Timestamp.now(),
+        dueDate: data.dueDate || null
+      }
 
-    message.success('Intervention accepted.')
+      const batch = writeBatch(db)
 
-    setPendingInterventions(prev =>
-      prev.filter(item => item.id !== interventionId)
-    )
+      // update assignment status
+      const next: any = { userStatus: 'accepted', updatedAt: Timestamp.now() }
+      if (data.consultantStatus === 'accepted') {
+        next.status = 'in-progress'
+      }
+      batch.update(ref, next)
+
+      // update application.assigned[]
+      if (!appSnap.empty) {
+        const appRef = doc(db, 'applications', appSnap.docs[0].id)
+        batch.update(appRef, {
+          'interventions.assigned': arrayUnion(assignedObj)
+        })
+      }
+
+      await batch.commit()
+
+      // notify (unchanged)
+      await addDoc(collection(db, 'notifications'), {
+        participantId: data.participantId,
+        consultantId: data.consultantId,
+        interventionId,
+        interventionTitle: data.interventionTitle,
+        type: 'intervention-accepted',
+        recipientRoles: ['projectadmin', 'consultant', 'beneficiary'],
+        message: {
+          consultant: `Beneficiary ${data.beneficiaryName} accepted the intervention: ${data.interventionTitle}.`,
+          projectadmin: `Beneficiary ${data.beneficiaryName} accepted the intervention.`,
+          beneficiary: `You accepted the intervention: ${data.interventionTitle}.`
+        },
+        createdAt: new Date(),
+        readBy: {}
+      })
+
+      message.success('Intervention accepted.')
+      setPendingInterventions(prev =>
+        prev.filter(item => item.id !== interventionId)
+      )
+    } catch (e) {
+      console.error(e)
+      message.error('Failed to accept intervention.')
+    }
   }
 
   const handleDecline = async () => {
@@ -459,25 +502,58 @@ export const IncubateeDashboard: React.FC = () => {
 
   const handleConfirmIntervention = async () => {
     if (!selectedIntervention) return
+    const aiRef = doc(db, 'assignedInterventions', selectedIntervention.id)
 
-    const ref = doc(db, 'assignedInterventions', selectedIntervention.id)
-
-    await updateDoc(ref, {
-      userCompletionStatus: 'confirmed',
-      feedback: {
-        rating: feedbackRating,
-        comments: feedbackComments
-      },
-      updatedAt: new Date()
-    })
-
-    // Fetch participant info
+    // fetch participant for denorm fields (you already do this)
     const participantSnap = await getDoc(
       doc(db, 'participants', selectedIntervention.participantId)
     )
     const participant = participantSnap.exists() ? participantSnap.data() : {}
 
-    const interventionData = {
+    // find application doc
+    const appSnap = await getDocs(
+      query(
+        collection(db, 'applications'),
+        where('participantId', '==', selectedIntervention.participantId)
+      )
+    )
+
+    // Objects to store in arrays
+    const assignedObj = {
+      id: selectedIntervention.interventionId || selectedIntervention.id,
+      title: selectedIntervention.interventionTitle,
+      consultantId: selectedIntervention.consultantId,
+      groupId: selectedIntervention.groupId || null,
+      assignedAt: selectedIntervention.createdAt?.toDate?.() || new Date(),
+      dueDate: selectedIntervention.dueDate || null
+    }
+
+    const completedObj = {
+      id: selectedIntervention.interventionId || selectedIntervention.id,
+      title: selectedIntervention.interventionTitle,
+      consultantId: selectedIntervention.consultantId,
+      groupId: selectedIntervention.groupId || null,
+      confirmedAt: Timestamp.now(),
+      timeSpent: selectedIntervention.timeSpent || 0,
+      rating: feedbackRating,
+      comments: feedbackComments || ''
+    }
+
+    // create interventionsDatabase doc with explicit id in a batch
+    const dbRef = doc(collection(db, 'interventionsDatabase'))
+
+    const batch = writeBatch(db)
+
+    // 1) update assignedInterventions + feedback
+    batch.update(aiRef, {
+      userCompletionStatus: 'confirmed',
+      feedback: { rating: feedbackRating, comments: feedbackComments },
+      updatedAt: Timestamp.now(),
+      status: 'completed'
+    })
+
+    // 2) add to interventionsDatabase
+    batch.set(dbRef, {
       programId: participant.programId || '',
       companyCode: participant.companyCode || '',
       interventionId: selectedIntervention.interventionId,
@@ -495,18 +571,25 @@ export const IncubateeDashboard: React.FC = () => {
       targetMetric: selectedIntervention.targetMetric,
       targetType: selectedIntervention.targetType,
       targetValue: selectedIntervention.targetValue,
-      feedback: {
-        rating: feedbackRating,
-        comments: feedbackComments
-      },
-      confirmedAt: new Date(),
+      feedback: { rating: feedbackRating, comments: feedbackComments },
+      confirmedAt: Timestamp.now(),
       createdAt: selectedIntervention.createdAt?.toDate?.() || new Date(),
-      updatedAt: new Date(),
-      interventionKey: uuidv4()
+      updatedAt: Timestamp.now()
+    })
+
+    // 3) update application arrays
+    if (!appSnap.empty) {
+      const appRef = doc(db, 'applications', appSnap.docs[0].id)
+      batch.update(appRef, {
+        'interventions.completed': arrayUnion(completedObj),
+        // OPTIONAL: remove from assigned (requires exact match)
+        'interventions.assigned': arrayRemove(assignedObj)
+      })
     }
 
-    await addDoc(collection(db, 'interventionsDatabase'), interventionData)
+    await batch.commit()
 
+    // notify (unchanged)
     await addDoc(collection(db, 'notifications'), {
       participantId: selectedIntervention.participantId,
       consultantId: selectedIntervention.consultantId,
