@@ -36,6 +36,7 @@ import {
   CloseOutlined,
   StopOutlined
 } from '@ant-design/icons'
+import { motion } from 'framer-motion'
 
 const { Option } = Select
 const { Title } = Typography
@@ -322,103 +323,195 @@ const AppointmentForm = () => {
   return (
     <div style={{ padding: 24, minHeight: '100vh' }}>
       <Spin spinning={loading}>
-        <Title level={4}>Appointments Manager</Title>
         <Row gutter={[16, 16]} wrap={false} style={{ marginBottom: 16 }}>
           <Col flex='1'>
-            <Card>
-              <Statistic
-                title='Total Appointments'
-                value={appointments.length}
-                prefix={<CalendarOutlined style={{ color: '#1890ff' }} />}
-              />
-            </Card>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <Card
+                hoverable
+                style={{
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                  transition: 'all 0.3s ease',
+                  borderRadius: 8,
+                  border: '1px solid #d6e4ff'
+                }}
+              >
+                <Statistic
+                  title='Total Appointments'
+                  value={appointments.length}
+                  prefix={<CalendarOutlined style={{ color: '#1890ff' }} />}
+                />
+              </Card>
+            </motion.div>
           </Col>
           <Col flex='1'>
-            <Card>
-              <Statistic
-                title='Pending'
-                value={appointments.filter(a => a.status === 'pending').length}
-                prefix={<ClockCircleOutlined style={{ color: '#faad14' }} />}
-              />
-            </Card>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <Card
+                hoverable
+                style={{
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                  transition: 'all 0.3s ease',
+                  borderRadius: 8,
+                  border: '1px solid #d6e4ff'
+                }}
+              >
+                <Statistic
+                  title='Pending'
+                  value={
+                    appointments.filter(a => a.status === 'pending').length
+                  }
+                  prefix={<ClockCircleOutlined style={{ color: '#faad14' }} />}
+                />
+              </Card>
+            </motion.div>
           </Col>
           <Col flex='1'>
-            <Card>
-              <Statistic
-                title='Accepted | Declined'
-                value={`${
-                  appointments.filter(a => a.status === 'accepted').length
-                } | ${
-                  appointments.filter(a => a.status === 'declined').length
-                }`}
-                prefix={
-                  <CheckOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                }
-                suffix={
-                  <CloseOutlined style={{ color: '#f5222d', marginLeft: 8 }} />
-                }
-              />
-            </Card>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <Card
+                hoverable
+                style={{
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                  transition: 'all 0.3s ease',
+                  borderRadius: 8,
+                  border: '1px solid #d6e4ff'
+                }}
+              >
+                <Statistic
+                  title='Accepted | Declined'
+                  value={`${
+                    appointments.filter(a => a.status === 'accepted').length
+                  } | ${
+                    appointments.filter(a => a.status === 'declined').length
+                  }`}
+                  prefix={
+                    <CheckOutlined
+                      style={{ color: '#52c41a', marginRight: 8 }}
+                    />
+                  }
+                  suffix={
+                    <CloseOutlined
+                      style={{ color: '#f5222d', marginLeft: 8 }}
+                    />
+                  }
+                />
+              </Card>
+            </motion.div>
           </Col>
           <Col flex='1'>
-            <Card>
-              <Statistic
-                title='Cancelled'
-                value={
-                  appointments.filter(a => a.status === 'cancelled').length
-                }
-                prefix={<StopOutlined style={{ color: '#ff4d4f' }} />}
-              />
-            </Card>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <Card
+                hoverable
+                style={{
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                  transition: 'all 0.3s ease',
+                  borderRadius: 8,
+                  border: '1px solid #d6e4ff'
+                }}
+              >
+                <Statistic
+                  title='Cancelled'
+                  value={
+                    appointments.filter(a => a.status === 'cancelled').length
+                  }
+                  prefix={<StopOutlined style={{ color: '#ff4d4f' }} />}
+                />
+              </Card>
+            </motion.div>
           </Col>
         </Row>
 
-        <Row
-          gutter={16}
-          align='middle'
-          justify='space-between'
-          style={{ marginBottom: 16 }}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
         >
-          <Col>
-            <Space>
-              <Select
-                value={filters.status}
-                onChange={val => handleFilterChange('status', val)}
-                style={{ width: 150 }}
-              >
-                <Option value='all'>All Status</Option>
-                <Option value='pending'>Pending</Option>
-                <Option value='declined'>Declined</Option>
-                <Option value='cancelled'>Cancelled</Option>
-                <Option value='accepted'>Accepted</Option>
-              </Select>
-              <Select
-                value={filters.period}
-                onChange={val => handleFilterChange('period', val)}
-                style={{ width: 150 }}
-              >
-                <Option value='all'>All Periods</Option>
-                <Option value='today'>Today</Option>
-                <Option value='week'>This Week</Option>
-                <Option value='month'>This Month</Option>
-              </Select>
-              <RangePicker onChange={val => handleFilterChange('range', val)} />
-            </Space>
-          </Col>
-          <Col>
-            <Button type='primary' onClick={() => setShowFormModal(true)}>
-              Add New
-            </Button>
-          </Col>
-        </Row>
+          <Card
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8,
+              border: '1px solid #d6e4ff',
+              marginBottom: 16
+            }}
+          >
+            <Row gutter={16} align='middle' justify='space-between'>
+              <Col>
+                <Space>
+                  <Select
+                    value={filters.status}
+                    onChange={val => handleFilterChange('status', val)}
+                    style={{ width: 150 }}
+                  >
+                    <Option value='all'>All Status</Option>
+                    <Option value='pending'>Pending</Option>
+                    <Option value='declined'>Declined</Option>
+                    <Option value='cancelled'>Cancelled</Option>
+                    <Option value='accepted'>Accepted</Option>
+                  </Select>
+                  <Select
+                    value={filters.period}
+                    onChange={val => handleFilterChange('period', val)}
+                    style={{ width: 150 }}
+                  >
+                    <Option value='all'>All Periods</Option>
+                    <Option value='today'>Today</Option>
+                    <Option value='week'>This Week</Option>
+                    <Option value='month'>This Month</Option>
+                  </Select>
+                  <RangePicker
+                    onChange={val => handleFilterChange('range', val)}
+                  />
+                </Space>
+              </Col>
+              <Col>
+                <Button type='primary' onClick={() => setShowFormModal(true)}>
+                  Make New Appointment
+                </Button>
+              </Col>
+            </Row>
+          </Card>
+        </motion.div>
 
-        <Table
-          columns={columns}
-          dataSource={filteredAppointments}
-          rowKey='id'
-          pagination={false}
-          style={{ marginBottom: 24 }}
-        />
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <Card
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8,
+              border: '1px solid #d6e4ff'
+            }}
+          >
+            {' '}
+            <Table
+              columns={columns}
+              dataSource={filteredAppointments}
+              rowKey='id'
+              pagination={false}
+              style={{ marginBottom: 24 }}
+            />
+          </Card>
+        </motion.div>
       </Spin>
 
       <Modal

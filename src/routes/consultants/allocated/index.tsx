@@ -19,10 +19,22 @@ import {
   PictureOutlined
 } from '@ant-design/icons'
 import { auth, db } from '@/firebase'
-import { getAuth, onAuthStateChanged } from 'firebase/auth'
-import { collection, addDoc, getDocs, query, where } from 'firebase/firestore'
+import { onAuthStateChanged } from 'firebase/auth'
+import {
+  writeBatch,
+  onSnapshot,
+  increment,
+  Timestamp,
+  doc,
+  query,
+  where,
+  collection,
+  getDocs,
+  getDoc
+} from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
+import { motion } from 'framer-motion'
 
 const { Title, Paragraph } = Typography
 
@@ -77,23 +89,21 @@ export const AssignedInterventions: React.FC = () => {
           snapshot.docs.map(async docSnap => {
             const intervention = docSnap.data() as AssignedIntervention
 
-            const consultantSnap = await getDocs(
-              query(
-                collection(db, 'consultants'),
-                where('id', '==', intervention.consultantId)
+            let consultantName = 'Unknown Consultant'
+            try {
+              const cSnap = await getDoc(
+                doc(db, 'consultants', intervention.consultantId)
               )
-            )
-
-            const consultant = consultantSnap.empty
-              ? null
-              : consultantSnap.docs[0].data()
+              if (cSnap.exists()) {
+                const c = cSnap.data()
+                consultantName = c.name || consultantName
+              }
+            } catch {}
 
             return {
               id: docSnap.id,
               ...intervention,
-              consultantName: consultant
-                ? consultant.name
-                : 'Unknown Consultant'
+              consultantName
             }
           })
         )
@@ -105,21 +115,18 @@ export const AssignedInterventions: React.FC = () => {
     }
 
     fetchCompletedInterventions()
-  }, [consultantId, selectedParticipantId])
+  }, [selectedParticipantId])
 
   // Fetch consultant ID based on logged-in user's email
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
       if (user) {
-        console.log('User logged in:', user.email)
         const consultantSnapshot = await getDocs(
           query(collection(db, 'consultants'), where('email', '==', user.email))
         )
         if (!consultantSnapshot.empty) {
           const consultantDoc = consultantSnapshot.docs[0]
-          const consultantData = consultantDoc.data()
-          setConsultantId(consultantDoc.id) // Use Firestore document ID
-          console.log('Consultant Data:', consultantData)
+          setConsultantId(consultantDoc.id)
         } else {
           console.error('No consultant found for the logged-in user.')
         }
@@ -129,6 +136,41 @@ export const AssignedInterventions: React.FC = () => {
     })
     return () => unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!consultantId) return
+
+    const q = query(
+      collection(db, 'assignedInterventions'),
+      where('consultantId', '==', consultantId),
+      where('userStatus', '==', 'accepted')
+    )
+
+    const unsub = onSnapshot(q, async snap => {
+      const newlyAccepted = snap.docs.filter(
+        d => !d.data().countedForConsultant
+      )
+      if (newlyAccepted.length === 0) return
+
+      try {
+        const batch = writeBatch(db)
+        newlyAccepted.forEach(d => {
+          batch.update(doc(db, 'assignedInterventions', d.id), {
+            countedForConsultant: true,
+            countedAt: Timestamp.now()
+          })
+        })
+        batch.update(doc(db, 'consultants', consultantId), {
+          assignmentCount: increment(newlyAccepted.length)
+        })
+        await batch.commit()
+      } catch (e) {
+        console.error('Failed to increment assignmentCount:', e)
+      }
+    })
+
+    return () => unsub()
+  }, [consultantId])
 
   // Fetch assigned interventions for the logged-in consultant
   useEffect(() => {
@@ -329,35 +371,63 @@ export const AssignedInterventions: React.FC = () => {
         />
       </Helmet>
 
-      <Spin tip='Loadsing interventions' spinning={loading} size='large'>
-        <Title level={4}>Ongoing Interventions</Title>
-        <Table
-          dataSource={assignedInterventions}
-          columns={columns}
-          rowKey='id'
-          onRow={record => ({
-            onClick: () => {
-              setSelected(record)
-              setSelectedParticipantId(record.participantId)
-            }
-          })}
-        />
-
-        <Card
-          style={{ marginTop: 32 }}
-          title={`Completed Interventions for ${
-            assignedInterventions.find(
-              i => i.participantId === selectedParticipantId
-            )?.beneficiaryName || 'this SME'
-          }`}
+      <Spin tip='Loading interventions' spinning={loading} size='large'>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
         >
-          <Table
-            dataSource={completedInterventions}
-            columns={completedColumns}
-            rowKey='id'
-            pagination={{ pageSize: 5 }}
-          />
-        </Card>
+          <Card
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8,
+              border: '1px solid #d6e4ff'
+            }}
+            title='Ongoing Interventions'
+          >
+            <Table
+              dataSource={assignedInterventions}
+              columns={columns}
+              rowKey='id'
+              onRow={record => ({
+                onClick: () => {
+                  setSelected(record)
+                  setSelectedParticipantId(record.participantId)
+                }
+              })}
+            />
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <Card
+            title={`Completed Interventions for ${
+              assignedInterventions.find(
+                i => i.participantId === selectedParticipantId
+              )?.beneficiaryName || 'this SME'
+            }`}
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8,
+              marginTop: 32,
+              border: '1px solid #d6e4ff'
+            }}
+          >
+            <Table
+              dataSource={completedInterventions}
+              columns={completedColumns}
+              rowKey='id'
+              pagination={{ pageSize: 5 }}
+            />
+          </Card>
+        </motion.div>
       </Spin>
 
       <Modal

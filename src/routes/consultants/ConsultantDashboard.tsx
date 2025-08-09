@@ -42,6 +42,7 @@ import {
 import { onAuthStateChanged } from 'firebase/auth'
 import { Helmet } from 'react-helmet'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
+import { motion } from 'framer-motion'
 
 const { Title } = Typography
 
@@ -496,7 +497,6 @@ export const ConsultantDashboard: React.FC = () => {
     },
     { title: 'Intervention', dataIndex: 'intervention', key: 'intervention' },
     { title: 'Sector', dataIndex: 'sector', key: 'sector' },
-    { title: 'Lifecycle Stage', dataIndex: 'stage', key: 'stage' },
     {
       title: 'Action',
       render: (_: any, record: Intervention) =>
@@ -530,7 +530,7 @@ export const ConsultantDashboard: React.FC = () => {
       {!dashboardReady ? (
         <div
           style={{
-            height: '80vh',
+            height: '100vh',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center'
@@ -550,9 +550,6 @@ export const ConsultantDashboard: React.FC = () => {
             <Helmet>
               <title>Consultant Workspace | Smart Incubation</title>
             </Helmet>
-
-            <Title level={3}>Consultant Workspace</Title>
-
             {loading ? (
               <div
                 style={{
@@ -568,110 +565,210 @@ export const ConsultantDashboard: React.FC = () => {
               <Row gutter={[16, 16]}>
                 {/* Top Stats */}
                 <Col xs={24} md={6}>
-                  <Card>
-                    <Statistic
-                      title='Total Feedbacks'
-                      value={feedbacks.length}
-                      prefix={<MessageOutlined />}
-                    />
-                  </Card>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <Card
+                      hoverable
+                      style={{
+                        boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                        transition: 'all 0.3s ease',
+                        borderRadius: 8,
+                        border: '1px solid #d6e4ff'
+                      }}
+                    >
+                      <Statistic
+                        title='Total Feedbacks'
+                        value={feedbacks.length}
+                        prefix={<MessageOutlined />}
+                      />
+                    </Card>
+                  </motion.div>
                 </Col>
 
                 <Col xs={24} md={6}>
-                  <Card>
-                    <Statistic
-                      title='Pending Interventions'
-                      value={interventions.length}
-                      prefix={<FileSearchOutlined />}
-                    />
-                  </Card>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <Card
+                      hoverable
+                      style={{
+                        boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                        transition: 'all 0.3s ease',
+                        borderRadius: 8,
+                        border: '1px solid #d6e4ff'
+                      }}
+                    >
+                      <Statistic
+                        title='Pending Interventions'
+                        value={interventions.length}
+                        prefix={<FileSearchOutlined />}
+                      />
+                    </Card>
+                  </motion.div>
                 </Col>
 
                 <Col xs={24} md={6}>
-                  <Card>
-                    <Statistic
-                      title='Ongoing Interventions'
-                      value={ongoingCount}
-                      prefix={<BarChartOutlined />}
-                    />
-                  </Card>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <Card
+                      hoverable
+                      style={{
+                        boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                        transition: 'all 0.3s ease',
+                        borderRadius: 8,
+                        border: '1px solid #d6e4ff'
+                      }}
+                    >
+                      <Statistic
+                        title='Ongoing Interventions'
+                        value={ongoingCount}
+                        prefix={<BarChartOutlined />}
+                      />
+                    </Card>
+                  </motion.div>
                 </Col>
 
                 <Col xs={24} md={6}>
-                  <Card>
-                    <Statistic
-                      title='Upcoming Appointments'
-                      value={events.length || 0}
-                      prefix={<CalendarOutlined />}
-                    />
-                  </Card>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <Card
+                      hoverable
+                      style={{
+                        boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                        transition: 'all 0.3s ease',
+                        borderRadius: 8,
+                        border: '1px solid #d6e4ff'
+                      }}
+                    >
+                      <Statistic
+                        title='Upcoming Appointments'
+                        value={events.length || 0}
+                        prefix={<CalendarOutlined />}
+                      />
+                    </Card>
+                  </motion.div>
                 </Col>
 
                 {/* Event Details List */}
                 <Col xs={24} md={12}>
-                  <Card title='Upcoming Events'>
-                    <List
-                      itemLayout='horizontal'
-                      dataSource={events.slice(0, 5)} // show top 5
-                      renderItem={event => (
-                        <List.Item>
-                          <List.Item.Meta
-                            title={event.title || 'Untitled'}
-                            description={`Date: ${
-                              event.date || 'N/A'
-                            } | Time: ${
-                              event.time?.toDate
-                                ? new Date(
-                                    event.time.toDate()
-                                  ).toLocaleTimeString()
-                                : 'N/A'
-                            } | Type: ${event.type}`}
-                          />
-                        </List.Item>
-                      )}
-                    />
-                  </Card>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <Card
+                      title='Upcoming Events'
+                      style={{
+                        boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                        transition: 'all 0.3s ease',
+                        borderRadius: 8,
+                        border: '1px solid #d6e4ff'
+                      }}
+                    >
+                      <List
+                        itemLayout='horizontal'
+                        dataSource={events.slice(0, 5)} // show top 5
+                        renderItem={event => (
+                          <List.Item>
+                            <List.Item.Meta
+                              title={event.title || 'Untitled'}
+                              description={`Date: ${
+                                event.date || 'N/A'
+                              } | Time: ${
+                                event.time?.toDate
+                                  ? new Date(
+                                      event.time.toDate()
+                                    ).toLocaleTimeString()
+                                  : 'N/A'
+                              } | Type: ${event.type}`}
+                            />
+                          </List.Item>
+                        )}
+                      />
+                    </Card>
+                  </motion.div>
                 </Col>
 
                 {/* Appointments Details List */}
                 <Col xs={24} md={12}>
-                  <Card title='Upcoming Appointments'>
-                    <List
-                      itemLayout='horizontal'
-                      dataSource={appointments.slice(0, 5)} // show top 5
-                      renderItem={appointment => (
-                        <List.Item>
-                          <List.Item.Meta
-                            title={appointment.title || 'Untitled'}
-                            description={`Date: ${
-                              appointment.date || 'N/A'
-                            } | Time: ${
-                              appointment.time?.toDate
-                                ? new Date(
-                                    appointment.time.toDate()
-                                  ).toLocaleTimeString()
-                                : 'N/A'
-                            } | Type: ${appointment.type}`}
-                          />
-                        </List.Item>
-                      )}
-                    />
-                  </Card>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <Card
+                      hoverable
+                      style={{
+                        boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                        transition: 'all 0.3s ease',
+                        borderRadius: 8,
+                        border: '1px solid #d6e4ff'
+                      }}
+                      title='Upcoming Appointments'
+                    >
+                      <List
+                        itemLayout='horizontal'
+                        dataSource={appointments.slice(0, 5)} // show top 5
+                        renderItem={appointment => (
+                          <List.Item>
+                            <List.Item.Meta
+                              title={appointment.title || 'Untitled'}
+                              description={`Date: ${
+                                appointment.date || 'N/A'
+                              } | Time: ${
+                                appointment.time?.toDate
+                                  ? new Date(
+                                      appointment.time.toDate()
+                                    ).toLocaleTimeString()
+                                  : 'N/A'
+                              } | Type: ${appointment.type}`}
+                            />
+                          </List.Item>
+                        )}
+                      />
+                    </Card>
+                  </motion.div>
                 </Col>
 
                 {/* Allocated Interventions */}
                 <Col span={24}>
-                  <Card title='Allocated Interventions'>
-                    <Table
-                      dataSource={interventions}
-                      columns={columns}
-                      rowKey='id'
-                      pagination={false}
-                      rowClassName={record =>
-                        record.declined ? 'declined-row' : ''
-                      }
-                    />
-                  </Card>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <Card
+                      style={{
+                        boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                        transition: 'all 0.3s ease',
+                        borderRadius: 8,
+                        border: '1px solid #d6e4ff'
+                      }}
+                      hoverable
+                      title='Allocated Interventions'
+                    >
+                      <Table
+                        dataSource={interventions}
+                        columns={columns}
+                        rowKey='id'
+                        pagination={false}
+                        rowClassName={record =>
+                          record.declined ? 'declined-row' : ''
+                        }
+                      />
+                    </Card>
+                  </motion.div>
                 </Col>
               </Row>
             )}

@@ -30,6 +30,7 @@ import {
 } from 'firebase/firestore'
 import { db, storage, auth } from '@/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { motion } from 'framer-motion'
 
 const { Title } = Typography
 
@@ -213,48 +214,104 @@ const AllocatedHistory = () => {
   })()
 
   return (
-    <div style={{ minHeight: '100vh' }}>
-      <Title level={3}>Completed Interventions</Title>
-
+    <div style={{ padding: 24, minHeight: '100vh' }}>
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title='Total Completed'
-              value={totalCompleted}
-              valueStyle={{ color: '#1890ff' }}
-              prefix={<CheckCircleOutlined />}
-            />
-          </Card>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Card
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff'
+              }}
+            >
+              <Statistic
+                title='Total Completed'
+                value={totalCompleted}
+                valueStyle={{ color: '#1890ff' }}
+                prefix={<CheckCircleOutlined />}
+              />
+            </Card>
+          </motion.div>
         </Col>
         <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title='With POE'
-              value={withPOE}
-              valueStyle={{ color: '#52c41a' }}
-              prefix={<PaperClipOutlined />}
-            />
-          </Card>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Card
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff'
+              }}
+            >
+              <Statistic
+                title='With POE'
+                value={withPOE}
+                valueStyle={{ color: '#52c41a' }}
+                prefix={<PaperClipOutlined />}
+              />
+            </Card>
+          </motion.div>
         </Col>
         <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title='Most Common Area'
-              value={topArea}
-              valueStyle={{ color: '#faad14' }}
-              prefix={<AppstoreAddOutlined />}
-            />
-          </Card>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Card
+              hoverable
+              style={{
+                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                transition: 'all 0.3s ease',
+                borderRadius: 8,
+                border: '1px solid #d6e4ff'
+              }}
+            >
+              <Statistic
+                title='Most Common Area'
+                value={topArea}
+                valueStyle={{ color: '#faad14' }}
+                prefix={<AppstoreAddOutlined />}
+              />
+            </Card>
+          </motion.div>
         </Col>
       </Row>
 
-      <Table
-        rowKey='id'
-        columns={columns}
-        dataSource={interventions}
-        loading={loading}
-      />
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+      >
+        <Card
+          hoverable
+          style={{
+            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+            transition: 'all 0.3s ease',
+            borderRadius: 8,
+            border: '1px solid #d6e4ff'
+          }}
+        >
+          <Table
+            rowKey='id'
+            columns={columns}
+            dataSource={interventions}
+            loading={loading}
+          />
+        </Card>
+      </motion.div>
 
       <Modal
         open={modalOpen}
