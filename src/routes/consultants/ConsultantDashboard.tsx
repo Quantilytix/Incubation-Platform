@@ -22,10 +22,8 @@ import {
   FileSearchOutlined,
   MessageOutlined,
   BarChartOutlined,
-  CalendarOutlined,
-  ClockCircleOutlined
+  CalendarOutlined
 } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
 import { auth, db } from '@/firebase'
 import {
   collection,
@@ -36,9 +34,12 @@ import {
   where,
   Timestamp,
   getDoc,
-  addDoc
+  addDoc,
+  writeBatch,
+  onSnapshot,
+  increment
 } from 'firebase/firestore'
-import { getAuth, onAuthStateChanged } from 'firebase/auth'
+import { onAuthStateChanged } from 'firebase/auth'
 import { Helmet } from 'react-helmet'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 
@@ -48,13 +49,13 @@ type ConsultantStatus = 'pending' | 'accepted' | 'declined'
 
 interface Intervention {
   id: string
-  sme: string
+  beneficiaryName: string
   intervention: string
   sector: string
   stage: string
   location: string
   status: string
-  consultantStatus: ConsultantStatus
+  consultantStatus: 'pending' | 'accepted' | 'declined'
   declined: boolean
   declineReason: string
 }
@@ -99,19 +100,8 @@ export const ConsultantDashboard: React.FC = () => {
           const consultantDoc = consultantSnap.docs[0]
           const consultantData = consultantDoc.data()
 
-          // Prefer the embedded consultant ID, or fallback to Firestore doc ID
-          if (consultantData.id) {
-            setConsultantId(consultantData.id)
-          } else {
-            console.warn('Missing consultantData.id — falling back to doc.id')
-            setConsultantId(consultantDoc.id)
-          }
-
-          if (consultantData.role) {
-            setCurrentRole(consultantData.role.toLowerCase())
-          }
-
-          // After fetching consultantData:
+          setConsultantId(consultantDoc.id)
+          setCurrentRole('consultant')
           setCompanyCode(consultantData.companyCode || null)
 
           setRoleLoading(false)
@@ -125,6 +115,41 @@ export const ConsultantDashboard: React.FC = () => {
 
     return () => unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!consultantId) return
+
+    const q = query(
+      collection(db, 'assignedInterventions'),
+      where('consultantId', '==', consultantId),
+      where('userStatus', '==', 'accepted')
+    )
+
+    const unsub = onSnapshot(q, async snap => {
+      const newlyAccepted = snap.docs.filter(
+        d => !d.data().countedForConsultant
+      )
+      if (newlyAccepted.length === 0) return
+
+      try {
+        const batch = writeBatch(db)
+        newlyAccepted.forEach(d => {
+          batch.update(doc(db, 'assignedInterventions', d.id), {
+            countedForConsultant: true,
+            countedAt: Timestamp.now()
+          })
+        })
+        batch.update(doc(db, 'consultants', consultantId), {
+          assignmentCount: increment(newlyAccepted.length)
+        })
+        await batch.commit()
+      } catch (e) {
+        console.error('Failed to increment assignmentCount:', e)
+      }
+    })
+
+    return () => unsub()
+  }, [consultantId]) // single dependency
 
   //   Fetch Events
   useEffect(() => {
@@ -153,9 +178,9 @@ export const ConsultantDashboard: React.FC = () => {
 
   //   Fetch Appointments
   useEffect(() => {
-    if (!companyCode) return
+    if (!companyCode || !user?.email) return
 
-    const fetchEvents = async () => {
+    const fetchAppointments = async () => {
       try {
         const snapshot = await getDocs(
           query(
@@ -164,18 +189,15 @@ export const ConsultantDashboard: React.FC = () => {
             where('email', '==', user.email)
           )
         )
-        const eventList = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        setEvents(eventList)
+        const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+        setAppointments(list)
       } catch (err) {
         console.error('Failed to load appointments:', err)
       }
     }
 
-    fetchEvents()
-  }, [companyCode])
+    fetchAppointments()
+  }, [companyCode, user?.email])
 
   //   Fetch Assigned Interventions
   useEffect(() => {
@@ -335,48 +357,79 @@ export const ConsultantDashboard: React.FC = () => {
 
   const handleAccept = async (id: string) => {
     try {
-      const interventionRef = doc(db, 'assignedInterventions', id)
-      const interventionSnap = await getDoc(interventionRef)
+      const clickedRef = doc(db, 'assignedInterventions', id)
+      const clickedSnap = await getDoc(clickedRef)
+      if (!clickedSnap.exists()) return message.error('Intervention not found.')
 
-      if (!interventionSnap.exists()) {
-        message.error('Intervention not found.')
-        return
-      }
+      const base = clickedSnap.data()
+      const now = Timestamp.now()
 
-      const interventionData = interventionSnap.data()
+      // Build list of docs to accept
+      let targets: Array<{ id: string; data: any }> = [{ id, data: base }]
 
-      await updateDoc(interventionRef, {
-        consultantStatus: 'accepted',
-        updatedAt: Timestamp.now()
-      })
-
-      if (interventionData.userStatus === 'accepted') {
-        await updateDoc(interventionRef, {
-          status: 'in-progress'
-        })
-      }
-
-      // ✅ Add notification
-      await addDoc(collection(db, 'notifications'), {
-        participantId: interventionData.participantId,
-        participantName: interventionData.beneficiaryName,
-        interventionId: id,
-        interventionTitle: interventionData.interventionTitle,
-        type: 'consultant-accepted',
-        recipientRoles: ['admin', 'participant'],
-        createdAt: new Date(),
-        readBy: {},
-        message: {
-          admin: `Consultant accepted: ${interventionData.interventionTitle}`,
-          participant: `Your intervention "${interventionData.interventionTitle}" was accepted.`
+      if (base.groupId) {
+        // Accept all in the group for this consultant that are still pending
+        const grpSnap = await getDocs(
+          query(
+            collection(db, 'assignedInterventions'),
+            where('groupId', '==', base.groupId),
+            where('consultantId', '==', base.consultantId)
+          )
+        )
+        targets = grpSnap.docs
+          .map(d => ({ id: d.id, data: d.data() }))
+          .filter(t => t.data.consultantStatus === 'pending')
+        if (targets.length === 0) {
+          return message.info('Nothing pending in this group to accept.')
         }
-      })
+      }
 
-      message.success('Intervention accepted!')
-      setInterventions(prev => prev.filter(item => item.id !== id))
+      const batch = writeBatch(db)
+
+      for (const t of targets) {
+        const ref = doc(db, 'assignedInterventions', t.id)
+        const next: any = { consultantStatus: 'accepted', updatedAt: now }
+        if (t.data.userStatus === 'accepted') {
+          next.status = 'in-progress'
+        }
+        batch.update(ref, next)
+      }
+
+      await batch.commit()
+
+      // Notify per assignment (keep simple; you can coalesce if you prefer)
+      await Promise.all(
+        targets.map(t =>
+          addDoc(collection(db, 'notifications'), {
+            participantId: t.data.participantId,
+            participantName: t.data.beneficiaryName,
+            interventionId: t.id,
+            interventionTitle: t.data.interventionTitle,
+            type: 'consultant-accepted',
+            recipientRoles: ['admin', 'participant'],
+            createdAt: new Date(),
+            readBy: {},
+            message: {
+              admin: `Consultant accepted: ${t.data.interventionTitle}`,
+              participant: `Your intervention "${t.data.interventionTitle}" was accepted.`
+            }
+          })
+        )
+      )
+
+      message.success(
+        base.groupId
+          ? `Accepted ${targets.length} intervention(s) in this group`
+          : 'Intervention accepted!'
+      )
+
+      // Remove accepted ones from "pending" list in UI
+      setInterventions(prev =>
+        prev.filter(item => !targets.some(t => t.id === item.id))
+      )
     } catch (error) {
       console.error(error)
-      message.error('Failed to accept intervention.')
+      message.error('Failed to accept intervention(s).')
     }
   }
 
