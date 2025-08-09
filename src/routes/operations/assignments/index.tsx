@@ -41,7 +41,8 @@ import {
   getDocs,
   addDoc,
   query,
-  where
+  where,
+  writeBatch
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
@@ -62,7 +63,7 @@ interface Assignment {
   consultantStatus: 'pending' | 'accepted' | 'declined'
   userStatus: 'pending' | 'accepted' | 'declined'
   consultantCompletionStatus: 'pending' | 'done'
-  userCompletionStatus: 'pending' | 'confirmed'
+  userCompletionStatus: 'pending' | 'confirmed' | 'rejected'
   createdAt: Timestamp
   updatedAt?: Timestamp
   dueDate?: Timestamp
@@ -881,60 +882,127 @@ export const ConsultantAssignments: React.FC = () => {
           form={assignmentForm}
           layout='vertical'
           onFinish={async values => {
-            // 🔽 INSERT LOGIC HERE
-            const isGrouped = values.type === 'grouped'
-            const selectedIds = isGrouped
-              ? values.participants
-              : [values.participant]
+            try {
+              const isGrouped = values.type === 'grouped'
+              const selectedIds: string[] = isGrouped
+                ? values.participants
+                : [values.participant]
 
-            await Promise.all(
-              selectedIds.map(async pid => {
-                const participant = participants.find(p => p.id === pid)
-                const consultant = consultants.find(
-                  c => c.id === values.consultant
-                )
-                const intervention = participant?.requiredInterventions.find(
+              // Resolve static selections once
+              const consultant = consultants.find(
+                c => c.id === values.consultant
+              )
+              if (!consultant) {
+                message.error('Consultant not found')
+                return
+              }
+
+              // Validate participants and intervention selections
+              const selectedParticipants = selectedIds
+                .map(pid => participants.find(p => p.id === pid))
+                .filter(Boolean) as Participant[]
+
+              if (selectedParticipants.length === 0) {
+                message.error('No valid participant(s) selected')
+                return
+              }
+
+              // If grouped, ensure we really have a shared intervention ID
+              let interventionId: string = values.intervention
+              if (isGrouped) {
+                if (!interventionId) {
+                  message.error('Select a shared intervention')
+                  return
+                }
+              } else {
+                // singular: verify intervention belongs to selected participant
+                const p0 = selectedParticipants[0]
+                const found = (p0.requiredInterventions || []).find(
                   i => i.id === values.intervention
                 )
-                if (!participant || !consultant || !intervention) return
+                if (!found) {
+                  message.error(
+                    'Intervention not found for selected participant'
+                  )
+                  return
+                }
+              }
 
-                const newId = `ai${Date.now()}-${pid}`
+              const batch = writeBatch(db)
+              const now = Timestamp.now()
+              const dueTs = values.dueDate
+                ? Timestamp.fromDate(values.dueDate.toDate())
+                : null
 
-                const assignment = {
-                  id: newId,
-                  participantId: participant.id,
-                  beneficiaryName: participant.beneficiaryName,
+              // Optional header doc for grouped
+              let groupId: string | null = null
+              if (isGrouped) {
+                const groupRef = doc(collection(db, 'groupAssignments'))
+                groupId = groupRef.id
+
+                batch.set(groupRef, {
+                  id: groupRef.id,
+                  groupId,
+                  type: 'grouped',
                   consultantId: consultant.id,
                   consultantName: consultant.name,
-                  interventionId: intervention.id,
-                  interventionTitle: intervention.title,
-                  type: values.type,
+                  interventionId, // the shared intervention id
+                  participantIds: selectedParticipants.map(p => p.id),
+                  dueDate: dueTs,
+                  createdAt: now,
+                  updatedAt: now
+                })
+              }
+
+              // Create one assignedInterventions doc per participant
+              for (const p of selectedParticipants) {
+                // find the intervention on this participant (title/area for display)
+                const intv = (p.requiredInterventions || []).find(
+                  i => i.id === interventionId
+                ) || { id: interventionId, title: 'Unknown' }
+
+                const aRef = doc(collection(db, 'assignedInterventions')) // auto id
+                batch.set(aRef, {
+                  id: aRef.id,
+                  groupId, // null for singular
+                  type: values.type, // 'singular' | 'grouped'
+                  participantId: p.id,
+                  beneficiaryName: p.beneficiaryName,
+                  consultantId: consultant.id,
+                  consultantName: consultant.name,
+                  interventionId: intv.id,
+                  interventionTitle: intv.title,
                   targetType: values.targetType,
-                  targetValue: values.targetValue,
-                  targetMetric: values.targetMetric,
-                  dueDate: values.dueDate
-                    ? Timestamp.fromDate(values.dueDate.toDate())
-                    : null,
+                  targetValue: values.targetValue ?? null,
+                  targetMetric: values.targetMetric ?? null,
+                  dueDate: dueTs,
                   status: 'assigned',
                   consultantStatus: 'pending',
                   userStatus: 'pending',
                   consultantCompletionStatus: 'pending',
                   userCompletionStatus: 'pending',
-                  createdAt: Timestamp.now(),
-                  updatedAt: Timestamp.now()
-                }
+                  createdAt: now,
+                  updatedAt: now
+                })
+              }
 
-                await setDoc(
-                  doc(db, 'assignedInterventions', newId),
-                  assignment
-                )
-              })
-            )
+              await batch.commit()
 
-            message.success('Intervention(s) assigned successfully')
-            setAssignmentModalVisible(false)
-            assignmentForm.resetFields()
-            fetchAssignments()
+              message.success(
+                isGrouped
+                  ? `Assigned shared intervention to ${selectedParticipants.length} participant(s)`
+                  : 'Intervention assigned'
+              )
+
+              setAssignmentModalVisible(false)
+              setLockedIntervention(null)
+              setAssignmentParticipant(null)
+              assignmentForm.resetFields()
+              fetchAssignments() // refresh table
+            } catch (err) {
+              console.error('Assign failed:', err)
+              message.error('Failed to create assignment(s)')
+            }
           }}
           onValuesChange={changedValues => {
             if (changedValues.type) {
@@ -946,25 +1014,25 @@ export const ConsultantAssignments: React.FC = () => {
                 selectedIds.includes(p.id)
               )
 
-              // Compute shared interventions
+              // Compute shared interventions across selected participants
               const interventionSets = selectedList.map(
-                p => new Set(p.requiredInterventions.map(i => i.id))
+                p => new Set((p.requiredInterventions || []).map(i => i.id))
               )
               const sharedIds = interventionSets.reduce(
                 (acc, set) => new Set([...acc].filter(id => set.has(id))),
-                interventionSets[0] || new Set()
+                interventionSets[0] || new Set<string>()
               )
 
               const intersection = [...sharedIds]
                 .map(id => {
                   const example = selectedList.find(p =>
-                    p.requiredInterventions.some(i => i.id === id)
+                    (p.requiredInterventions || []).some(i => i.id === id)
                   )
                   return example?.requiredInterventions.find(i => i.id === id)
                 })
                 .filter(Boolean)
 
-              setSharedInterventions(intersection)
+              setSharedInterventions(intersection as any[])
             }
 
             if (changedValues.targetType) {
@@ -1364,13 +1432,19 @@ export const ConsultantAssignments: React.FC = () => {
 
       <style>
         {`
-      .highlghted {
+     .highlghted {
         background-color: #e6fffb !important;
         animation: fadeOut 8s forwards;
-      }
-        0% {background-color: #e6fffb; }
-        100% {background-color: white; }
-      }
+     }
+     @keyframes fadeOut {
+         0% {
+            background-color: #e6fffb;
+         }
+         100% {
+            background-color: white;
+         }
+    }
+
       `}
       </style>
     </div>
