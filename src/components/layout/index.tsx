@@ -1,7 +1,7 @@
-import React, { Children, useEffect, useMemo, useState } from 'react'
-import { Layout, Menu, Typography, Spin, Button } from 'antd'
-import { useGetIdentity, useLogout } from '@refinedev/core'
-import { doc, getDoc, updateDoc } from 'firebase/firestore'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Layout, Menu, Typography, Spin, Button, Drawer } from 'antd'
+import { useLogout } from '@refinedev/core'
+import { doc, getDoc } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { Link, Outlet } from 'react-router-dom'
 import { CurrentUser } from '@/components/layout/current-user'
@@ -27,21 +27,19 @@ import {
   SolutionOutlined,
   MessageOutlined,
   BankOutlined,
-  UserOutlined,
   CalendarOutlined,
   AuditOutlined,
   ProfileOutlined,
-  DollarOutlined,
   LineChartOutlined,
   ClockCircleOutlined,
   BookOutlined,
   DatabaseOutlined,
   OneToOneOutlined
 } from '@ant-design/icons'
-import { Upload, message } from 'antd'
-import { EditOutlined, LoadingOutlined } from '@ant-design/icons'
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { getStorage } from 'firebase/storage'
 import { CompanyLogo } from '../CompanyLogo'
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
+import { useWindowSize } from 'react-use'
 
 const { Header, Sider, Content } = Layout
 const { Title } = Typography
@@ -60,16 +58,19 @@ type UserRole =
 export const CustomLayout: React.FC = () => {
   const [logoUploading, setLogoUploading] = useState(false)
   const storage = getStorage()
-  const { data: identity } = useGetIdentity()
+  const { user } = useFullIdentity()
   const { mutate: logout } = useLogout()
+  const { width } = useWindowSize()
+  const isMobile = width < 768
   const [role, setRole] = useState<UserRole | null>(null)
   const [collapsed, setCollapsed] = useState(false)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [drawerVisible, setDrawerVisible] = useState(false)
 
   useEffect(() => {
     const fetchUserRole = async () => {
-      if (!identity?.id) return
-      const docRef = doc(db, 'users', String(identity.id))
+      if (!user?.id) return
+      const docRef = doc(db, 'users', String(user.id))
       const userSnap = await getDoc(docRef)
       if (userSnap.exists()) {
         const userData = userSnap.data()
@@ -78,13 +79,20 @@ export const CustomLayout: React.FC = () => {
       }
     }
     fetchUserRole()
-  }, [identity])
+  }, [user])
+
+  // Close drawer when resizing to desktop
+  useEffect(() => {
+    if (!isMobile && drawerVisible) {
+      setDrawerVisible(false)
+    }
+  }, [isMobile, drawerVisible])
 
   useEffect(() => {
     const fetchUserDetails = async () => {
-      if (!identity?.id) return
+      if (!user?.id) return
 
-      const userRef = doc(db, 'users', String(identity.id))
+      const userRef = doc(db, 'users', String(user.id))
       const userSnap = await getDoc(userRef)
 
       if (!userSnap.exists()) return
@@ -105,7 +113,7 @@ export const CustomLayout: React.FC = () => {
     }
 
     fetchUserDetails()
-  }, [identity])
+  }, [user])
 
   const getDashboardTitle = (role: UserRole | null) => {
     if (!role) return ''
@@ -121,7 +129,7 @@ export const CustomLayout: React.FC = () => {
       government: 'Government'
     }
 
-    return `Smart Incubation : ${nameMap[role] || role} Dashboard`
+    return `Smart Incubation | Welcome ${user?.name || 'User'}`
   }
 
   const generateMenu = (items: any[]) =>
@@ -400,17 +408,10 @@ export const CustomLayout: React.FC = () => {
         label: 'Tracker',
         icon: <SolutionOutlined />
       },
-
-      {
-        key: 'financials',
-        to: '/incubatee/financials',
-        label: 'Financial Portal',
-        icon: <DollarOutlined />
-      },
       {
         key: 'metrics',
         to: '/incubatee/metrics',
-        label: 'Key Metrics',
+        label: 'Monthly Metrics',
         icon: <BarChartOutlined />
       },
       {
@@ -555,58 +556,97 @@ export const CustomLayout: React.FC = () => {
     )
   }
 
+  const renderDesktopSider = () => (
+    <Sider
+      collapsible
+      collapsed={collapsed}
+      onCollapse={value => setCollapsed(value)}
+      collapsedWidth={80}
+      width={siderWidth}
+      trigger={null}
+      style={{
+        background: '#ffffff',
+        height: '100vh',
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        zIndex: 100,
+        boxShadow: '2px 0 5px rgba(0,0,0,0.06)'
+      }}
+    >
+      <CompanyLogo collapsed={collapsed} />
+      <Menu
+        theme='light'
+        mode='inline'
+        items={menuItems}
+        style={{
+          borderRight: 'none',
+          height: `calc(100vh - ${headerHeight + 80}px)`, // Account for logo and logout button
+          overflowY: 'auto'
+        }}
+      />
+      <div style={{ padding: 16, borderTop: '1px solid #f0f0f0' }}>
+        <Button block danger onClick={() => logout()}>
+          {collapsed ? null : 'Logout'}
+        </Button>
+      </div>
+    </Sider>
+  )
+
+  const renderMobileDrawer = () => (
+    <Drawer
+      placement='left'
+      closable={false}
+      onClose={() => setDrawerVisible(false)}
+      open={drawerVisible}
+      width={250}
+      bodyStyle={{ padding: 0 }}
+    >
+      <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0f0f0' }}>
+        <CompanyLogo collapsed={false} />
+      </div>
+      <Menu
+        theme='light'
+        mode='inline'
+        items={menuItems}
+        style={{
+          borderRight: 'none',
+          height: 'calc(100% - 112px)',
+          overflowY: 'auto'
+        }}
+        onClick={() => setDrawerVisible(false)}
+      />
+      <div style={{ padding: 16, borderTop: '1px solid #f0f0f0' }}>
+        <Button block danger onClick={() => logout()}>
+          Logout
+        </Button>
+      </div>
+    </Drawer>
+  )
+
   return (
     <Layout style={{ height: '100vh' }}>
-      {/* Sider */}
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={value => setCollapsed(value)}
-        collapsedWidth={80}
-        width={siderWidth}
-        trigger={null}
-        style={{
-          background: '#ffffff',
-          height: '100vh',
-          position: 'fixed',
-          left: 0,
-          top: 0,
-          zIndex: 100,
-          boxShadow: '2px 0 5px rgba(0,0,0,0.06)'
-        }}
-      >
-        {/* Logo */}
-        <CompanyLogo collapsed={collapsed} />
+      {/* Desktop Sider */}
+      {!isMobile && renderDesktopSider()}
 
-        {/* Menu */}
-        <Menu
-          theme='light'
-          mode='inline'
-          items={menuItems}
-          style={{ borderRight: 'none' }}
-        />
-
-        <div style={{ padding: 16, borderTop: '1px solid #f0f0f0' }}>
-          <Button block danger onClick={() => logout()}>
-            Logout
-          </Button>
-        </div>
-      </Sider>
+      {/* Mobile Drawer */}
+      {isMobile && renderMobileDrawer()}
 
       {/* Layout */}
       <Layout
         style={{
-          marginLeft: collapsed ? 80 : siderWidth,
-          transition: 'all 0.2s ease-in-out'
+          marginLeft: isMobile ? 0 : collapsed ? 80 : siderWidth,
+          transition: 'all 0.2s ease-in-out',
+          minHeight: '100vh'
         }}
       >
         <Header
           style={{
             background: '#ffffff',
-            padding: '0 24px',
+            padding: isMobile ? '0 16px' : '0 24px',
             position: 'fixed',
             top: 0,
-            left: collapsed ? 80 : siderWidth,
+            left: isMobile ? 0 : collapsed ? 80 : siderWidth,
             right: 0,
             height: headerHeight,
             display: 'flex',
@@ -619,8 +659,18 @@ export const CustomLayout: React.FC = () => {
         >
           <Button
             type='text'
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
+            icon={
+              isMobile ? (
+                <MenuUnfoldOutlined />
+              ) : collapsed ? (
+                <MenuUnfoldOutlined />
+              ) : (
+                <MenuFoldOutlined />
+              )
+            }
+            onClick={() =>
+              isMobile ? setDrawerVisible(true) : setCollapsed(!collapsed)
+            }
             style={{
               fontSize: '18px',
               width: 48,
@@ -636,15 +686,19 @@ export const CustomLayout: React.FC = () => {
         <Content
           style={{
             marginTop: headerHeight,
-            height: `calc(100vh - ${headerHeight}px)`,
-            background: '#f5f5f5'
+            minHeight: `calc(100vh - ${headerHeight}px)`,
+            background: '#fff',
+            overflow: 'auto'
           }}
         >
           <div
             style={{
-              padding: 15,
               background: '#fff',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+              minHeight: `calc(100vh - ${
+                headerHeight + (isMobile ? 32 : 48)
+              }px)`,
+              padding: isMobile ? 16 : 24
             }}
           >
             <Outlet />
