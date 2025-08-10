@@ -23,6 +23,8 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 const { Header, Content } = Layout
 const { Text } = Typography
@@ -250,49 +252,183 @@ const Chat = () => {
               <List
                 dataSource={messages}
                 renderItem={msg => (
-                  <List.Item style={{ border: 'none', paddingInline: 0 }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        width: '100%',
-                        justifyContent:
-                          msg.sender === 'user' ? 'flex-end' : 'flex-start'
-                      }}
-                    >
-                      <Space
-                        align='start'
-                        style={{
-                          maxWidth: 'min(78%, 900px)',
-                          background:
-                            msg.sender === 'user' ? '#e6f7ff' : '#fafafa',
-                          padding: '12px 14px',
-                          borderRadius: 12,
-                          boxShadow:
-                            '0 2px 10px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.06)'
-                        }}
-                      >
-                        {msg.sender === 'system' && (
-                          <Avatar style={{ backgroundColor: '#1890ff' }}>
-                            {msg.avatar}
-                          </Avatar>
-                        )}
-                        <div>
-                          <Text style={{ whiteSpace: 'pre-wrap' }}>
-                            {msg.content}
-                          </Text>
-                          <div
+                  <List
+                    dataSource={messages}
+                    renderItem={msg => (
+                      <List.Item style={{ border: 'none', paddingInline: 0 }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            width: '100%',
+                            justifyContent:
+                              msg.sender === 'user' ? 'flex-end' : 'flex-start'
+                          }}
+                        >
+                          <Space
+                            align='start'
                             style={{
-                              fontSize: 12,
-                              color: '#999',
-                              marginTop: 6
+                              maxWidth: 'min(78%, 900px)',
+                              background:
+                                msg.sender === 'user' ? '#e6f7ff' : '#fafafa',
+                              padding: '12px 14px',
+                              borderRadius: 12,
+                              boxShadow:
+                                '0 2px 10px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.06)'
                             }}
                           >
-                            {msg.timestamp}
-                          </div>
+                            {msg.sender === 'system' && (
+                              <Avatar style={{ backgroundColor: '#1890ff' }}>
+                                {msg.avatar ?? '🤖'}
+                              </Avatar>
+                            )}
+
+                            <div style={{ width: '100%' }}>
+                              {msg.sender === 'system' ? (
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkGfm]}
+                                  components={{
+                                    p: ({ node, ...props }) => (
+                                      <Text {...props} />
+                                    ),
+                                    strong: ({ node, ...props }) => (
+                                      <Text strong {...props} />
+                                    ),
+                                    em: ({ node, ...props }) => (
+                                      <Text italic {...props} />
+                                    ),
+                                    a: ({ node, ...props }) => (
+                                      <a
+                                        {...props}
+                                        target='_blank'
+                                        rel='noopener noreferrer'
+                                      />
+                                    ),
+                                    ul: ({ node, ...props }) => (
+                                      <ul
+                                        style={{
+                                          paddingLeft: 20,
+                                          marginBottom: 8
+                                        }}
+                                        {...props}
+                                      />
+                                    ),
+                                    ol: ({ node, ...props }) => (
+                                      <ol
+                                        style={{
+                                          paddingLeft: 20,
+                                          marginBottom: 8
+                                        }}
+                                        {...props}
+                                      />
+                                    ),
+                                    li: ({ node, ...props }) => (
+                                      <li
+                                        style={{ marginBottom: 4 }}
+                                        {...props}
+                                      />
+                                    ),
+                                    h1: ({ node, ...props }) => (
+                                      <Typography.Title
+                                        level={3}
+                                        style={{ marginTop: 0 }}
+                                        {...props}
+                                      />
+                                    ),
+                                    h2: ({ node, ...props }) => (
+                                      <Typography.Title level={4} {...props} />
+                                    ),
+                                    h3: ({ node, ...props }) => (
+                                      <Typography.Title level={5} {...props} />
+                                    ),
+                                    hr: () => (
+                                      <div
+                                        style={{
+                                          borderBottom:
+                                            '1px solid rgba(0,0,0,0.06)',
+                                          margin: '8px 0'
+                                        }}
+                                      />
+                                    ),
+                                    table: ({ node, ...props }) => (
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table
+                                          style={{
+                                            borderCollapse: 'collapse',
+                                            width: '100%',
+                                            margin: '8px 0'
+                                          }}
+                                          {...props}
+                                        />
+                                      </div>
+                                    ),
+                                    th: ({ node, ...props }) => (
+                                      <th
+                                        style={{
+                                          textAlign: 'left',
+                                          borderBottom: '1px solid #eee',
+                                          padding: '6px 8px'
+                                        }}
+                                        {...props}
+                                      />
+                                    ),
+                                    td: ({ node, ...props }) => (
+                                      <td
+                                        style={{
+                                          borderBottom: '1px solid #f5f5f5',
+                                          padding: '6px 8px'
+                                        }}
+                                        {...props}
+                                      />
+                                    ),
+                                    code: ({ node, inline, ...props }) =>
+                                      inline ? (
+                                        <code
+                                          style={{
+                                            background: '#f5f5f5',
+                                            padding: '2px 4px',
+                                            borderRadius: 4,
+                                            fontFamily:
+                                              'ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace'
+                                          }}
+                                          {...props}
+                                        />
+                                      ) : (
+                                        <pre
+                                          style={{
+                                            background: '#f5f5f5',
+                                            padding: 10,
+                                            borderRadius: 8,
+                                            overflowX: 'auto'
+                                          }}
+                                        >
+                                          <code {...props} />
+                                        </pre>
+                                      )
+                                  }}
+                                >
+                                  {msg.content}
+                                </ReactMarkdown>
+                              ) : (
+                                <Text style={{ whiteSpace: 'pre-wrap' }}>
+                                  {msg.content}
+                                </Text>
+                              )}
+
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  color: '#999',
+                                  marginTop: 6
+                                }}
+                              >
+                                {msg.timestamp}
+                              </div>
+                            </div>
+                          </Space>
                         </div>
-                      </Space>
-                    </div>
-                  </List.Item>
+                      </List.Item>
+                    )}
+                  />
                 )}
               />
 
