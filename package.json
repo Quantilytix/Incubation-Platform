@@ -61,7 +61,7 @@
         "react-dom": "^18.0.0",
         "react-helmet": "^6.1.0",
         "react-json-view": "^1.21.3",
-        "react-markdown": "^8.0.3",
+        "react-markdown": "^8.0.7",
         "react-router-dom": "^6.8.1",
         "react-signature-canvas": "^1.1.0-alpha.2",
         "react-sticky-box": "^2.0.5",
