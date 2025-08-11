@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Layout, Menu, Typography, Spin, Button, Drawer } from 'antd'
-import { useLogout } from '@refinedev/core'
-import { doc, getDoc } from 'firebase/firestore'
+import { useGetIdentity, useLogout } from '@refinedev/core'
+import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { Link, Outlet } from 'react-router-dom'
 import { CurrentUser } from '@/components/layout/current-user'
+import { useWindowSize } from 'react-use'
 import {
   MenuUnfoldOutlined,
   MenuFoldOutlined,
@@ -15,7 +16,6 @@ import {
   FileTextOutlined,
   ReadOutlined,
   FileSearchOutlined,
-  UsergroupAddOutlined,
   CheckSquareOutlined,
   FileProtectOutlined,
   PlusCircleOutlined,
@@ -24,22 +24,37 @@ import {
   LaptopOutlined,
   TeamOutlined,
   FileDoneOutlined,
-  SolutionOutlined,
   MessageOutlined,
   BankOutlined,
+  UserOutlined,
   CalendarOutlined,
   AuditOutlined,
   ProfileOutlined,
+  DollarOutlined,
   LineChartOutlined,
   ClockCircleOutlined,
-  BookOutlined,
+  PhoneOutlined,
+  FieldTimeOutlined,
+  MoneyCollectOutlined,
+  PaperClipOutlined,
+  BarsOutlined,
+  QuestionCircleOutlined,
+  BoxPlotOutlined,
+  HeatMapOutlined,
+  DoubleRightOutlined,
   DatabaseOutlined,
-  OneToOneOutlined
+  SendOutlined,
+  GroupOutlined,
+  BlockOutlined,
+  DotChartOutlined,
+  LinkOutlined,
+  ThunderboltOutlined,
+  LogoutOutlined,
+  BulbOutlined
 } from '@ant-design/icons'
-import { getStorage } from 'firebase/storage'
-import { CompanyLogo } from '../CompanyLogo'
-import { useFullIdentity } from '@/hooks/src/useFullIdentity'
-import { useWindowSize } from 'react-use'
+import { Upload, message } from 'antd'
+import {} from '@ant-design/icons'
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 
 const { Header, Sider, Content } = Layout
 const { Title } = Typography
@@ -49,50 +64,48 @@ type UserRole =
   | 'funder'
   | 'consultant'
   | 'incubatee'
+  | 'participant'
   | 'operations'
+  | 'projectmanager'
   | 'director'
   | 'projectadmin'
   | 'investor'
   | 'government'
+  | 'receptionist'
 
 export const CustomLayout: React.FC = () => {
   const [logoUploading, setLogoUploading] = useState(false)
   const storage = getStorage()
-  const { user } = useFullIdentity()
-  const { mutate: logout } = useLogout()
   const { width } = useWindowSize()
   const isMobile = width < 768
+  const { data: identity } = useGetIdentity()
+  const { mutate: logout } = useLogout()
   const [role, setRole] = useState<UserRole | null>(null)
+  const [department, setDepartment] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState(false)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [drawerVisible, setDrawerVisible] = useState(false)
 
   useEffect(() => {
     const fetchUserRole = async () => {
-      if (!user?.id) return
-      const docRef = doc(db, 'users', String(user.id))
+      if (!identity?.id) return
+      const docRef = doc(db, 'users', String(identity.id))
       const userSnap = await getDoc(docRef)
       if (userSnap.exists()) {
         const userData = userSnap.data()
         const cleanRole = userData.role?.toLowerCase()?.replace(/\s+/g, '')
         setRole(cleanRole)
+        setDepartment(userData.departmentName || null) // <-- add this line
       }
     }
     fetchUserRole()
-  }, [user])
-
-  // Close drawer when resizing to desktop
-  useEffect(() => {
-    if (!isMobile && drawerVisible) {
-      setDrawerVisible(false)
-    }
-  }, [isMobile, drawerVisible])
+  }, [identity])
 
   useEffect(() => {
     const fetchUserDetails = async () => {
-      if (!user?.id) return
+      if (!identity?.id) return
 
-      const userRef = doc(db, 'users', String(user.id))
+      const userRef = doc(db, 'users', String(identity.id))
       const userSnap = await getDoc(userRef)
 
       if (!userSnap.exists()) return
@@ -113,41 +126,41 @@ export const CustomLayout: React.FC = () => {
     }
 
     fetchUserDetails()
-  }, [user])
+  }, [identity])
 
   const getDashboardTitle = (role: UserRole | null) => {
     if (!role) return ''
     const nameMap = {
-      projectadmin: 'Project Admin',
+      projectadmin: 'Center Coordinator',
+      projectmanager: 'Project Manager',
       funder: 'Sponsor',
       consultant: 'Consultant',
       operations: 'Operations',
+      auxiliary: 'Auxiliary',
       admin: 'Admin',
-      director: 'Director',
+      director: 'CEO',
       incubatee: 'Incubatee',
       investor: 'Investor',
-      government: 'Government'
+      government: 'Government',
+      receptionist: 'Receptionist'
     }
 
-    return `Smart Incubation | Welcome ${user?.name || 'User'}`
+    return `${nameMap[role] || role} Dashboard`
   }
 
-  const generateMenu = (items: any[]) =>
-    items.map(({ key, label, to, icon, children }) => {
-      if (children) {
-        return {
-          key,
-          icon,
-          label,
-          children: generateMenu(children) // recursion
-        }
-      }
-      return {
-        key,
-        icon,
-        label: <Link to={to}>{label}</Link>
-      }
-    })
+  const lepharoDepartments = [
+    'ROM (Recruitment, Onboarding and Maintenance)',
+    'HSE (Health, Safety & Environment) and Labour Compliance',
+    'IHF (InHouse Finance)',
+    'M&E (Monitoring and Evaluation',
+    'Financial Compliance',
+    'PDS (Personal Development Services)',
+    'Legal Advisory Services',
+    'Wellness Services',
+    'Training Academy',
+    'Marketing and Communication',
+    'Market Linkages'
+  ]
 
   const allMenus = {
     admin: [
@@ -248,29 +261,84 @@ export const CustomLayout: React.FC = () => {
         icon: <DashboardOutlined />
       },
       {
-        key: 'applications',
-        to: '/applications',
-        label: 'Applications',
-        icon: <FormOutlined />
-      },
-      {
         key: 'programs',
         to: '/programs',
         label: 'Programs Onboarding',
         icon: <LaptopOutlined />
       },
       {
-        key: 'analytics',
-        to: '/projectadmin/monitoring',
-        label: 'M & E Monitoring',
-        icon: <PieChartOutlined />
+        key: 'applications',
+        to: '/applications',
+        label: 'Applications',
+        icon: <FormOutlined />
       },
       {
-        key: 'impact',
-        to: '/projectadmin/impact',
-        label: 'Impact Analytics',
-        icon: <FundProjectionScreenOutlined />
+        key: 'interventions',
+        icon: <FileSearchOutlined />,
+        label: 'Interventions',
+        children: [
+          {
+            key: 'interventions-db',
+            label: <Link to='/interventions'>Database</Link>,
+            icon: <DatabaseOutlined />
+          },
+          {
+            key: 'interventions-movs',
+            label: <Link to='/projectadmin/movs/approvals'>MOVs</Link>,
+            icon: <PaperClipOutlined />
+          }
+        ]
       },
+      {
+        key: 'inquiries',
+        label: 'Inquiries',
+        icon: <QuestionCircleOutlined />,
+        children: [
+          {
+            key: 'inquiries-db',
+            label: <Link to='/receptionist/inquiries'>All</Link>,
+            icon: <DatabaseOutlined />
+          },
+
+          {
+            key: 'inquiries-followups',
+            label: <Link to='/projectadmin/follow-ups'>Follow Ups</Link>,
+            icon: <ClockCircleOutlined />
+          }
+        ]
+      },
+      {
+        key: 'user-management',
+        to: '/admin',
+        label: 'User Management',
+        icon: <UserOutlined />
+      },
+      {
+        key: 'resources',
+        icon: <ProjectOutlined />,
+        label: 'Resources',
+        children: [
+          {
+            key: 'resources-db',
+            label: <Link to='/resources'>Resources Database</Link>
+          },
+          {
+            key: 'resources-req',
+            label: <Link to='/resources/requests'>Incubatee Requests</Link>
+          },
+          {
+            key: 'resources-internal',
+            label: <Link to='/resources/internal'>Internal Requests</Link>
+          },
+          {
+            key: 'resources-all',
+            label: (
+              <Link to='/resources/allocations'>Resources Allocations</Link>
+            )
+          }
+        ]
+      },
+
       {
         key: 'reports',
         to: '/projectadmin/reports',
@@ -278,7 +346,33 @@ export const CustomLayout: React.FC = () => {
         icon: <ReadOutlined />
       }
     ],
-
+    projectmanager: [
+      {
+        key: 'dashboard',
+        to: '/projectmanager',
+        label: 'Dashboard',
+        icon: <DashboardOutlined />
+      },
+      {
+        key: 'resources',
+        icon: <ProjectOutlined />,
+        label: 'Resources',
+        children: [
+          {
+            key: 'resources-db',
+            label: <Link to='/resources'>Resources Database</Link>
+          },
+          {
+            key: 'resources-internal',
+            label: (
+              <Link to='/projectmanager/inhouse/requests'>
+                Internal Requests
+              </Link>
+            )
+          }
+        ]
+      }
+    ],
     funder: [
       {
         key: 'dashboard',
@@ -299,13 +393,30 @@ export const CustomLayout: React.FC = () => {
         icon: <BarChartOutlined />
       }
     ],
-
     consultant: [
       {
         key: 'dashboard',
         to: '/consultant',
         label: 'Dashboard',
         icon: <DashboardOutlined />
+      },
+      {
+        key: 'finances',
+        to: '/consultant/interventions/finance',
+        label: 'Financial Portal',
+        icon: <DollarOutlined />
+      },
+      {
+        key: 'linkages',
+        to: '/consultant/interventions/linkages',
+        label: 'Linkages Portal',
+        icon: <LinkOutlined />
+      },
+      {
+        key: 'appointments',
+        to: '/consultant/appointments',
+        label: 'Appointments',
+        icon: <ClockCircleOutlined />
       },
       {
         key: 'allocated',
@@ -325,16 +436,10 @@ export const CustomLayout: React.FC = () => {
         ]
       },
       {
-        key: 'tasksEvents',
-        to: '/tasksEvents',
-        label: 'Tasks & Events',
-        icon: <BookOutlined />
-      },
-      {
-        key: 'appointments',
-        to: '/consultant/appointments',
-        label: 'Appointments',
-        icon: <ClockCircleOutlined />
+        key: 'queries',
+        to: '/consultant/queries',
+        label: 'Queries',
+        icon: <QuestionCircleOutlined />
       },
       {
         key: 'feedback',
@@ -349,7 +454,6 @@ export const CustomLayout: React.FC = () => {
         icon: <LineChartOutlined />
       }
     ],
-
     director: [
       {
         key: 'dashboard',
@@ -358,22 +462,10 @@ export const CustomLayout: React.FC = () => {
         icon: <DashboardOutlined />
       },
       {
-        key: 'operators',
-        to: '/director/operators',
-        label: 'Operators Onboarding',
-        icon: <UsergroupAddOutlined />
-      },
-      {
-        key: 'programs',
-        to: '/programs',
-        label: 'Programs Onboarding',
-        icon: <LaptopOutlined />
-      },
-      {
-        key: 'expenses',
-        to: '/expenses',
-        label: 'Project Expenses',
-        icon: <FundProjectionScreenOutlined />
+        key: 'user-management',
+        to: '/admin',
+        label: 'User Management',
+        icon: <UserOutlined />
       },
       {
         key: 'system',
@@ -386,9 +478,14 @@ export const CustomLayout: React.FC = () => {
         to: '/funder',
         label: 'Sponsor View',
         icon: <ProfileOutlined />
+      },
+      {
+        key: 'expenses',
+        to: '/expenses',
+        label: 'Project Expenses',
+        icon: <FundProjectionScreenOutlined />
       }
     ],
-
     incubatee: [
       {
         key: 'dashboard',
@@ -397,31 +494,62 @@ export const CustomLayout: React.FC = () => {
         icon: <DashboardOutlined />
       },
       {
-        key: 'diagnostic',
-        to: '/incubatee/diagnostic',
-        label: 'Diagnostic Assessment',
-        icon: <FormOutlined />
-      },
-      {
-        key: 'interventions',
-        to: '/incubatee/interventions',
+        key: 'tracker',
+        icon: <FileSearchOutlined />,
         label: 'Tracker',
-        icon: <SolutionOutlined />
+        children: [
+          {
+            key: 'interventions-tracker',
+            label: <Link to='/incubatee/interventions'>Interventions</Link>,
+            icon: <BarsOutlined />
+          },
+          {
+            key: 'appointments-tracker',
+            label: <Link to='/incubatee/appointments'>Appointments</Link>,
+            icon: <ClockCircleOutlined />
+          },
+          {
+            key: 'metrics-tracker',
+            label: <Link to='/incubatee/metrics'>Metrics</Link>,
+            icon: <BarChartOutlined />
+          },
+          {
+            key: 'inquiries-tracker',
+            label: <Link to='/incubatee/inquiries'>Inquiries</Link>,
+            icon: <QuestionCircleOutlined />
+          },
+          {
+            key: 'resources-tracker',
+            label: <Link to='/incubatee/resources'>Resources</Link>,
+            icon: <BoxPlotOutlined />
+          }
+        ]
       },
       {
-        key: 'metrics',
-        to: '/incubatee/metrics',
-        label: 'Monthly Metrics',
-        icon: <BarChartOutlined />
+        key: 'roadmap',
+        to: '/incubatee/roadmap',
+        label: 'Roadmap',
+        icon: <HeatMapOutlined />
       },
+
       {
         key: 'documents',
-        to: '/incubatee/documents',
-        label: 'Upload Documents',
-        icon: <FileDoneOutlined />
+        label: 'Engagement Portal',
+        icon: <FileDoneOutlined />,
+        children: [
+          {
+            key: 'documents-hub',
+            label: <Link to='/incubatee/documents/hub'>System</Link>,
+            icon: <BarsOutlined />
+          },
+          {
+            key: 'compliance-tracker',
+            label: <Link to='/incubatee/documents/compliance'>Compliance</Link>,
+            icon: <ClockCircleOutlined />
+          }
+        ]
       }
     ],
-
     operations: [
       {
         key: 'dashboard',
@@ -430,22 +558,235 @@ export const CustomLayout: React.FC = () => {
         icon: <DashboardOutlined />
       },
       {
-        key: 'diagnostics',
-        to: '/operations/diagnostics',
-        label: 'Growth Plan',
-        icon: <SolutionOutlined />
+        key: 'user-management',
+        to: '/admin',
+        label: 'User Management',
+        icon: <UserOutlined />
+      },
+      {
+        key: 'requested',
+        to: '/operations/inhouse/requested',
+        label: 'Requests',
+        icon: <FileDoneOutlined />
+      },
+      {
+        key: 'verification',
+        to: '/operations/inhouse/verification',
+        label: 'Verification',
+        icon: <FileDoneOutlined />
+      },
+      {
+        key: 'invoices',
+        to: '/operations/inhouse/invoices',
+        label: 'Invoices & Processing',
+        icon: <FileTextOutlined />
+      },
+      {
+        key: 'payments',
+        to: '/operations/inhouse/payments',
+        label: 'Payments Tracker',
+        icon: <DollarOutlined />
+      },
+      {
+        key: 'reported',
+        to: '/operations/inhouse/reported',
+        label: 'Reports & Analytics',
+        icon: <BarChartOutlined />
+      },
+      {
+        key: 'analytics',
+        to: '/operations/monitoring',
+        label: 'M & E Monitoring',
+        icon: <PieChartOutlined />
+      },
+      {
+        key: 'linkages',
+        to: '/consultant/interventions/linkages',
+        label: 'Linkages Portal',
+        icon: <LinkOutlined />
+      },
+      {
+        key: 'wellness-portal',
+        label: 'Wellness Portal',
+        icon: <LinkOutlined />,
+        children: [
+          {
+            key: 'interventions',
+            to: '/consultant/interventions/wellness',
+            label: 'Intervention Portal',
+            icon: <PaperClipOutlined />
+          },
+          {
+            key: 'forms',
+            to: '/operations/forms',
+            label: 'Forms Portal',
+            icon: <LinkOutlined />
+          }
+        ]
+      },
+      {
+        key: 'pds-portal',
+        label: 'Psychometric Portal',
+        icon: <ThunderboltOutlined />,
+        children: [
+          {
+            key: 'interventions',
+            to: '/consultant/interventions/pds',
+            label: 'Intervention Portal',
+            icon: <PaperClipOutlined />
+          },
+          {
+            key: 'forms',
+            to: '/operations/forms',
+            label: 'Forms Portal',
+            icon: <LinkOutlined />
+          }
+        ]
       },
       {
         key: 'impact',
-        to: '/projectadmin/impact',
+        to: '/operations/impact',
         label: 'Impact Analytics',
         icon: <FundProjectionScreenOutlined />
+      },
+      {
+        key: 'diagnostic',
+        to: '/operations/plan',
+        label: 'Diagnostic Plan',
+        icon: <AuditOutlined />,
+        children: [
+          {
+            key: 'plan',
+            to: '/operations/plan',
+            label: 'Plan Builder',
+            icon: <BlockOutlined />
+          },
+          {
+            key: 'gap',
+            to: '/operations/gap',
+            label: 'GAP Analytics',
+            icon: <DotChartOutlined />
+          }
+        ]
+      },
+      {
+        key: 'training-portal',
+        label: 'Training Portal',
+        icon: <FormOutlined />,
+        children: [
+          {
+            key: 'forms',
+            to: '/operations/forms',
+            label: 'Forms Portal',
+            icon: <LinkOutlined />
+          },
+          {
+            key: 'registration',
+            to: '/operations/training/register',
+            label: 'Registration',
+            icon: <FormOutlined />
+          },
+          {
+            key: 'completion',
+            to: '/operations/training/completion',
+            label: 'Module Tracker',
+            icon: <ClockCircleOutlined />
+          }
+        ]
+      },
+      {
+        key: 'marketing-portal',
+        label: 'Marketing Portal',
+        icon: <FormOutlined />,
+        children: [
+          {
+            key: 'forms',
+            to: '/operations/forms',
+            label: 'Forms Portal',
+            icon: <LinkOutlined />
+          }
+        ]
+      },
+      {
+        key: 'finance',
+        to: '/operations/finance',
+        label: 'Finance',
+        icon: <MoneyCollectOutlined />
+      },
+
+      {
+        key: 'requests',
+        to: '/operations/requests',
+        label: 'Requests',
+        icon: <PhoneOutlined />
+      },
+      {
+        key: 'programs',
+        to: '/programs',
+        label: 'Programs Onboarding',
+        icon: <LaptopOutlined />
+      },
+      {
+        key: 'interventions',
+        icon: <FileSearchOutlined />,
+        label: 'Interventions',
+        children: [
+          {
+            key: 'interventions-db',
+            label: <Link to='/interventions'>Database</Link>,
+            icon: <DatabaseOutlined />
+          },
+          {
+            key: 'movs',
+            to: '/projectadmin/movs',
+            label: 'Verification (MOVs)',
+            icon: <PaperClipOutlined />
+          },
+          {
+            key: 'interventions-req',
+            label: <Link to='/operations/requests'>Requests</Link>,
+            icon: <SendOutlined />
+          },
+          {
+            key: 'interventions-manager',
+            label: <Link to='/operations/interventions'>Setup</Link>,
+            icon: <GroupOutlined />
+          }
+        ]
+      },
+      {
+        key: 'monitoring-interventions',
+        icon: <FileSearchOutlined />,
+        label: 'Interventions',
+        children: [
+          {
+            key: 'interventions-db',
+            label: <Link to='/interventions'>Database</Link>,
+            icon: <DatabaseOutlined />
+          },
+          {
+            key: 'movs',
+            to: '/operations/monitoring/movs',
+            label: 'MOVs Verification ',
+            icon: <PaperClipOutlined />
+          },
+          {
+            key: 'interventions-req',
+            label: <Link to='/operations/requests'>Requests</Link>,
+            icon: <SendOutlined />
+          },
+          {
+            key: 'interventions-manager',
+            label: <Link to='/operations/interventions'>Setup</Link>,
+            icon: <GroupOutlined />
+          }
+        ]
       },
       {
         key: 'consultants',
         to: '/operations/consultants',
         label: 'Consultants',
-        icon: <SolutionOutlined />,
+        icon: <TeamOutlined />,
         children: [
           {
             key: 'consultants-db',
@@ -454,42 +795,55 @@ export const CustomLayout: React.FC = () => {
             icon: <DatabaseOutlined />
           },
           {
-            key: 'consultants-assignments',
+            key: 'assignments',
             to: '/operations/assignments',
             label: 'Assignments',
             icon: <FileProtectOutlined />
-          },
-          {
-            key: 'consultants-tasks',
-            to: '/operations/tasks',
-            label: 'Tasks',
-            icon: <OneToOneOutlined />
           }
         ]
       },
       {
-        key: 'interventions',
-        to: '/interventions',
-        label: 'Interventions Database',
-        icon: <FileSearchOutlined />
+        key: 'personell',
+        label: 'Personell',
+        icon: <TeamOutlined />,
+        children: [
+          {
+            key: 'personell',
+            label: 'Personell',
+            to: '/operations/consultants',
+            icon: <TeamOutlined />
+          },
+          {
+            key: 'hr-leave',
+            to: '/operations/hr/leave',
+            label: 'Leave Management',
+            icon: <BulbOutlined />
+          }
+        ]
       },
 
       {
         key: 'participants',
-        label: 'Incubatees',
-        icon: <TeamOutlined />,
+        to: '/operations/participants',
+        label: 'Participants',
+        icon: <UserOutlined />
+      },
+      {
+        key: 'monitoring-participants',
+        label: 'Participants',
+        icon: <UserOutlined />,
         children: [
           {
-            key: 'participants-db',
+            key: 'monitoring-participants',
             to: '/operations/participants',
-            label: 'View All',
+            label: 'Participants',
             icon: <DatabaseOutlined />
           },
           {
-            key: 'applications',
-            to: '/applications',
-            label: 'Applications',
-            icon: <FormOutlined />
+            key: 'groups',
+            to: '/operations/groupHistory',
+            label: 'Group Movemement',
+            icon: <FieldTimeOutlined />
           },
           {
             key: 'compliance',
@@ -499,11 +853,18 @@ export const CustomLayout: React.FC = () => {
           }
         ]
       },
+
       {
-        key: 'programs',
-        to: '/programs',
-        label: 'Programs Onboarding',
-        icon: <LaptopOutlined />
+        key: 'compliance',
+        to: '/operations/compliance',
+        label: 'Compliance',
+        icon: <CheckSquareOutlined />
+      },
+      {
+        key: 'hse-compliance',
+        to: '/consultant/interventions/hse',
+        label: 'Compliance',
+        icon: <CheckSquareOutlined />
       },
       {
         key: 'resources',
@@ -512,10 +873,31 @@ export const CustomLayout: React.FC = () => {
         icon: <FundProjectionScreenOutlined />
       },
       {
+        key: 'applications',
+        to: '/applications',
+        label: 'Applications',
+        icon: <FormOutlined />
+      },
+      {
         key: 'system',
         to: '/system',
         label: 'System Setup',
         icon: <BankOutlined />
+      },
+      {
+        key: 'kpis',
+        icon: <BankOutlined />,
+        label: 'KPIs',
+        children: [
+          {
+            key: 'kpis-tracker',
+            label: <Link to='/operations/kpis/KPITrackerView'>Tracker</Link>
+          },
+          {
+            key: 'kpis-setup',
+            label: <Link to='/operations/kpis/KPIManager'>Setup</Link>
+          }
+        ]
       },
       {
         key: 'reports',
@@ -523,20 +905,240 @@ export const CustomLayout: React.FC = () => {
         label: 'Reports',
         icon: <ReadOutlined />
       }
+    ],
+
+    receptionist: [
+      {
+        key: 'dashboard',
+        to: '/receptionist',
+        label: 'Dashboard',
+        icon: <DashboardOutlined />
+      },
+      {
+        key: 'inquiries',
+        to: '/receptionist/inquiries',
+        label: 'All Inquiries',
+        icon: <FileTextOutlined />
+      },
+      {
+        key: 'new-inquiry',
+        to: '/receptionist/inquiries/new',
+        label: 'New Inquiry',
+        icon: <PlusCircleOutlined />
+      },
+      {
+        key: 'contacts',
+        to: '/receptionist/contacts',
+        label: 'Contacts',
+        icon: <UserOutlined />
+      },
+      {
+        key: 'follow-ups',
+        to: '/receptionist/follow-ups',
+        label: 'Follow-ups',
+        icon: <ClockCircleOutlined />
+      },
+      {
+        key: 'reports',
+        to: '/receptionist/reports',
+        label: 'Reports',
+        icon: <ReadOutlined />
+      }
+    ],
+    auxiliary: [
+      {
+        key: 'timesheet',
+        to: '/auxiliary',
+        label: 'Timesheet',
+        icon: <ClockCircleOutlined />
+      },
+      {
+        key: 'leave',
+        to: '/auxiliary/leave',
+        label: 'Leave Management',
+        icon: <DoubleRightOutlined />
+      }
     ]
   }
 
+  let baseMenus = allMenus[role] || []
+
+  const renderMenu = (items: any[]): any[] =>
+    items.map((item: any) => {
+      if (item.children) {
+        return {
+          key: item.key,
+          icon: item.icon,
+          label: item.label,
+          children: renderMenu(item.children)
+        }
+      }
+
+      return {
+        key: item.key,
+        icon: item.icon,
+        label: <Link to={item.to}>{item.label}</Link>
+      }
+    })
+
   const menuItems = useMemo(() => {
     if (!role) return []
+
+    let baseMenus = allMenus[role] || []
+
+    // Department-based menu logic for Operations role
+    if (role === 'operations' && department) {
+      // Example logic - customize as you see fit for each department
+
+      if (department === 'Financial Compliance') {
+        baseMenus = baseMenus.filter(m =>
+          [
+            'dashboard',
+            'consultants',
+            'finance',
+            'diagnostic',
+            'assignments',
+            'interventions',
+            'participants',
+            'compliance',
+            'resources',
+            'reports'
+          ].includes(m.key)
+        )
+      } else if (department.startsWith('HSE')) {
+        baseMenus = baseMenus.filter(m =>
+          [
+            'dashboard',
+            'consultants',
+            'assignments',
+            'diagnostic',
+            'movs',
+            'hse-compliance',
+            'interventions',
+            'kpis',
+            'reports'
+          ].includes(m.key)
+        )
+      } else if (department.startsWith('M&E')) {
+        baseMenus = baseMenus.filter(m =>
+          [
+            'dashboard',
+            'personell',
+            'assignments',
+            'kpis',
+            'movs',
+            'monitoring-participants',
+            'monitoring-interventions',
+            'resources',
+            'reports'
+          ].includes(m.key)
+        )
+      } else if (department.startsWith('IHF')) {
+        baseMenus = baseMenus.filter(m =>
+          [
+            'dashboard',
+            'verification',
+            'requested',
+            'user-management',
+            'payments',
+            'invoices',
+            'reported'
+          ].includes(m.key)
+        )
+      } else if (department === 'Market Linkages') {
+        baseMenus = baseMenus.filter(m =>
+          [
+            'dashboard',
+            'consultants',
+            'diagnostic',
+            'linkages',
+            'interventions',
+            'participants',
+            'reports'
+          ].includes(m.key)
+        )
+      } else if (department === 'PDS (Personal Development Services)') {
+        baseMenus = baseMenus.filter(m =>
+          [
+            'dashboard',
+            'diagnostic',
+            'pds-portal',
+            'assignments',
+            'reports'
+          ].includes(m.key)
+        )
+      } else if (department === 'Training Academy') {
+        baseMenus = baseMenus.filter(m =>
+          [
+            'dashboard',
+            'interventions',
+            'diagnostic',
+            'training-portal',
+            'reports'
+          ].includes(m.key)
+        )
+      } else if (department === 'Legal Advisory Services') {
+        baseMenus = baseMenus.filter(m =>
+          [
+            'dashboard',
+            'diagnostic',
+            'assignments',
+            'interventions',
+            'consultants',
+            'reports'
+          ].includes(m.key)
+        )
+      } else if (department === 'Wellness Services') {
+        baseMenus = baseMenus.filter(m =>
+          [
+            'dashboard',
+            'assignments',
+            'diagnostic',
+            'wellness-portal',
+            'interventions',
+            'consultants',
+            'reports'
+          ].includes(m.key)
+        )
+      } else if (department === 'Marketing and Communication') {
+        baseMenus = baseMenus.filter(m =>
+          [
+            'dashboard',
+            'consultants',
+            'interventions',
+            'diagnostic',
+            'assignments',
+            'resources',
+            'reports'
+          ].includes(m.key)
+        )
+      } else if (department.startsWith('ROM')) {
+        baseMenus = baseMenus.filter(m =>
+          [
+            'dashboard',
+            'programs',
+            'assignments',
+            'diagnostic',
+            'interventions',
+            'applications',
+            'kpis',
+            'participants',
+            'reports'
+          ].includes(m.key)
+        )
+      }
+    }
+
+    // Always add chat
     return [
-      ...generateMenu(allMenus[role] || []),
+      ...renderMenu(baseMenus),
       {
         key: 'chat',
         label: <Link to='/chat'>Chat</Link>,
         icon: <MessageOutlined />
       }
     ]
-  }, [role])
+  }, [role, department])
 
   const siderWidth = 220
   const headerHeight = 64
@@ -555,12 +1157,11 @@ export const CustomLayout: React.FC = () => {
       </div>
     )
   }
-
   const renderDesktopSider = () => (
     <Sider
       collapsible
       collapsed={collapsed}
-      onCollapse={value => setCollapsed(value)}
+      onCollapse={setCollapsed}
       collapsedWidth={80}
       width={siderWidth}
       trigger={null}
@@ -574,20 +1175,40 @@ export const CustomLayout: React.FC = () => {
         boxShadow: '2px 0 5px rgba(0,0,0,0.06)'
       }}
     >
-      <CompanyLogo collapsed={collapsed} />
+      <div
+        style={{
+          height: headerHeight,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '8px',
+          borderBottom: '1px solid #f0f0f0'
+        }}
+      >
+        <img
+          src='/assets/images/lepharo.png'
+          alt='Logo'
+          style={{
+            maxHeight: '100%',
+            maxWidth: '100%',
+            height: 'auto',
+            width: collapsed ? '40px' : '120px',
+            transition: 'width 0.2s ease-in-out',
+            objectFit: 'contain'
+          }}
+        />
+      </div>
+
       <Menu
         theme='light'
         mode='inline'
         items={menuItems}
-        style={{
-          borderRight: 'none',
-          height: `calc(100vh - ${headerHeight + 80}px)`, // Account for logo and logout button
-          overflowY: 'auto'
-        }}
+        style={{ borderRight: 'none' }}
       />
+
       <div style={{ padding: 16, borderTop: '1px solid #f0f0f0' }}>
         <Button block danger onClick={() => logout()}>
-          {collapsed ? null : 'Logout'}
+          {collapsed ? <LogoutOutlined /> : 'Logout'}
         </Button>
       </div>
     </Sider>
@@ -602,20 +1223,37 @@ export const CustomLayout: React.FC = () => {
       width={250}
       bodyStyle={{ padding: 0 }}
     >
-      <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0f0f0' }}>
-        <CompanyLogo collapsed={false} />
+      <div
+        style={{
+          height: headerHeight,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '8px',
+          borderBottom: '1px solid #f0f0f0'
+        }}
+      >
+        <img
+          src='/assets/images/lepharo.png'
+          alt='Logo'
+          style={{
+            maxHeight: '100%',
+            maxWidth: '100%',
+            height: 'auto',
+            width: '120px',
+            objectFit: 'contain'
+          }}
+        />
       </div>
+
       <Menu
         theme='light'
         mode='inline'
         items={menuItems}
-        style={{
-          borderRight: 'none',
-          height: 'calc(100% - 112px)',
-          overflowY: 'auto'
-        }}
+        style={{ borderRight: 'none' }}
         onClick={() => setDrawerVisible(false)}
       />
+
       <div style={{ padding: 16, borderTop: '1px solid #f0f0f0' }}>
         <Button block danger onClick={() => logout()}>
           Logout
@@ -631,30 +1269,24 @@ export const CustomLayout: React.FC = () => {
 
       {/* Mobile Drawer */}
       {isMobile && renderMobileDrawer()}
-
       {/* Layout */}
       <Layout
         style={{
           marginLeft: isMobile ? 0 : collapsed ? 80 : siderWidth,
-          transition: 'all 0.2s ease-in-out',
-          minHeight: '100vh'
+          transition: 'all 0.2s ease-in-out'
         }}
       >
         <Header
           style={{
             background: '#ffffff',
             padding: isMobile ? '0 16px' : '0 24px',
-            position: 'fixed',
-            top: 0,
-            left: isMobile ? 0 : collapsed ? 80 : siderWidth,
-            right: 0,
             height: headerHeight,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
             borderBottom: '1px solid #e0e0e0',
-            zIndex: 90,
-            transition: 'all 0.2s ease-in-out'
+            position: 'sticky',
+            top: 0,
+            zIndex: 90
           }}
         >
           <Button
@@ -677,28 +1309,39 @@ export const CustomLayout: React.FC = () => {
               height: 48
             }}
           />
-          <Title level={4} style={{ margin: 0, flex: 1, textAlign: 'center' }}>
+
+          <Title
+            level={4}
+            style={{
+              margin: 0,
+              flex: 1,
+              textAlign: 'center',
+              fontSize: isMobile ? '16px' : '18px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}
+          >
             {getDashboardTitle(role)}
           </Title>
+
           <CurrentUser />
         </Header>
 
         <Content
           style={{
-            marginTop: headerHeight,
-            minHeight: `calc(100vh - ${headerHeight}px)`,
-            background: '#fff',
-            overflow: 'auto'
+            background: '#f5f5f5',
+            minHeight: `calc(100vh - ${headerHeight}px)`
           }}
         >
           <div
             style={{
               background: '#fff',
+
               boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
               minHeight: `calc(100vh - ${
                 headerHeight + (isMobile ? 32 : 48)
-              }px)`,
-              padding: isMobile ? 16 : 24
+              }px)`
             }}
           >
             <Outlet />
