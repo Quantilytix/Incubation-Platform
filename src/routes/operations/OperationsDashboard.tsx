@@ -15,28 +15,22 @@ import {
   Badge,
   Modal,
   Form,
+  Select,
+  Input,
+  DatePicker,
   message,
-  Layout,
-  Alert,
-  Descriptions
+  TimePicker,
+  Layout
 } from 'antd'
 import {
   CalendarOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
-  FileSearchOutlined,
-  ClockCircleOutlined,
-  ScheduleOutlined,
   FileTextOutlined,
-  FormOutlined,
-  ApartmentOutlined,
+  ScheduleOutlined,
   TeamOutlined,
-  BarsOutlined,
   BellOutlined,
-  DeleteOutlined,
-  UploadOutlined,
-  BarChartOutlined,
-  ArrowRightOutlined
+  DeleteOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
@@ -50,39 +44,55 @@ import {
   getDoc,
   updateDoc,
   where,
-  query
+  query,
+  addDoc
 } from 'firebase/firestore'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
+const { Title, Text } = Typography
 import dayjs from 'dayjs'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
-import { TaskModal } from '@/components/op-dashboard/TaskModal'
-import { EventModal } from '@/components/op-dashboard/EventModal'
-import { PREDEFINED_TASK_TYPES } from '@/types/TaskType'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import HighchartsMore from 'highcharts/highcharts-more'
-import HighchartsAccessibility from 'highcharts/modules/accessibility'
-import { motion } from 'framer-motion'
 
-// Initialize additional modules
-if (typeof HighchartsMore === 'function') {
-  HighchartsMore(Highcharts)
+// Inside OperationsDashboard, before return:
+const branchPerformanceOptions = {
+  chart: {
+    type: 'column'
+  },
+  title: {
+    text: 'Branch Performance - Interventions Completed'
+  },
+  xAxis: {
+    categories: [
+      'Springs (Head Office)',
+      'Rustenburg',
+      'Mogale City',
+      'Welkom',
+      'Matlosana',
+      'Khutsong'
+    ],
+    title: { text: 'Branch' }
+  },
+  yAxis: {
+    min: 0,
+    title: { text: 'Interventions Completed' }
+  },
+  series: [
+    {
+      name: 'Completed Interventions',
+      data: [25, 15, 20, 10, 18, 22],
+      color: '#1890ff'
+    }
+  ],
+  credits: { enabled: false }
 }
-if (typeof HighchartsAccessibility === 'function') {
-  HighchartsAccessibility(Highcharts)
-}
-
-const { Text } = Typography
 
 export const OperationsDashboard: React.FC = () => {
   const navigate = useNavigate()
   const [participants, setParticipants] = useState<any[]>([])
-  const [interventions, setInterventions] = useState<any[]>([])
   const [appointments, setAppointments] = useState<any[]>([])
   const [appointmentsLoading, setAppointmentsLoading] = useState(true)
-  const [complianceDocuments, setComplianceDocuments] = useState<any[]>([])
-  const [tasks, setTasks] = useState<any[]>([])
   const [events, setEvents] = useState<any[]>([])
   const [eventModalOpen, setEventModalOpen] = useState(false)
   const [calendarModalOpen, setCalendarModalOpen] = useState(false)
@@ -92,53 +102,110 @@ export const OperationsDashboard: React.FC = () => {
   const [notifications, setNotifications] = useState<any[]>([])
   const [notificationModalOpen, setNotificationModalOpen] = useState(false)
   const [filterType, setFilterType] = useState<string | null>(null)
-  const [userRole, setUserRole] = useState<'operations'>()
-  const [declineModalOpen, setDeclineModalOpen] = useState(false)
-  const [declineReason, setDeclineReason] = useState('')
-  const [declining, setDeclining] = useState(false)
-  const [directCosts, setDirectCosts] = useState([
-    { description: '', amount: '' }
-  ])
   const [departments, setDepartments] = useState<any[]>([])
   const [userDepartment, setUserDepartment] = useState<any>(null)
   const [consultants, setConsultants] = useState<any[]>([])
   const [projectAdmins, setProjectAdmins] = useState<any[]>([])
   const [operationsUsers, setOperationsUsers] = useState<any[]>([])
   const { user } = useFullIdentity()
-  const [consultantDocIds, setConsultantDocIds] = useState<
-    Record<string, string>
-  >({})
-  const [operationsDocIds, setOperationsDocIds] = useState<
-    Record<string, string>
-  >({})
-  const [proofModalOpen, setProofModalOpen] = useState(false)
-  const [selectedTask, setSelectedTask] = useState<any>(null)
+  const [allocations, setAllocations] = useState<any[]>([])
+  const [progressModalOpen, setProgressModalOpen] = useState(false)
+  const [selectedAllocation, setSelectedAllocation] = useState<any>(null)
 
+  // Dummy allocations data
+  useEffect(() => {
+    setAllocations([
+      {
+        id: 'alloc1',
+        consultant: 'John Doe',
+        intervention: 'Business Strategy Workshop',
+        department: 'Business Development',
+        beneficiary: 'ABC Traders',
+        progress: '50% complete - Sessions 1 & 2 done, session 3 scheduled'
+      },
+      {
+        id: 'alloc2',
+        consultant: 'Jane Smith',
+        intervention: 'Financial Literacy Training',
+        department: 'Finance',
+        beneficiary: 'XYZ Supplies',
+        progress: '25% complete - Initial session completed'
+      },
+      {
+        id: 'alloc3',
+        consultant: 'Michael Brown',
+        intervention: 'Marketing Campaign Support',
+        department: 'Marketing',
+        beneficiary: 'LMN Enterprises',
+        progress: '75% complete - Campaign live, final report pending'
+      }
+    ])
+  }, [])
+
+  // Fetch notifications
   useEffect(() => {
     const fetchNotifications = async () => {
-      if (!user?.companyCode) return
       try {
-        const snapshot = await getDocs(
-          query(
-            collection(db, 'notifications'),
-            where('companyCode', '==', user?.companyCode)
-          )
+        const snapshot = await getDocs(collection(db, 'notifications'))
+        const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        if (!user || !user.companyCode || !user.departmentName) {
+          setNotifications([]) // or set as loading...
+          return
+        }
+        const filtered = all.filter(
+          n =>
+            n.companyCode === user.companyCode &&
+            n.recipientRoles?.includes('operations') &&
+            n.department === user.departmentName
         )
-        const all = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as any[]
-        const filtered = all.filter(n =>
-          n.recipientRoles?.includes('operations')
-        )
-
         setNotifications(filtered)
       } catch (err) {
         console.error('Error loading notifications:', err)
       }
     }
-    fetchNotifications()
-  }, [])
+    if (user && user.companyCode && user.departmentName) {
+      fetchNotifications()
+    }
+  }, [user])
+
+  // Fetch users for consultant/department selection
+  useEffect(() => {
+    const fetchRelevantUsers = async () => {
+      if (!user?.companyCode) return
+      const q = query(
+        collection(db, 'users'),
+        where('companyCode', '==', user.companyCode)
+      )
+      const snapshot = await getDocs(q)
+      const allUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      setConsultants(allUsers.filter(u => u.role === 'consultant'))
+      setProjectAdmins(allUsers.filter(u => u.role === 'projectadmin'))
+      setOperationsUsers(allUsers.filter(u => u.role === 'operations'))
+    }
+    fetchRelevantUsers()
+  }, [user?.companyCode])
+
+  // Fetch departments
+  useEffect(() => {
+    if (user?.companyCode) {
+      const fetchDepartments = async () => {
+        const snapshot = await getDocs(
+          query(
+            collection(db, 'departments'),
+            where('companyCode', '==', user.companyCode)
+          )
+        )
+        const deps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        setDepartments(deps)
+        if (user.departmentId) {
+          setUserDepartment(deps.find(d => d.id === user.departmentId) || null)
+        } else {
+          setUserDepartment(deps.find(d => d.isMain) || null)
+        }
+      }
+      fetchDepartments()
+    }
+  }, [user])
 
   // Fetch appointments
   useEffect(() => {
@@ -147,7 +214,7 @@ export const OperationsDashboard: React.FC = () => {
       try {
         const q = query(
           collection(db, 'appointments'),
-          where('companyCode', '==', user?.companyCode)
+          where('companyCode', '==', user.companyCode)
         )
         const snapshot = await getDocs(q)
         const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
@@ -161,136 +228,52 @@ export const OperationsDashboard: React.FC = () => {
     if (user?.companyCode) fetchAppointments()
   }, [user?.companyCode])
 
-  //   Fetch Assigned Interventions
-  const fetchAssignments = async () => {
-    if (!user?.companyCode) return
-    try {
-      const q = query(
-        collection(db, 'assignedInterventions'),
-        where('companyCode', '==', user?.companyCode)
-      )
-      const snapshot = await getDocs(q)
-
-      const fetchedAssignments = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
-
-      const currentParticipantMap = new Map(
-        participants.map(p => [p.id, p.beneficiaryName])
-      )
-      const currentConsultantMap = new Map(consultants.map(c => [c.id, c.name]))
-
-      const enrichedAssignments = fetchedAssignments.map(assignment => {
-        const foundParticipant = participants.find(
-          p => p.id === assignment.participantId
-        )
-        const foundIntervention = foundParticipant?.requiredInterventions.find(
-          i => i.id === assignment.interventionId
-        )
-
-        return {
-          ...assignment,
-          beneficiaryName:
-            currentParticipantMap.get(assignment.participantId) ||
-            'Unknown Beneficiary',
-          consultantName:
-            currentConsultantMap.get(assignment.consultantId) ||
-            'Unknown Consultant',
-          area: foundIntervention?.area || 'Unknown Area',
-          interventionTitle:
-            foundIntervention?.title || assignment.interventionTitle
-        }
-      })
-
-      setInterventions(enrichedAssignments)
-    } catch (error) {
-      console.error('Error fetching assignments:', error)
-      message.error('Failed to load assignments')
-    } finally {
-      //   setLoading(false)
-    }
-  }
-
+  // Fetch participants
   useEffect(() => {
-    fetchAssignments()
-  }, [user])
-
-  useEffect(() => {
-    if (!user?.companyCode) return
-
-    const fetchTasks = async () => {
+    const fetchParticipants = async () => {
+      if (!user || !user.companyCode) return
       try {
-        const q = query(
-          collection(db, 'tasks'),
-          where('companyCode', '==', user?.companyCode)
+        const participantSnapshot = await getDocs(
+          query(
+            collection(db, 'participants'),
+            where('companyCode', '==', user.companyCode)
+          )
         )
-        const snapshot = await getDocs(q)
-        const taskList = snapshot.docs.map(doc => ({
+        const participantsList = participantSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }))
-        setTasks(taskList)
+        setParticipants(participantsList)
       } catch (error) {
-        console.error('Error fetching tasks:', error)
+        console.error('Error fetching participants:', error)
       }
     }
-    const fetchAllOtherData = async () => {
-      try {
-        const q = query(
-          collection(db, 'applications'),
-          where('status', '==', 'accepted'),
-          where('companyCode', '==', user?.companyCode)
-        )
-
-        const snapshot = await getDocs(q)
-        const applications = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-
-        setParticipants(applications)
-      } catch (error) {
-        console.error('Error fetching applications:', error)
-      }
-    }
-    const fetchComplianceDocuments = async () => {
-      try {
-        const q = query(
-          collection(db, 'complianceDocuments'),
-          where('companyCode', '==', user?.companyCode)
-        )
-        const snapshot = await getDocs(q)
-
-        const documents = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        setComplianceDocuments(documents)
-      } catch (error) {
-        console.error('Error fetching compliance documents:', error)
-      }
-    }
-
-    fetchComplianceDocuments()
-    fetchTasks()
-    fetchAllOtherData()
+    fetchParticipants()
   }, [user?.companyCode])
 
+  // Fetch events
   useEffect(() => {
-    if (!user?.companyCode) return
-
     const fetchEvents = async () => {
+      if (!user || !user.companyCode) return
       try {
-        const q = query(
-          collection(db, 'events'),
-          where('companyCode', '==', user?.companyCode)
+        const snapshot = await getDocs(
+          query(
+            collection(db, 'events'),
+            where('companyCode', '==', user.companyCode)
+          )
         )
-        const snapshot = await getDocs(q)
-        const eventList = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
+        const eventList = snapshot.docs.map(doc => {
+          const data = doc.data()
+          return {
+            id: doc.id,
+            ...data,
+            // Fallback date derived from timestamp (for calendar rendering)
+            date: data.time?.toDate
+              ? dayjs(data.time.toDate()).format('YYYY-MM-DD')
+              : 'Invalid'
+          }
+        })
+
         setEvents(eventList)
       } catch (error) {
         console.error('Error fetching events:', error)
@@ -305,53 +288,38 @@ export const OperationsDashboard: React.FC = () => {
     setEventDetailModalOpen(true)
   }
 
+  // Add new event (now with consultants/departments)
   const handleAddEvent = async (values: any) => {
-    const eventDate = dayjs(values.date).format('YYYY-MM-DD')
-
-    const start = dayjs(values.startTime)
-    const end = dayjs(values.endTime)
-
-    if (!start.isValid() || !end.isValid()) {
-      return message.error('Please select a valid start and end time.')
+    const eventDate = values.date.format('YYYY-MM-DD')
+    const eventTime = values.time.format('HH:mm')
+    const [eventHour, eventMinute] = eventTime.split(':').map(Number)
+    if (
+      eventHour < 6 ||
+      (eventHour === 18 && eventMinute > 0) ||
+      eventHour > 18
+    ) {
+      return message.error('Event time must be between 06:00 and 18:00.')
     }
-
-    const startHour = start.hour()
-    const endHour = end.hour()
-
-    if (startHour < 6 || endHour > 18 || end.isBefore(start)) {
-      return message.error(
-        'Event time must be between 06:00 and 18:00, and end must be after start.'
-      )
-    }
-
+    // Check for clash (same date and time)
     const clash = events.some(
-      e =>
-        e.date === eventDate &&
-        dayjs(e.startTime).format('HH:mm') === start.format('HH:mm')
+      e => e.date === eventDate && dayjs(e.time).format('HH:mm') === eventTime
     )
     if (clash) {
       return message.error('Another event is already scheduled for this time.')
     }
-
     try {
       const newId = `event-${Date.now()}`
-
       const newEvent = {
         id: newId,
         title: values.title,
         date: eventDate,
-        startTime: Timestamp.fromDate(start.toDate()),
-        endTime: Timestamp.fromDate(end.toDate()),
-        type: values.eventType,
-        format: values.format,
-        location: values.location || '',
-        link: values.link || '',
-        description: values.description || '',
-        participants: values.participants || [],
+        time: values.time.toDate ? values.time.toDate() : values.time,
+        type: values.type,
         createdAt: Timestamp.now(),
-        companyCode: user?.companyCode
+        consultantsInvolved: values.consultantsInvolved || [],
+        departmentsInvolved: values.departmentsInvolved || [],
+        companyCode: user.companyCode
       }
-
       await setDoc(doc(db, 'events', newId), newEvent)
       setEvents(prev => [...prev, newEvent])
       message.success('Event added successfully')
@@ -363,10 +331,25 @@ export const OperationsDashboard: React.FC = () => {
     }
   }
 
+  // Mark appointment as completed
+  const markAppointmentComplete = async (apptId: string) => {
+    try {
+      await updateDoc(doc(db, 'appointments', apptId), { status: 'completed' })
+      setAppointments(prev =>
+        prev.map(a => (a.id === apptId ? { ...a, status: 'completed' } : a))
+      )
+      message.success('Appointment marked as completed.')
+    } catch (err) {
+      console.error(err)
+      message.error('Failed to complete appointment.')
+    }
+  }
+
+  // UI renderers and helpers
   const getEventIcon = (type: string) => {
     switch (type) {
       case 'meeting':
-        return <ClockCircleOutlined style={{ color: '#1890ff' }} />
+        return <ScheduleOutlined style={{ color: '#1890ff' }} />
       case 'deadline':
         return <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
       case 'event':
@@ -378,631 +361,356 @@ export const OperationsDashboard: React.FC = () => {
     }
   }
 
-  // Charts Logic
-  const upToDate = complianceDocuments.filter(
-    doc => doc.status === 'valid'
-  ).length
-  const needsReview = complianceDocuments.filter(
-    doc => doc.status === 'expiring'
-  ).length
-  const overdue = complianceDocuments.filter(
-    doc =>
-      doc.status === 'expired' ||
-      doc.status === 'missing' ||
-      doc.status === 'pending'
-  ).length
-  const total = complianceDocuments.length
+  const handleAcceptRequest = async notif => {
+    // 1. Mark notification as accepted
+    await updateDoc(doc(db, 'notifications', notif.id), {
+      status: 'accepted',
+      actionedBy: user.id,
+      actionedAt: new Date()
+    })
 
-  const complianceChartOptions = {
-    colors: ['#52c41a', '#faad14', '#ff4d4f'], // Valid, Expiring, Overdue
-    chart: {
-      type: 'column',
-      inverted: true,
-      polar: true,
-      height: 320
-    },
-    title: {
-      text: 'Compliance Status Overview'
-    },
-    credits: {
-      enabled: false
-    },
-    tooltip: {
-      outside: true,
-      shared: true
-    },
-    pane: {
-      size: '85%',
-      innerSize: '20%',
-      endAngle: 270
-    },
-    xAxis: {
-      tickInterval: 1,
-      labels: {
-        align: 'right',
-        allowOverlap: true,
-        step: 1,
-        y: 3,
-        style: {
-          fontSize: '13px'
+    // 2. Update the application's interventions.required
+    // Find the application by participantId
+    const appSnap = await getDocs(
+      query(
+        collection(db, 'applications'),
+        where('participantId', '==', notif.participantId)
+      )
+    )
+    if (!appSnap.empty) {
+      const appRef = appSnap.docs[0].ref
+      const appData = appSnap.docs[0].data()
+      const updatedRequired = [
+        ...(appData?.interventions?.required || []),
+        {
+          id: `requested-${Date.now()}`,
+          title: notif.interventionTitle,
+          area: notif.areaOfSupport,
+          fromRequest: true,
+          approvedAt: new Date()
         }
+      ]
+      await updateDoc(appRef, {
+        'interventions.required': updatedRequired
+      })
+    }
+
+    // 3. Notify the participant
+    await addDoc(collection(db, 'notifications'), {
+      companyCode: user.companyCode,
+      type: 'intervention-request-accepted',
+      recipientRoles: ['incubatee'],
+      participantId: notif.participantId,
+      interventionTitle: notif.interventionTitle,
+      areaOfSupport: notif.areaOfSupport,
+      message: {
+        incubatee: `Your request for "${notif.interventionTitle}" has been accepted by Operations.`
       },
-      lineWidth: 0,
-      gridLineWidth: 0,
-      categories: [
-        'Valid <span class="f16"><span class="dot valid"></span></span>',
-        'Expiring <span class="f16"><span class="dot expiring"></span></span>',
-        'Overdue <span class="f16"><span class="dot overdue"></span></span>'
-      ],
-      useHTML: true
-    },
-    yAxis: {
-      lineWidth: 0,
-      tickInterval: 1,
-      reversedStacks: false,
-      endOnTick: true,
-      showLastLabel: true,
-      gridLineWidth: 1,
-      labels: {
-        enabled: false // 🔥 hides "Ongoing", "Completed", etc.
-      }
-    },
-    plotOptions: {
-      column: {
-        stacking: 'normal',
-        borderWidth: 0,
-        pointPadding: 0,
-        groupPadding: 0.15,
-        borderRadius: '50%',
-        dataLabels: {
-          enabled: true,
-          format: '{point.y}',
-          style: {
-            fontWeight: 'bold',
-            color: '#000'
-          }
-        }
-      }
-    },
-    legend: {
-      align: 'center',
-      verticalAlign: 'bottom',
-      itemStyle: {
-        fontWeight: 'normal'
-      }
-    },
-    series: [
-      {
-        name: 'Valid',
-        data: [upToDate, 0, 0]
-      },
-      {
-        name: 'Expiring',
-        data: [0, needsReview, 0]
-      },
-      {
-        name: 'Overdue',
-        data: [0, 0, overdue]
-      }
-    ]
+      createdAt: new Date(),
+      readBy: {}
+    })
+
+    message.success('Request accepted and participant notified.')
   }
 
-  const tasksPending = tasks.filter(
-    t => t.status !== 'Completed' && !isOverdue(t)
-  ).length
-  const tasksCompleted = tasks.filter(t => t.status === 'Completed').length
-  const tasksOverdue = tasks.filter(t => isOverdue(t)).length
-
-  const interventionsPending = interventions.filter(
-    i => i.status !== 'Completed' && !isOverdue(i)
-  ).length
-  const interventionsCompleted = interventions.filter(
-    i => i.status === 'Completed'
-  ).length
-  const interventionsOverdue = interventions.filter(i => isOverdue(i)).length
-
-  const totalInterventions =
-    interventionsCompleted + interventionsPending + interventionsOverdue
-
-  const completionRate = totalInterventions
-    ? Math.round((interventionsCompleted / totalInterventions) * 100)
-    : 0
-
-  // helper
-  function isOverdue (item) {
-    const due = item.dueDate?.toDate
-      ? item.dueDate.toDate()
-      : new Date(item.dueDate)
-    return item.status !== 'Completed' && dayjs(due).isBefore(dayjs())
-  }
-
-  const tasksVsInterventionsChart = {
-    colors: ['#faad14', '#52c41a', '#ff4d4f'], // Pending, Completed, Overdue
-    chart: {
-      type: 'column',
-      inverted: true,
-      polar: true,
-      height: 320
-    },
-    title: {
-      text: 'Tasks vs Interventions'
-    },
-    credits: {
-      enabled: false
-    },
-    tooltip: {
-      outside: true,
-      shared: true,
-      formatter: function () {
-        return `<b>${this.series.name}</b><br/>${this.key}: ${this.y}`
+  const handleDeclineRequest = async notif => {
+    Modal.confirm({
+      title: 'Decline Reason',
+      content: (
+        <Input.TextArea
+          autoFocus
+          placeholder='Enter reason for declining'
+          onChange={e => (window.__declineReason = e.target.value)}
+        />
+      ),
+      onOk: async () => {
+        const reason = window.__declineReason || ''
+        // 1. Update the notification
+        await updateDoc(doc(db, 'notifications', notif.id), {
+          status: 'declined',
+          actionedBy: user.id,
+          actionedAt: new Date(),
+          declineReason: reason
+        })
+        // 2. Notify participant
+        await addDoc(collection(db, 'notifications'), {
+          companyCode: user.companyCode,
+          type: 'intervention-request-declined',
+          recipientRoles: ['incubatee'],
+          participantId: notif.participantId,
+          interventionTitle: notif.interventionTitle,
+          areaOfSupport: notif.areaOfSupport,
+          reason,
+          message: {
+            incubatee: `Your request for "${notif.interventionTitle}" was declined. Reason: ${reason}`
+          },
+          createdAt: new Date(),
+          readBy: {}
+        })
+        message.success('Request declined and participant notified.')
       }
-    },
-    pane: {
-      size: '70%',
-      innerSize: '20%',
-      endAngle: 270
-    },
-    xAxis: {
-      categories: ['Tasks', 'Interventions'],
-      tickInterval: 1,
-      labels: {
-        align: 'right',
-        allowOverlap: true,
-        step: 1,
-        y: 3,
-        style: {
-          fontSize: '12px'
-        }
-      },
-      lineWidth: 0,
-      gridLineWidth: 0
-    },
-    yAxis: {
-      lineWidth: 0,
-      tickInterval: 1,
-      endOnTick: true,
-      showLastLabel: true,
-      gridLineWidth: 0
-    },
-    plotOptions: {
-      column: {
-        stacking: 'normal',
-        borderWidth: 0,
-        pointPadding: 0,
-        groupPadding: 0.15,
-        borderRadius: '50%',
-        dataLabels: {
-          enabled: true,
-          format: '{point.y}',
-          style: {
-            fontWeight: 'bold',
-            color: '#000',
-            fontSize: '11px'
-          }
-        }
-      }
-    },
-    legend: {
-      align: 'center',
-      verticalAlign: 'bottom'
-    },
-    series: [
-      {
-        name: 'Pending',
-        data: [tasksPending, interventionsPending]
-      },
-      {
-        name: 'Completed',
-        data: [tasksCompleted, interventionsCompleted]
-      },
-      {
-        name: 'Overdue',
-        data: [tasksOverdue, interventionsOverdue]
-      }
-    ]
+    })
   }
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#fff' }}>
+    <Layout style={{ minHeight: '100vh', background: '#fff', padding: 24 }}>
       <Helmet>
         <title>Operations Dashboard</title>
-        <meta
-          name='description'
-          content='Manage daily operations and track incubatee progress'
-        />
       </Helmet>
-
+      {/* High-level Stats */}
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        {/** PENDING TASKS */}
-        <Col xs={24} sm={12} md={8} lg={8}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: 0.1,
-              ease: 'easeOut'
-            }}
-            whileHover={{
-              y: -3,
-              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
-              transition: { duration: 0.2 }
+        <Col xs={24} sm={12} md={8}>
+          <Card
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8,
+              border: '1px solid #d6e4ff'
             }}
           >
-            <Card
-              hoverable
-              style={{
-                boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)',
-                minHeight: 150,
-                position: 'relative'
-              }}
-            >
-              <Statistic
-                title='Pending Tasks'
-                value={tasks.filter(t => t.status !== 'Completed').length}
-                prefix={<CheckCircleOutlined />}
-                valueStyle={{ color: '#1890ff' }}
-              />
-              <Button
-                type='link'
-                ghost
-                style={{
-                  border: '1px solid #d9d9d9',
-                  position: 'absolute',
-                  bottom: 16,
-                  right: 16
-                }}
-                onClick={() => navigate('/operations/tasks')}
-              >
-                View All <ArrowRightOutlined />
-              </Button>
-            </Card>
-          </motion.div>
+            <Statistic
+              title='Upcoming Appointments'
+              value={appointments.filter(a => a.status === 'scheduled').length}
+              prefix={<CalendarOutlined />}
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
         </Col>
-
-        {/** INTERVENTIONS PROGRESS */}
-        <Col xs={24} sm={12} md={8} lg={8}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: 0.1,
-              ease: 'easeOut'
-            }}
-            whileHover={{
-              y: -3,
-              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
-              transition: { duration: 0.2 }
+        <Col xs={24} sm={12} md={8}>
+          <Card
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8,
+              border: '1px solid #d6e4ff'
             }}
           >
-            <Card
-              hoverable
-              style={{
-                boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)',
-                minHeight: 150,
-                position: 'relative'
-              }}
-            >
-              <Statistic
-                title='Interventions Progress'
-                valueRender={() => (
-                  <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <Progress
-                      type='dashboard'
-                      gapDegree={100}
-                      percent={completionRate}
-                      width={80}
-                      strokeColor={
-                        completionRate >= 90
-                          ? '#ff4d4f'
-                          : completionRate >= 50
-                          ? '#faad14'
-                          : '#52c41a'
-                      }
-                      format={() => `${completionRate}%`}
-                    />
-                  </div>
-                )}
-              />
-              <Button
-                type='link'
-                ghost
-                style={{
-                  border: '1px solid #d9d9d9',
-                  position: 'absolute',
-                  bottom: 16,
-                  right: 16
-                }}
-                onClick={() => navigate('/interventions')}
-              >
-                View All <ArrowRightOutlined />
-              </Button>
-            </Card>
-          </motion.div>
+            <Statistic
+              title='Completed Appointments'
+              value={appointments.filter(a => a.status === 'completed').length}
+              prefix={<CheckCircleOutlined />}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
         </Col>
-
-        {/** ACTIVE PARTICIPANTS */}
-        <Col xs={24} sm={12} md={8} lg={8}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: 0.1,
-              ease: 'easeOut'
-            }}
-            whileHover={{
-              y: -3,
-              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
-              transition: { duration: 0.2 }
+        <Col xs={24} sm={12} md={8}>
+          <Card
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8,
+              border: '1px solid #d6e4ff'
             }}
           >
-            <Card
-              hoverable
-              style={{
-                boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)',
-                minHeight: 150,
-                position: 'relative'
-              }}
-            >
-              <Statistic
-                title='Active Participants'
-                value={participants.length}
-                prefix={<TeamOutlined />}
-                valueStyle={{ color: '#722ed1' }}
-              />
-              <Button
-                type='link'
-                ghost
-                style={{
-                  border: '1px solid #d9d9d9',
-                  position: 'absolute',
-                  bottom: 16,
-                  right: 16
-                }}
-                onClick={() => navigate('/operations/participants')}
-              >
-                View All <ArrowRightOutlined />
-              </Button>
-            </Card>
-          </motion.div>
+            <Statistic
+              title='Active Participants'
+              value={participants.length}
+              prefix={<TeamOutlined />}
+              valueStyle={{ color: '#722ed1' }}
+            />
+          </Card>
         </Col>
       </Row>
-      <Row gutter={[16, 16]} style={{ marginBottom: 10 }}>
-        <Col xs={24} lg={12}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: 0.1,
-              ease: 'easeOut'
-            }}
-            whileHover={{
-              y: -3,
-              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
-              transition: { duration: 0.2 }
-            }}
+
+      {/* Main dashboard */}
+      {/* Top two cards side-by-side */}
+      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+        <Col xs={24} lg={14}>
+          <Card
+            title={
+              <Space>
+                <ScheduleOutlined />
+                <span>Consultant Allocations</span>
+              </Space>
+            }
           >
-            <Card
-              title={
-                <Space>
-                  <ScheduleOutlined />
-                  <span>Consultant Appointments</span>
-                </Space>
-              }
-              hoverable
-              style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
-            >
-              <List
+            <List
+              size='small'
+              dataSource={allocations}
+              renderItem={alloc => (
+                <List.Item
+                  actions={[
+                    <Button
+                      key='view-progress'
+                      type='link'
+                      onClick={() => {
+                        setSelectedAllocation(alloc)
+                        setProgressModalOpen(true)
+                      }}
+                    >
+                      View Progress
+                    </Button>
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={
+                      <Space direction='vertical'>
+                        <Text strong>Consultant: {alloc.consultant}</Text>
+                        <Text>Intervention: {alloc.intervention}</Text>
+                        <Text>Department: {alloc.department}</Text>
+                        <Text>Beneficiary: {alloc.beneficiary}</Text>
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )}
+            />
+          </Card>
+        </Col>
+
+        <Col xs={24} lg={10}>
+          <Card
+            title={
+              <Space>
+                <ScheduleOutlined />
+                <span>Upcoming Events</span>
+              </Space>
+            }
+            extra={
+              <Button
+                type='primary'
                 size='small'
-                loading={appointmentsLoading}
-                dataSource={[...appointments].sort((a, b) =>
-                  dayjs(a.date + ' ' + a.time).diff(
-                    dayjs(b.date + ' ' + b.time)
-                  )
-                )}
-                renderItem={appt => (
-                  <List.Item>
-                    <List.Item.Meta
-                      title={
-                        <Space>
-                          <Text>{appt.participantName}</Text>
-                          <Tag color='blue'>{appt.consultantName}</Tag>
-                        </Space>
-                      }
-                      description={
-                        <>
-                          Date/Time:{' '}
-                          {dayjs(
-                            `${appt.date} ${dayjs(appt.time).format('HH:mm')}`
-                          ).format('YYYY-MM-DD HH:mm')}
-                          <br />
-                          Location: {appt.location || appt.meetingLink}
-                        </>
-                      }
-                    />
-                    <Badge
-                      status={
-                        appt.status === 'completed' ? 'success' : 'processing'
-                      }
-                      text={appt.status}
-                    />
-                  </List.Item>
-                )}
-              />
-            </Card>
-          </motion.div>
-        </Col>
-
-        <Col xs={24} lg={12}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: 0.1,
-              ease: 'easeOut'
-            }}
-            whileHover={{
-              y: -3,
-              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
-              transition: { duration: 0.2 }
-            }}
-          >
-            <Card
-              title={
-                <Space>
-                  <ScheduleOutlined />
-                  <span>Upcoming Events</span>
-                </Space>
-              }
-              hoverable
-              extra={
-                <Button
-                  type='primary'
-                  size='small'
-                  onClick={() => setEventModalOpen(true)}
-                >
-                  Add Event
-                </Button>
-              }
-              style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
-            >
-              <Timeline mode='left'>
-                {events.map((event, index) => (
-                  <Timeline.Item key={index} dot={getEventIcon(event.type)}>
-                    <Text strong>
-                      {event.date} - {event.title}
-                    </Text>
-                    <br />
-                    <Space wrap>
-                      <Text type='secondary'>
-                        Time: {dayjs(event.time).format('HH:mm')}
-                      </Text>
-                      <Tag color='blue'>{event.format}</Tag>
-                      <Tag color='green'>{event.type}</Tag>
-                    </Space>
-                    {event.participants?.length > 0 && (
-                      <>
-                        <br />
-                        <Text type='secondary'>
-                          Participants: {event.participants.length}
-                        </Text>
-                      </>
-                    )}
-                  </Timeline.Item>
-                ))}
-              </Timeline>
-              <Button
-                type='link'
-                style={{ padding: 0 }}
-                onClick={() => setCalendarModalOpen(true)}
+                onClick={() => setEventModalOpen(true)}
               >
-                View Full Calendar
+                Add Event
               </Button>
-            </Card>
-          </motion.div>
+            }
+          >
+            <Timeline mode='left'>
+              {events.map((event, index) => (
+                <Timeline.Item key={index} dot={getEventIcon(event.type)}>
+                  <div style={{ marginBottom: 4 }}>
+                    <Text strong style={{ fontSize: 16 }}>
+                      {event.title}
+                    </Text>
+                  </div>
+                  <div style={{ marginBottom: 4 }}>
+                    <Text type='secondary'>
+                      🕒{' '}
+                      {event.time?.toDate
+                        ? dayjs(event.time.toDate()).format('YYYY-MM-DD HH:mm')
+                        : 'N/A'}
+                    </Text>
+                  </div>
+                  <div style={{ marginBottom: 4 }}>
+                    <Tag
+                      color={
+                        event.type === 'meeting'
+                          ? 'blue'
+                          : event.type === 'deadline'
+                          ? 'red'
+                          : event.type === 'event'
+                          ? 'green'
+                          : 'purple'
+                      }
+                    >
+                      {event.type.charAt(0).toUpperCase() + event.type.slice(1)}
+                    </Tag>
+                  </div>
+                </Timeline.Item>
+              ))}
+            </Timeline>
+            <Button
+              type='link'
+              style={{ padding: 0 }}
+              onClick={() => setCalendarModalOpen(true)}
+            >
+              View Full Calendar
+            </Button>
+          </Card>
         </Col>
       </Row>
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={12}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: 0.1,
-              ease: 'easeOut'
-            }}
-            whileHover={{
-              y: -3,
-              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
-              transition: { duration: 0.2 }
-            }}
-          >
-            <Card
-              title='Tasks vs Interventions Breakdown'
-              style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
-              extra={
-                <>
-                  <Button
-                    type='primary'
-                    size='small'
-                    onClick={() => navigate('/operations/tasks')}
-                    style={{ margin: 10 }}
-                  >
-                    View All Tasks
-                  </Button>
-                  <Button
-                    type='primary'
-                    size='small'
-                    onClick={() => navigate('/interventions')}
-                    style={{ margin: 10 }}
-                  >
-                    View All Interventions
-                  </Button>
-                </>
-              }
-              hoverable
-            >
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={tasksVsInterventionsChart}
-              />
-            </Card>
-          </motion.div>
-        </Col>
 
-        <Col xs={24} lg={12}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: 0.1,
-              ease: 'easeOut'
-            }}
-            whileHover={{
-              y: -3,
-              boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
-              transition: { duration: 0.2 }
-            }}
-          >
-            <Card
-              title='Compliance Status Breakdown'
-              style={{ boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)' }}
-              extra={
-                <Button
-                  type='primary'
-                  size='small'
-                  onClick={() => navigate('/operations/compliance')}
-                  style={{ margin: 10 }}
-                >
-                  View All
-                </Button>
-              }
-              hoverable
-            >
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={complianceChartOptions}
-              />
-            </Card>
-          </motion.div>
+      {/* Chart full width */}
+      <Row gutter={[16, 16]}>
+        <Col span={24}>
+          <Card>
+            <HighchartsReact
+              highcharts={Highcharts}
+              options={branchPerformanceOptions}
+            />
+          </Card>
         </Col>
       </Row>
-      <EventModal
+
+      {/* Add Event Modal */}
+      <Modal
+        title='Add New Event'
         open={eventModalOpen}
         onCancel={() => setEventModalOpen(false)}
-        onSubmit={handleAddEvent}
-        form={eventForm}
-        consultants={consultants}
-        projectAdmins={projectAdmins}
-        operationsUsers={operationsUsers}
-        participants={participants}
-      />
+        footer={null}
+      >
+        <Form form={eventForm} layout='vertical' onFinish={handleAddEvent}>
+          <Form.Item
+            name='title'
+            label='Event Title'
+            rules={[{ required: true, message: 'Please input event title' }]}
+          >
+            <Input placeholder='Enter event title' />
+          </Form.Item>
+          <Form.Item
+            name='date'
+            label='Event Date'
+            rules={[{ required: true, message: 'Please select event date' }]}
+          >
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name='time' label='Event Time'>
+            <TimePicker style={{ width: '100%' }} format='HH:mm' />
+          </Form.Item>
+          <Form.Item
+            name='type'
+            label='Event Type'
+            rules={[{ required: true, message: 'Please select event type' }]}
+          >
+            <Select placeholder='Select event type'>
+              <Select.Option value='meeting'>Meeting</Select.Option>
+              <Select.Option value='deadline'>Deadline</Select.Option>
+              <Select.Option value='event'>Event</Select.Option>
+              <Select.Option value='workshop'>Workshop</Select.Option>
+            </Select>
+          </Form.Item>
+          {/* Consultants involved */}
+          <Form.Item name='consultantsInvolved' label='Consultants Involved'>
+            <Select
+              mode='multiple'
+              placeholder='Select consultant(s)'
+              optionFilterProp='children'
+              showSearch
+            >
+              {consultants.map(user => (
+                <Select.Option key={user.id} value={user.id}>
+                  {user.name}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          {/* Departments involved */}
+          <Form.Item name='departmentsInvolved' label='Departments Involved'>
+            <Select
+              mode='multiple'
+              placeholder='Select department(s)'
+              optionFilterProp='children'
+              showSearch
+            >
+              {departments.map(dep => (
+                <Select.Option key={dep.id} value={dep.id}>
+                  {dep.name || dep.id}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item>
+            <Button type='primary' htmlType='submit' block>
+              Add Event
+            </Button>
+          </Form.Item>
+        </Form>
+      </Modal>
+      {/* Calendar Modal */}
       <Modal
         title='Full Calendar View'
         open={calendarModalOpen}
@@ -1022,101 +730,56 @@ export const OperationsDashboard: React.FC = () => {
           height={600}
         />
       </Modal>
+      {/* Calendar Event Details */}
       <Modal
         title='Event Details'
         open={eventDetailModalOpen}
         onCancel={() => setEventDetailModalOpen(false)}
         footer={null}
-        width={600}
       >
         {selectedEvent && (
-          <>
-            <Alert
-              message='This is a scheduled event. Please ensure all participants are informed.'
-              type='info'
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
+          <div>
+            <p>
+              <strong>Title:</strong> {selectedEvent.title}
+            </p>
+            <p>
+              <strong>Date/Time:</strong>{' '}
+              {selectedEvent.time?.toDate
+                ? dayjs(selectedEvent.time.toDate()).format('YYYY-MM-DD HH:mm')
+                : dayjs(selectedEvent.time).isValid()
+                ? dayjs(selectedEvent.time).format('YYYY-MM-DD HH:mm')
+                : 'Invalid Date'}
+            </p>
+            <p>
+              <strong>Type:</strong> {selectedEvent.type}
+            </p>
+            <p>
+              <strong>Consultants Involved:</strong>{' '}
+              {(selectedEvent.consultantsInvolved || []).length > 0
+                ? consultants
+                    .filter(c =>
+                      selectedEvent.consultantsInvolved.includes(c.id)
+                    )
+                    .map(c => c.name)
+                    .join(', ')
+                : 'None'}
+            </p>
 
-            <Descriptions
-              bordered
-              column={1}
-              size='middle'
-              labelStyle={{ width: '40%' }}
-            >
-              <Descriptions.Item label='Title'>
-                {selectedEvent.title}
-              </Descriptions.Item>
-
-              <Descriptions.Item label='Date'>
-                {selectedEvent.date}
-              </Descriptions.Item>
-
-              <Descriptions.Item label='Time'>
-                {selectedEvent.startTime?.toDate &&
-                selectedEvent.endTime?.toDate
-                  ? `${dayjs(selectedEvent.startTime.toDate()).format(
-                      'HH:mm'
-                    )} - ${dayjs(selectedEvent.endTime.toDate()).format(
-                      'HH:mm'
-                    )}`
-                  : 'N/A'}
-              </Descriptions.Item>
-
-              <Descriptions.Item label='Type'>
-                <Tag color='blue'>
-                  {selectedEvent.type?.charAt(0).toUpperCase() +
-                    selectedEvent.type?.slice(1)}
-                </Tag>
-              </Descriptions.Item>
-
-              <Descriptions.Item label='Format'>
-                <Tag color='green'>
-                  {selectedEvent.format?.charAt(0).toUpperCase() +
-                    selectedEvent.format?.slice(1)}
-                </Tag>
-              </Descriptions.Item>
-
-              {selectedEvent.location && (
-                <Descriptions.Item label='Location'>
-                  {selectedEvent.location}
-                </Descriptions.Item>
-              )}
-
-              {selectedEvent.link && (
-                <Descriptions.Item label='Link'>
-                  <a
-                    href={selectedEvent.link}
-                    target='_blank'
-                    rel='noopener noreferrer'
-                  >
-                    {selectedEvent.link}
-                  </a>
-                </Descriptions.Item>
-              )}
-
-              {selectedEvent.description && (
-                <Descriptions.Item label='Description'>
-                  {selectedEvent.description}
-                </Descriptions.Item>
-              )}
-
-              {selectedEvent.participants?.length > 0 && (
-                <Descriptions.Item label='Participants'>
-                  <ul style={{ paddingLeft: 20, margin: 0 }}>
-                    {selectedEvent.participants.map(
-                      (participant: any, index: number) => (
-                        <li key={index}>{participant.name || participant}</li>
-                      )
-                    )}
-                  </ul>
-                </Descriptions.Item>
-              )}
-            </Descriptions>
-          </>
+            <p>
+              <strong>Departments Involved:</strong>{' '}
+              {(selectedEvent.departmentsInvolved || []).length > 0
+                ? departments
+                    .filter(d =>
+                      selectedEvent.departmentsInvolved.includes(d.id)
+                    )
+                    .map(d => d.name || d.id)
+                    .join(', ')
+                : 'None'}
+            </p>
+          </div>
         )}
       </Modal>
-
+      {/* Notifications button/modal */}
       <Button
         type='primary'
         shape='circle'
@@ -1130,6 +793,51 @@ export const OperationsDashboard: React.FC = () => {
         style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1000 }}
         onClick={() => setNotificationModalOpen(true)}
       />
+      <Modal
+        title='Notifications'
+        open={notificationModalOpen}
+        onCancel={() => setNotificationModalOpen(false)}
+        footer={null}
+        width={700}
+      >
+        <List
+          itemLayout='horizontal'
+          dataSource={notifications}
+          renderItem={item => (
+            <List.Item
+              actions={
+                item.type === 'intervention-request' &&
+                item.status === 'pending'
+                  ? [
+                      <Button
+                        key='accept'
+                        type='link'
+                        icon={<CheckCircleOutlined />}
+                        onClick={() => handleAcceptRequest(item)}
+                      >
+                        Accept
+                      </Button>,
+                      <Button
+                        key='decline'
+                        type='link'
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => handleDeclineRequest(item)}
+                      >
+                        Decline
+                      </Button>
+                    ]
+                  : []
+              }
+            >
+              <List.Item.Meta
+                title={item.message?.operations || 'No message'}
+                // description={`Type: ${item.type} | Dept: ${item.department}`}
+              />
+            </List.Item>
+          )}
+        />
+      </Modal>
     </Layout>
   )
 }
