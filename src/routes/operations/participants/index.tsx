@@ -12,7 +12,8 @@ import {
   Form,
   Input,
   Rate,
-  message
+  message,
+  Space
 } from 'antd'
 import {
   TeamOutlined,
@@ -388,88 +389,201 @@ const OperationsParticipantsManagement: React.FC = () => {
       {/* Metrics Cards */}
       <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
         <Col xs={24} sm={12} md={6}>
-          <Card loading={loading}>
+          <Card
+            loading={loading}
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8
+            }}
+          >
             <Statistic
-              title='Total Participants'
+              title={
+                <Space>
+                  <div
+                    style={{
+                      background: '#e6f7ff',
+                      padding: 8,
+                      borderRadius: '50%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <TeamOutlined style={{ fontSize: 18, color: '#1890ff' }} />
+                  </div>
+                  <span>Total Participants</span>
+                </Space>
+              }
               value={metrics.totalParticipants}
-              prefix={<TeamOutlined />}
             />
           </Card>
         </Col>
 
         <Col xs={24} sm={12} md={6}>
-          <Card loading={loading}>
+          <Card
+            loading={loading}
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8
+            }}
+          >
             <Statistic
-              title='Total Required Interventions'
+              title={
+                <Space>
+                  <div
+                    style={{
+                      background: '#f0f5ff',
+                      padding: 8,
+                      borderRadius: '50%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <PlusOutlined style={{ fontSize: 18, color: '#096dd9' }} />
+                  </div>
+                  <span>Required Interventions</span>
+                </Space>
+              }
               value={metrics.totalRequiredInterventions}
-              prefix={<PlusOutlined />}
             />
           </Card>
         </Col>
 
         <Col xs={24} sm={12} md={6}>
-          <Card loading={loading}>
+          <Card
+            loading={loading}
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8
+            }}
+          >
             <Statistic
-              title='Total Completed Interventions'
+              title={
+                <Space>
+                  <div
+                    style={{
+                      background: '#f6ffed',
+                      padding: 8,
+                      borderRadius: '50%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <CheckCircleOutlined
+                      style={{ fontSize: 18, color: '#52c41a' }}
+                    />
+                  </div>
+                  <span>Total Completed Interventions</span>
+                </Space>
+              }
               value={metrics.totalCompletedInterventions}
-              prefix={<CheckCircleOutlined />}
               valueStyle={{ color: '#52c41a' }}
             />
           </Card>
         </Col>
 
         <Col xs={24} sm={12} md={6}>
-          <Card loading={loading}>
+          <Card
+            loading={loading}
+            hoverable
+            style={{
+              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+              transition: 'all 0.3s ease',
+              borderRadius: 8
+            }}
+          >
             <Statistic
-              title='Need Consultant Assignment'
+              title={
+                <Space>
+                  <div
+                    style={{
+                      background: '#fffbe6',
+                      padding: 8,
+                      borderRadius: '50%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <WarningOutlined
+                      style={{ fontSize: 18, color: '#faad14' }}
+                    />
+                  </div>
+                  <span>Need Consultant Assignment</span>
+                </Space>
+              }
               value={metrics.totalNeedingAssignment}
-              prefix={<WarningOutlined />}
               valueStyle={{ color: '#faad14' }}
             />
           </Card>
         </Col>
       </Row>
 
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={8}>
-          <Select
-            style={{ width: '100%' }}
-            value={selectedProgram}
-            onChange={val => {
-              setSelectedProgram(val)
-            }}
-          >
-            <Option value='all'>All Programs</Option>
-            {programs.map(p => (
-              <Option key={p.id} value={p.id}>
-                {p.name}
-              </Option>
-            ))}
-          </Select>
-        </Col>
+      <Card
+        hoverable
+        style={{
+          boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+          transition: 'all 0.3s ease',
+          borderRadius: 8,
+          marginBottom: 12
+        }}
+      >
+        <Row gutter={16} style={{ marginBottom: 16 }}>
+          <Col span={8}>
+            <Select
+              style={{ width: '100%' }}
+              value={selectedProgram}
+              onChange={val => {
+                setSelectedProgram(val)
+              }}
+            >
+              <Option value='all'>All Programs</Option>
+              {programs.map(p => (
+                <Option key={p.id} value={p.id}>
+                  {p.name}
+                </Option>
+              ))}
+            </Select>
+          </Col>
 
-        <Col span={8}>
-          <Input
-            placeholder='Search by name or sector'
-            value={searchText}
-            onChange={e => {
-              setSearchText(e.target.value)
-            }}
-            allowClear
-          />
-        </Col>
-        <Col span={8} style={{ alignItems: 'flex-end' }}>
-          <Button
-            type='primary'
-            onClick={() => navigate('/consultant/participants/new')}
-          >
-            + Add New Participant
-          </Button>
-        </Col>
-      </Row>
+          <Col span={8}>
+            <Input
+              placeholder='Search by name or sector'
+              value={searchText}
+              onChange={e => {
+                setSearchText(e.target.value)
+              }}
+              allowClear
+            />
+          </Col>
+          <Col span={8} style={{ alignItems: 'flex-end' }}>
+            <Button
+              type='primary'
+              onClick={() => navigate('/consultant/participants/new')}
+            >
+              + Add New Participant
+            </Button>
+          </Col>
+        </Row>
+      </Card>
 
       {/* Participants Table */}
-      <Card>
+      <Card
+        hoverable
+        style={{
+          boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+          transition: 'all 0.3s ease',
+          borderRadius: 8
+        }}
+      >
         <Table
           dataSource={filteredParticipants}
           columns={columns}
