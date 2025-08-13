@@ -24,6 +24,7 @@ import {
 import { db } from '@/firebase'
 import dayjs from 'dayjs'
 import { CheckCircleOutlined, DeleteOutlined } from '@ant-design/icons'
+import { CompanyLogo } from '@/components/CompanyLogo'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -518,11 +519,7 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
               marginRight: 24
             }}
           >
-            <img
-              src='/assets/images/RCM.jpg'
-              alt='Logo'
-              style={{ maxWidth: '90%', maxHeight: '90%' }}
-            />
+            <CompanyLogo collapsed={false} />
           </div>
 
           {/* Text section */}
