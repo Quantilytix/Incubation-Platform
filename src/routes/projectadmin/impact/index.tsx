@@ -10,10 +10,15 @@ import {
   Slider,
   Space,
   Tabs,
-  List
+  List,
+  Modal,
+  Tooltip
 } from 'antd'
+import { ArrowsAltOutlined } from '@ant-design/icons'
 import Highcharts from 'highcharts'
-import HighchartsReact from 'highcharts-react-official'
+import HighchartsReact, {
+  HighchartsReactRefObject
+} from 'highcharts-react-official'
 import Treegraph from 'highcharts/modules/treegraph'
 import { Helmet } from 'react-helmet'
 import { motion } from 'framer-motion'
@@ -43,7 +48,7 @@ type ImpactRow = { name: string; value: number }
 // === Weight scale (no percentages) ===
 const WEIGHT_MIN = -10
 const WEIGHT_MAX = 12
-const neutralStop = (0 - WEIGHT_MIN) / (WEIGHT_MAX - WEIGHT_MIN) // center=0
+const neutralStop = (0 - WEIGHT_MIN) / (WEIGHT_MAX - WEIGHT_MIN)
 
 // Unified Card style + motion wrapper
 const cardStyle: React.CSSProperties = {
@@ -67,6 +72,64 @@ const MotionCard: React.FC<React.ComponentProps<typeof Card>> = ({
     </Card>
   </motion.div>
 )
+
+/** Reusable chart card with an Expand button -> shows the same chart in a modal */
+const ExpandableChart: React.FC<{
+  title?: React.ReactNode
+  options: Highcharts.Options
+  modalWidth?: number | string
+  extraRight?: React.ReactNode
+}> = ({ title, options, modalWidth = '90vw', extraRight }) => {
+  const [open, setOpen] = useState(false)
+  const modalRef = useRef<HighchartsReactRefObject | null>(null)
+
+  useEffect(() => {
+    if (open) {
+      // let modal layout settle then reflow chart
+      const t = setTimeout(() => modalRef.current?.chart?.reflow(), 150)
+      return () => clearTimeout(t)
+    }
+  }, [open])
+
+  return (
+    <>
+      <MotionCard
+        title={title}
+        extra={
+          <Space>
+            {extraRight}
+            <Tooltip title='Expand'>
+              <Button
+                type='text'
+                icon={<ArrowsAltOutlined />}
+                onClick={() => setOpen(true)}
+              />
+            </Tooltip>
+          </Space>
+        }
+      >
+        <HighchartsReact highcharts={Highcharts} options={options} />
+      </MotionCard>
+
+      <Modal
+        open={open}
+        onCancel={() => setOpen(false)}
+        footer={null}
+        width={modalWidth}
+        destroyOnClose
+        centered
+        bodyStyle={{ padding: 12 }}
+        title={title}
+      >
+        <HighchartsReact
+          ref={modalRef}
+          highcharts={Highcharts}
+          options={options}
+        />
+      </Modal>
+    </>
+  )
+}
 
 /** ---------------- Dummy fallbacks ---------------- */
 const DUMMY_IMPACTS: Record<Target, Intervention[]> = {
@@ -134,7 +197,7 @@ const DUMMY_INCUBATEES: Incubatee[] = [
 const clamp = (n: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, n))
 
-// Add this helper once (same palette as your stops)
+// color helpers
 const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t)
 const hexToRgb = (hex: string) => {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)!
@@ -143,9 +206,10 @@ const hexToRgb = (hex: string) => {
 const rgbToHex = ({ r, g, b }: { r: number; g: number; b: number }) =>
   `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`
 const valueToColor = (v: number) => {
-  const min = WEIGHT_MIN,
-    max = WEIGHT_MAX
-  const t = Math.max(0, Math.min(1, (v - min) / (max - min)))
+  const t = Math.max(
+    0,
+    Math.min(1, (v - WEIGHT_MIN) / (WEIGHT_MAX - WEIGHT_MIN))
+  )
   const red = '#d73027',
     mid = '#f0f0f0',
     green = '#1a9850'
@@ -180,10 +244,7 @@ function buildCategories (histLen: number, monthsAhead: number): string[] {
   return cats
 }
 
-function splitHistForecast (
-  series: number[],
-  monthsAhead: number
-): { hist: (number | null)[]; fcst: (number | null)[] } {
+function splitHistForecast (series: number[], monthsAhead: number) {
   const histLen = series.length
   if (histLen === 0) {
     const hist: (number | null)[] = Array(monthsAhead).fill(null)
@@ -201,49 +262,45 @@ function splitHistForecast (
   return { hist, fcst }
 }
 
-function averageSeries (rows: number[][]): number[] {
+function averageSeries (rows: number[][]) {
   if (!rows.length) return []
   const len = rows[0].length
   const out: number[] = Array(len).fill(0)
   for (let i = 0; i < len; i++) {
     let sum = 0,
       cnt = 0
-    for (const r of rows)
+    for (const r of rows) {
       if (r[i] != null) {
         sum += r[i]
         cnt++
       }
+    }
     out[i] = cnt ? Number((sum / cnt).toFixed(1)) : 0
   }
   return out
 }
 
-// --- Deterministic PRNG (seeded) so weights are random but reproducible until you "shuffle"
+// Deterministic PRNG so weights are random but reproducible until "shuffle"
 const fnv1a = (str: string): number => {
   let h = 0x811c9dc5
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i)
     h = Math.imul(h, 0x01000193)
   }
-  // ensure uint32
   return h >>> 0
 }
 const lcg01 = (seed: number): number => {
   let s = seed >>> 0
   s = (Math.imul(s, 1664525) + 1013904223) >>> 0
-  return s / 4294967296 // [0,1)
+  return s / 4294967296
 }
 
 export const ImpactAnalysisForm: React.FC = () => {
-  // shared controls
   const [topN, setTopN] = useState(5)
   const [forecastAhead, setForecastAhead] = useState<number>(0)
   const [target, setTarget] = useState<Target>('sales')
-
-  // PRNG seed; change to re-randomize
   const [randSeed, setRandSeed] = useState<number>(() => Date.now())
 
-  // company + data sources
   const [companyCode, setCompanyCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [liveImpacts, setLiveImpacts] = useState<Record<
@@ -252,7 +309,6 @@ export const ImpactAnalysisForm: React.FC = () => {
   > | null>(null)
   const [liveIncubatees, setLiveIncubatees] = useState<Incubatee[] | null>(null)
 
-  // selection
   const [selectedIncubateeId, setSelectedIncubateeId] = useState<string>('john')
 
   useEffect(() => {
@@ -282,23 +338,20 @@ export const ImpactAnalysisForm: React.FC = () => {
     fetchCompanyCode()
   }, [])
 
-  const impactsSource: Record<Target, Intervention[]> = useMemo(() => {
-    if (companyCode && liveImpacts) return liveImpacts
-    return DUMMY_IMPACTS
-  }, [companyCode, liveImpacts])
+  const impactsSource = useMemo(
+    () => (companyCode && liveImpacts ? liveImpacts : DUMMY_IMPACTS),
+    [companyCode, liveImpacts]
+  )
+  const incubateesSource = useMemo(
+    () => (companyCode && liveIncubatees ? liveIncubatees : DUMMY_INCUBATEES),
+    [companyCode, liveIncubatees]
+  )
 
-  const incubateesSource: Incubatee[] = useMemo(() => {
-    if (companyCode && liveIncubatees) return liveIncubatees
-    return DUMMY_INCUBATEES
-  }, [companyCode, liveIncubatees])
-
-  // Utility: produce a deterministic random weight in [WEIGHT_MIN, WEIGHT_MAX]
+  // deterministic random weight in [WEIGHT_MIN, WEIGHT_MAX]
   const randomWeight = (name: string) => {
     const key = `${randSeed}|${selectedIncubateeId}|${target}|${forecastAhead}|${name}`
     const u = lcg01(fnv1a(key))
-    const val = WEIGHT_MIN + (WEIGHT_MAX - WEIGHT_MIN) * u
-    // one decimal place looks nice
-    return Number(val.toFixed(1))
+    return Number((WEIGHT_MIN + (WEIGHT_MAX - WEIGHT_MIN) * u).toFixed(1))
   }
 
   /** ---------- Ranking ---------- */
@@ -342,7 +395,6 @@ export const ImpactAnalysisForm: React.FC = () => {
     },
     tooltip: {
       formatter: function () {
-        // @ts-ignore
         return `<strong>${this.key}</strong><br/>Weight: <b>${this.y}</b>`
       }
     },
@@ -357,7 +409,6 @@ export const ImpactAnalysisForm: React.FC = () => {
     credits: { enabled: false }
   }
 
-  // Pareto (absolute weight + cumulative share). No '%' symbol anywhere.
   const paretoOptions: Highcharts.Options = useMemo(() => {
     const absVals = rankingData.map(r => Math.abs(r.value))
     const total = absVals.reduce((a, b) => a + b, 0) || 1
@@ -399,7 +450,6 @@ export const ImpactAnalysisForm: React.FC = () => {
 
   const histLen = Math.max(1, selectedIncubatee?.revenue?.length ?? 0)
   const categories = buildCategories(histLen, forecastAhead)
-
   const avgRevenue = useMemo(
     () => averageSeries(incubateesSource.map(i => i.revenue)),
     [incubateesSource]
@@ -408,7 +458,6 @@ export const ImpactAnalysisForm: React.FC = () => {
     () => averageSeries(incubateesSource.map(i => i.headcount)),
     [incubateesSource]
   )
-
   const incRevSplit = splitHistForecast(
     selectedIncubatee?.revenue ?? [],
     forecastAhead
@@ -420,7 +469,6 @@ export const ImpactAnalysisForm: React.FC = () => {
   const avgRevSplit = splitHistForecast(avgRevenue, forecastAhead)
   const avgHeadSplit = splitHistForecast(avgHeadcount, forecastAhead)
 
-  // Per-incubatee impacts (randomized)
   const incubateeImpacts: ImpactRow[] = useMemo(() => {
     const src = selectedIncubatee?.impacts?.[target] || []
     const rows = src.map(intervention => ({
@@ -432,14 +480,11 @@ export const ImpactAnalysisForm: React.FC = () => {
       .slice(0, topN)
   }, [selectedIncubatee, target, topN, randomWeight, randSeed, forecastAhead])
 
-  // Tree data
-
   const treeData = useMemo(() => {
     const rootId = 'root'
     const rootName = selectedIncubatee?.name ?? 'Incubatee'
     const pts: Array<Record<string, any>> = [{ id: rootId, name: rootName }]
     const seenAreas = new Set<string>()
-
     incubateeImpacts.forEach(i => {
       const area = AREA_OF_SUPPORT[i.name] ?? 'Other'
       const areaId = `area:${area}`
@@ -452,8 +497,8 @@ export const ImpactAnalysisForm: React.FC = () => {
         parent: areaId,
         name: i.name,
         value: i.value,
-        colorValue: i.value, // <-- used by colorAxis
-        color: valueToColor(i.value) // <-- direct color (ensures non-uniform now)
+        colorValue: i.value,
+        color: valueToColor(i.value)
       })
     })
     return pts
@@ -468,7 +513,7 @@ export const ImpactAnalysisForm: React.FC = () => {
     },
     xAxis: { categories },
     yAxis: [
-      { title: { text: 'Revenue' }, opposite: false },
+      { title: { text: 'Revenue' } },
       { title: { text: 'Headcount' }, opposite: true }
     ],
     tooltip: { shared: true },
@@ -575,7 +620,6 @@ export const ImpactAnalysisForm: React.FC = () => {
     },
     tooltip: {
       formatter: function () {
-        // @ts-ignore
         return `<strong>${this.key}</strong><br/>Weight: <b>${this.y}</b>`
       }
     },
@@ -614,9 +658,9 @@ export const ImpactAnalysisForm: React.FC = () => {
         dataLabels: {
           align: 'left',
           formatter: function () {
-            const p = this.point as Highcharts.Point & { value?: number }
-            const isLeaf = typeof p.value === 'number'
-            return `<span style="font-weight:600">${p.name}</span>`
+            return `<span style="font-weight:600">${
+              this.point.name as string
+            }</span>`
           },
           style: {
             color: 'var(--highcharts-neutral-color-100, #000)',
@@ -632,13 +676,13 @@ export const ImpactAnalysisForm: React.FC = () => {
             level: 1,
             color: '#90A4AE',
             marker: { radius: 7, lineColor: '#90A4AE' }
-          }, // root fixed color (ok)
+          },
           {
             level: 2,
             color: '#B0BEC5',
             marker: { radius: 6, lineColor: '#B0BEC5', fillColor: '#fff' }
           },
-          { level: 3 } // <-- no color here so leaves can use colorAxis / point.color
+          { level: 3 }
         ]
       }
     ],
@@ -723,6 +767,13 @@ export const ImpactAnalysisForm: React.FC = () => {
                   </Space.Compact>
                 </Form.Item>
               </Col>
+              <Col xs={24} md={4}>
+                <Form.Item label=' ' style={{ marginBottom: 8 }}>
+                  <Button block onClick={() => setRandSeed(Date.now())}>
+                    Shuffle weights
+                  </Button>
+                </Form.Item>
+              </Col>
             </Row>
           </MotionCard>
 
@@ -735,18 +786,14 @@ export const ImpactAnalysisForm: React.FC = () => {
                 label: 'Ranking',
                 children: (
                   <>
-                    <MotionCard style={{ marginBottom: 16 }}>
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={rankingChart}
-                      />
-                    </MotionCard>
-                    <MotionCard>
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={paretoOptions}
-                      />
-                    </MotionCard>
+                    <ExpandableChart
+                      title='Top Interventions'
+                      options={rankingChart}
+                    />
+                    <ExpandableChart
+                      title='Pareto (Absolute Weight)'
+                      options={paretoOptions}
+                    />
                   </>
                 )
               },
@@ -787,23 +834,20 @@ export const ImpactAnalysisForm: React.FC = () => {
                           />
                         </MotionCard>
                       </Col>
+
                       <Col xs={24} md={18}>
                         <Row gutter={16}>
                           <Col xs={24} lg={12}>
-                            <MotionCard>
-                              <HighchartsReact
-                                highcharts={Highcharts}
-                                options={xaiForecastChart}
-                              />
-                            </MotionCard>
+                            <ExpandableChart
+                              title='Revenue & Headcount'
+                              options={xaiForecastChart}
+                            />
                           </Col>
                           <Col xs={24} lg={12}>
-                            <MotionCard style={{ marginBottom: 16 }}>
-                              <HighchartsReact
-                                highcharts={Highcharts}
-                                options={xaiImpactChart}
-                              />
-                            </MotionCard>
+                            <ExpandableChart
+                              title='Intervention Weights'
+                              options={xaiImpactChart}
+                            />
                           </Col>
                         </Row>
                       </Col>
@@ -811,14 +855,11 @@ export const ImpactAnalysisForm: React.FC = () => {
 
                     <Row>
                       <Col span={24}>
-                        <MotionCard>
-                          <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-                            <HighchartsReact
-                              highcharts={Highcharts}
-                              options={xaiImpactTreeOptions}
-                            />
-                          </div>
-                        </MotionCard>
+                        <ExpandableChart
+                          title='Intervention Map'
+                          options={xaiImpactTreeOptions}
+                          modalWidth='95vw'
+                        />
                       </Col>
                     </Row>
                   </>
@@ -833,4 +874,3 @@ export const ImpactAnalysisForm: React.FC = () => {
 }
 
 export default ImpactAnalysisForm
-
