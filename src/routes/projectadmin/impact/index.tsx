@@ -723,13 +723,6 @@ export const ImpactAnalysisForm: React.FC = () => {
                   </Space.Compact>
                 </Form.Item>
               </Col>
-              <Col xs={24} md={4}>
-                <Form.Item label=' ' style={{ marginBottom: 8 }}>
-                  <Button block onClick={() => setRandSeed(Date.now())}>
-                    Shuffle weights
-                  </Button>
-                </Form.Item>
-              </Col>
             </Row>
           </MotionCard>
 
@@ -840,3 +833,4 @@ export const ImpactAnalysisForm: React.FC = () => {
 }
 
 export default ImpactAnalysisForm
+
