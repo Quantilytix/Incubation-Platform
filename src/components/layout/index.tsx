@@ -34,7 +34,8 @@ import {
   ClockCircleOutlined,
   BookOutlined,
   DatabaseOutlined,
-  OneToOneOutlined
+  OneToOneOutlined,
+  LogoutOutlined
 } from '@ant-design/icons'
 import { getStorage } from 'firebase/storage'
 import { CompanyLogo } from '../CompanyLogo'
@@ -586,7 +587,7 @@ export const CustomLayout: React.FC = () => {
       />
       <div style={{ padding: 16, borderTop: '1px solid #f0f0f0' }}>
         <Button block danger onClick={() => logout()}>
-          {collapsed ? null : 'Logout'}
+          {collapsed ? <LogoutOutlined /> : 'Logout'}
         </Button>
       </div>
     </Sider>
