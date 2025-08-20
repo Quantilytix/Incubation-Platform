@@ -250,10 +250,8 @@ export const DocumentHub: React.FC = () => {
   async function uploadComplianceDoc (type: string, file: File) {
     if (!appRef || !participantId) {
       message.error('Cannot upload: missing app reference.')
-      return
+      return null
     }
-
-    // 1) Upload to Storage
     const storage = getStorage()
     const safeType = type.replace(/[^\w-]+/g, '_')
     const path = `compliance/${participantId}/${safeType}/${Date.now()}_${
@@ -263,7 +261,6 @@ export const DocumentHub: React.FC = () => {
     await uploadBytes(sref, file)
     const url = await getDownloadURL(sref)
 
-    // 2) Merge into complianceDocuments array (replace existing type if present)
     const snap = await getDoc(appRef)
     const data = snap.data() || {}
     const current = Array.isArray(data.complianceDocuments)
@@ -287,6 +284,7 @@ export const DocumentHub: React.FC = () => {
 
     await updateDoc(appRef, { complianceDocuments: next })
     message.success(`Uploaded ${type} successfully`)
+    return newEntry // 👈 return it so the UI can update immediately
   }
 
   const columns = [
@@ -332,16 +330,29 @@ export const DocumentHub: React.FC = () => {
                 key: record.key
               })
               try {
-                await uploadComplianceDoc(record.type, file)
+                const entry = await uploadComplianceDoc(record.type, file)
+                if (entry) {
+                  // Update that row immediately
+                  setComplianceDocs(prev =>
+                    prev.map(d =>
+                      d.type === record.type
+                        ? { ...d, ...entry, status: entry.status || d.status }
+                        : d
+                    )
+                  )
+                  // If you want the KPI cards to react as well, tweak missing/valid/expired here
+                  // e.g., removing from missing if it was missing before:
+                  setMissingDocsList(prev =>
+                    prev.filter(t => t !== record.type)
+                  )
+                }
                 message.success({ content: 'Upload complete', key: record.key })
-                // optionally re-fetch list or update state locally
               } catch (e) {
                 console.error(e)
                 message.error({ content: 'Upload failed', key: record.key })
               }
-              return false // keep preventing auto-upload
+              return false
             }}
-            showUploadList={false}
             maxCount={1}
           >
             <Tooltip title='Replace document'>
@@ -359,7 +370,27 @@ export const DocumentHub: React.FC = () => {
       return
     }
     try {
-      await uploadComplianceDoc(selectedType, uploadFile as File)
+      const entry = await uploadComplianceDoc(selectedType, uploadFile as File)
+      if (entry) {
+        // add or update the row locally so it shows up immediately
+        setComplianceDocs(prev => {
+          const exists = prev.some(d => d.type === selectedType)
+          const row = {
+            key: `${selectedType}-${Date.now()}`,
+            type: selectedType,
+            status: entry.status || 'pending',
+            expiry: '—',
+            url: entry.url,
+            fileName: entry.fileName || null
+          }
+          return exists
+            ? prev.map(d => (d.type === selectedType ? { ...d, ...row } : d))
+            : [...prev, row]
+        })
+        // it’s no longer “missing”
+        setMissingDocsList(prev => prev.filter(t => t !== selectedType))
+      }
+
       setIsModalVisible(false)
       setSelectedType('')
       setUploadFile(null)
