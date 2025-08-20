@@ -118,8 +118,10 @@ export const DocumentHub: React.FC = () => {
 
         // after appSnap = await getDocs(...)
         const appDoc = appSnap.docs[0]
-        setAppRef(appDoc.ref)
-        setParticipantId(participantId) // you already computed this above
+        setAppRef(appDoc.ref);
+setParticipantId(participantId);
+await refresh(appDoc.ref);
+
 
         const presentTypes = docs.map((d: any) => d.type)
         const statusOf = (s: any) => (s || 'missing').toString().toLowerCase()
@@ -172,6 +174,45 @@ export const DocumentHub: React.FC = () => {
 
     return () => unsub()
   }, [])
+// put near the top
+const normalizeType = (t: string) => (t || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+const refresh = async (app: DocumentReference) => {
+  const snap = await getDoc(app);
+  const data = snap.data() || {};
+  const docsArr: any[] = Array.isArray(data.complianceDocuments)
+    ? data.complianceDocuments
+    : Array.isArray(Object.values(data.complianceDocuments || {}))
+    ? Object.values(data.complianceDocuments || {})
+    : [];
+
+  // Build exactly one row per required type (no extra rows, ever)
+  const rows = documentTypes.map(type => {
+    const m = docsArr.find(d => normalizeType(d?.type) === normalizeType(type));
+    const expiry = m?.expiryDate ? formatExpiryDate(m.expiryDate) : '—';
+    const hasFile = !!(m?.url || m?.link || m?.fileUrl);
+
+    return {
+      key: type,               // fixed key per type
+      type,
+      status: hasFile ? (String(m?.status || 'pending').toLowerCase()) : 'missing',
+      expiry,
+      url: m?.url || m?.link || m?.fileUrl || null,
+      fileName: m?.fileName || null,
+    };
+  });
+
+  // KPI counts
+  const missing = rows.filter(r => r.status === 'missing').length;
+  const expired = rows.filter(r => r.status === 'expired').length;
+  const valid   = rows.filter(r => ['valid', 'approved'].includes(r.status)).length;
+
+  setComplianceDocs(rows);
+  setMissingDocsList(rows.filter(r => r.status === 'missing').map(r => r.type));
+  setMissingCount(missing);
+  setExpiredCount(expired);
+  setValidCount(valid);
+};
 
   const formatExpiryDate = (expiry: any) => {
     if (!expiry) return '—'
@@ -247,45 +288,46 @@ export const DocumentHub: React.FC = () => {
     return <Tag color={colorMap[s] || 'default'}>{s.toUpperCase() || '—'}</Tag>
   }
 
-  async function uploadComplianceDoc (type: string, file: File) {
-    if (!appRef || !participantId) {
-      message.error('Cannot upload: missing app reference.')
-      return null
-    }
-    const storage = getStorage()
-    const safeType = type.replace(/[^\w-]+/g, '_')
-    const path = `compliance/${participantId}/${safeType}/${Date.now()}_${
-      file.name
-    }`
-    const sref = ref(storage, path)
-    await uploadBytes(sref, file)
-    const url = await getDownloadURL(sref)
-
-    const snap = await getDoc(appRef)
-    const data = snap.data() || {}
-    const current = Array.isArray(data.complianceDocuments)
-      ? data.complianceDocuments
-      : Array.isArray(Object.values(data.complianceDocuments || {}))
-      ? Object.values(data.complianceDocuments || {})
-      : []
-
-    const next = [...current]
-    const idx = next.findIndex((d: any) => d?.type === type)
-    const newEntry = {
-      ...(idx >= 0 ? next[idx] : {}),
-      type,
-      status: 'pending', // or 'uploaded'
-      url,
-      fileName: file.name,
-      uploadedAt: Timestamp.now()
-    }
-    if (idx >= 0) next[idx] = newEntry
-    else next.push(newEntry)
-
-    await updateDoc(appRef, { complianceDocuments: next })
-    message.success(`Uploaded ${type} successfully`)
-    return newEntry // 👈 return it so the UI can update immediately
+async function uploadComplianceDoc(type: string, file: File) {
+  if (!appRef || !participantId) {
+    message.error('Cannot upload: missing app reference.');
+    return;
   }
+
+  // 1) upload to Storage
+  const storage = getStorage();
+  const safeType = type.replace(/[^\w-]+/g, '_');
+  const path = `compliance/${participantId}/${safeType}/${Date.now()}_${file.name}`;
+  const sref = ref(storage, path);
+  await uploadBytes(sref, file);
+  const url = await getDownloadURL(sref);
+
+  // 2) read-modify-write the array (dedupe by type)
+  const snap = await getDoc(appRef);
+  const data = snap.data() || {};
+  const current: any[] = Array.isArray(data.complianceDocuments)
+    ? data.complianceDocuments
+    : Array.isArray(Object.values(data.complianceDocuments || {}))
+    ? Object.values(data.complianceDocuments || {})
+    : [];
+
+  const next = current.filter(d => normalizeType(d?.type) !== normalizeType(type));
+  next.push({
+    ...current.find(d => normalizeType(d?.type) === normalizeType(type)),
+    type,
+    status: 'pending',      // change to 'valid' if you want green immediately
+    url,
+    fileName: file.name,
+    uploadedAt: Timestamp.now() // OK inside object (not a sentinel)
+  });
+
+  await updateDoc(appRef, { complianceDocuments: next });
+
+  // 3) reload the table from Firestore so UI matches database
+  await refresh(appRef);
+
+  message.success(`Uploaded ${type} successfully`);
+}
 
   const columns = [
     { title: 'Document Type', dataIndex: 'type', key: 'type' },
@@ -353,6 +395,7 @@ export const DocumentHub: React.FC = () => {
               }
               return false
             }}
+            showUploadList={false
             maxCount={1}
           >
             <Tooltip title='Replace document'>
@@ -364,41 +407,22 @@ export const DocumentHub: React.FC = () => {
     }
   ]
 
-  const handleAddNew = async () => {
-    if (!selectedType || !uploadFile) {
-      message.error('Please select a type and file.')
-      return
-    }
-    try {
-      const entry = await uploadComplianceDoc(selectedType, uploadFile as File)
-      if (entry) {
-        // add or update the row locally so it shows up immediately
-        setComplianceDocs(prev => {
-          const exists = prev.some(d => d.type === selectedType)
-          const row = {
-            key: `${selectedType}-${Date.now()}`,
-            type: selectedType,
-            status: entry.status || 'pending',
-            expiry: '—',
-            url: entry.url,
-            fileName: entry.fileName || null
-          }
-          return exists
-            ? prev.map(d => (d.type === selectedType ? { ...d, ...row } : d))
-            : [...prev, row]
-        })
-        // it’s no longer “missing”
-        setMissingDocsList(prev => prev.filter(t => t !== selectedType))
-      }
-
-      setIsModalVisible(false)
-      setSelectedType('')
-      setUploadFile(null)
-    } catch (e) {
-      console.error(e)
-      message.error('Failed to upload document.')
-    }
+const handleAddNew = async () => {
+  if (!selectedType || !uploadFile) {
+    message.error('Please select a type and file.');
+    return;
   }
+  try {
+    await uploadComplianceDoc(selectedType, uploadFile as File);
+    setIsModalVisible(false);
+    setSelectedType('');
+    setUploadFile(null);
+  } catch (e) {
+    console.error(e);
+    message.error('Failed to upload document.');
+  }
+};
+
 
   if (loading) {
     return (
@@ -604,17 +628,16 @@ export const DocumentHub: React.FC = () => {
           </div>
 
           <div>
-            <Text strong>Upload File</Text>
-            <Upload
-              beforeUpload={file => {
-                setUploadFile(file)
-                return false
-              }}
-              maxCount={1}
-              style={{ marginTop: 4 }}
-            >
-              <Button icon={<UploadOutlined />}>Select File</Button>
-            </Upload>
+            <Text strong style={{ marginRight: 10}}>Upload File</Text>
+           <Upload
+  showUploadList={false}
+  beforeUpload={file => { setUploadFile(file); return false; }}
+  maxCount={1}
+  style={{ marginTop: 4 }}
+>
+  <Button icon={<UploadOutlined />}>Select File</Button>
+</Upload>
+
           </div>
         </Space>
       </Modal>
