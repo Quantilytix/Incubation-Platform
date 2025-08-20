@@ -30,7 +30,7 @@ import { onAuthStateChanged, getAuth } from 'firebase/auth'
 import {
   getDoc,
   updateDoc,
-  serverTimestamp,
+  Timestamp,
   DocumentReference,
   collection,
   getDocs,
@@ -277,7 +277,7 @@ export const DocumentHub: React.FC = () => {
       status: 'pending', // or 'uploaded'
       url,
       fileName: file.name,
-      uploadedAt: serverTimestamp()
+      uploadedAt: Timestamp.now()
     }
     if (idx >= 0) next[idx] = newEntry
     else next.push(newEntry)
