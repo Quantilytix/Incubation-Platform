@@ -324,7 +324,7 @@ const IncubateeGrowthPlanPage = () => {
             marginRight: 24
           }}
         >
-          <CompanyLog collapsed={false}/>
+          <CompanyLogo collapsed={false}/>
         </div>
 
         <div style={{ minWidth: 220 }}>
@@ -598,4 +598,5 @@ const IncubateeGrowthPlanPage = () => {
 }
 
 export default IncubateeGrowthPlanPage
+
 
