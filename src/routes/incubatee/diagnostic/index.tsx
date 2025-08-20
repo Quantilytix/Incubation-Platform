@@ -31,6 +31,7 @@ import {
 import { db, auth } from '@/firebase'
 import dayjs from 'dayjs'
 import { SHA256 } from 'crypto-js'
+import { CompanyLogo } from '@/components/CompanyLogo'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -299,32 +300,31 @@ const IncubateeGrowthPlanPage = () => {
       bodyStyle={{ padding: 0 }}
     >
       {/* Header band */}
-      <div
+     <div
         style={{
-          padding: 24,
-          borderBottom: '1px solid #f0f0f0',
           display: 'flex',
-          gap: 16,
           alignItems: 'center',
-          flexWrap: 'wrap'
+          justifyContent: 'center',
+          border: '1px solid #d9d9d9',
+          borderRadius: 8,
+          padding: 24,
+          marginBottom: 24,
+          width: '100%',
+          boxSizing: 'border-box'
         }}
       >
-        <div
+      <div
           style={{
-            width: 160,
-            height: 80,
+            width: 200,
+            height: 100,
             borderRadius: 8,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: '#fff'
+            marginRight: 24
           }}
         >
-          <img
-            src='/assets/images/Quantilytix-Logo.jpg'
-            alt='Logo'
-            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-          />
+          <CompanyLog collapsed={false}/>
         </div>
 
         <div style={{ minWidth: 220 }}>
@@ -598,3 +598,4 @@ const IncubateeGrowthPlanPage = () => {
 }
 
 export default IncubateeGrowthPlanPage
+
