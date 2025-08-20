@@ -15,8 +15,6 @@ import {
   Spin,
   Rate
 } from 'antd'
-import Highcharts from 'highcharts'
-import HighchartsReact from 'highcharts-react-official'
 import { BellOutlined, CheckCircleOutlined, FileTextOutlined, TeamOutlined } from '@ant-design/icons'
 import {
   arrayUnion,
@@ -519,105 +517,11 @@ export const IncubateeDashboard: React.FC = () => {
     return `R ${value}`
   }
 
-  // ---- Charts (with responsive rules) ----
-  const revenueChart: Highcharts.Options = {
-    chart: { zoomType: 'xy', spacing: [8, 8, 8, 8] },
-    title: { text: 'Revenue vs Workforce' },
-    credits: { enabled: false },
-    xAxis: [{ categories: months, crosshair: true }],
-    yAxis: [
-      { title: { text: 'Revenue (ZAR)' } },
-      { title: { text: 'Workers' }, opposite: true }
-    ],
-    legend: { itemStyle: { fontSize: '12px' } },
-    plotOptions: {
-      series: { dataLabels: { style: { textOutline: 'none' } } },
-      column: { pointPadding: 0.1, borderWidth: 0 }
-    },
-    tooltip: { shared: true },
-    series: [
-      {
-        name: 'Permanent',
-        type: 'column',
-        data: permHeadcount,
-        yAxis: 1,
-        dataLabels: {
-          enabled: true,
-          formatter: function () { return this.y && this.y > 0 ? this.y : null }
-        }
-      },
-      {
-        name: 'Temporary',
-        type: 'column',
-        data: tempHeadcount,
-        yAxis: 1,
-        dataLabels: {
-          enabled: true,
-          formatter: function () { return this.y && this.y > 0 ? this.y : null }
-        }
-      },
-      {
-        name: 'Revenue',
-        type: 'spline',
-        data: revenueData,
-        dataLabels: {
-          enabled: true,
-          formatter: function () { return this.y && this.y > 0 ? formatCurrencyAbbreviation(this.y as number) : null }
-        }
-      }
-    ],
-    responsive: {
-      rules: [
-        {
-          condition: { maxWidth: 575 },
-          chartOptions: {
-            legend: { layout: 'horizontal', align: 'center', verticalAlign: 'bottom' },
-            yAxis: [{ title: { text: '' } }, { title: { text: '' } }],
-          }
-        }
-      ]
-    }
-  }
-
-  const avgRevenueChart: Highcharts.Options = {
-    chart: { type: 'spline', spacing: [8, 8, 8, 8] },
-    title: { text: 'Total Revenue vs Average Revenue' },
-    credits: { enabled: false },
-    xAxis: { categories: months },
-    yAxis: { title: { text: 'Revenue (ZAR)' } },
-    plotOptions: {
-      series: {
-        dataLabels: {
-          enabled: true,
-          formatter: function () {
-            return this.y && (this.y as number) > 0 ? formatCurrencyAbbreviation(this.y as number) : null
-          }
-        }
-      }
-    },
-    tooltip: { shared: true },
-    series: [
-      { name: 'Total Revenue', type: 'spline', data: revenueData },
-      { name: 'Average Revenue', type: 'spline', data: avgRevenueData }
-    ],
-    responsive: {
-      rules: [
-        {
-          condition: { maxWidth: 575 },
-          chartOptions: {
-            legend: { layout: 'horizontal', align: 'center', verticalAlign: 'bottom' },
-            yAxis: { title: { text: '' } },
-          }
-        }
-      ]
-    }
-  }
-
   return (
     <Spin spinning={loading} tip='Loading...'>
       <div
         style={{
-          padding: SPACING.page,
+          padding: '12px',
           minHeight: '100vh',
           background: '#fff',
           display: 'grid',
@@ -769,50 +673,6 @@ export const IncubateeDashboard: React.FC = () => {
           />
         </Card>
 
-        {/* Charts */}
-        <Row gutter={[SPACING.gridGutter, SPACING.gridGutter]}>
-          <Col xs={24} lg={12}>
-            <Card
-              hoverable
-              className='card-body-pad'
-              style={{
-                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                transition: 'all 0.3s ease',
-                borderRadius: 8,
-                border: '1px solid #d6e4ff'
-              }}
-              title='Revenue vs Workforce'
-              extra={
-                <Button size='small' onClick={() => setExpandedChart('revenue')}>
-                  Expand
-                </Button>
-              }
-            >
-              <HighchartsReact highcharts={Highcharts} options={revenueChart} />
-            </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Card
-              hoverable
-              className='card-body-pad'
-              style={{
-                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                transition: 'all 0.3s ease',
-                borderRadius: 8,
-                border: '1px solid #d6e4ff'
-              }}
-              title='Total Revenue vs Average Revenue'
-              extra={
-                <Button size='small' onClick={() => setExpandedChart('avgRevenue')}>
-                  Expand
-                </Button>
-              }
-            >
-              <HighchartsReact highcharts={Highcharts} options={avgRevenueChart} />
-            </Card>
-          </Col>
-        </Row>
-
         {/* Notifications FAB */}
         <Button
           type='primary'
@@ -897,49 +757,6 @@ export const IncubateeDashboard: React.FC = () => {
             onChange={e => setDeclineReason(e.target.value)}
             placeholder='Enter reason...'
           />
-        </Modal>
-
-        {/* Reject Completion Modal */}
-        <Modal
-          title='Reject Completion'
-          open={isRejectModalVisible}
-          onCancel={() => {
-            setIsRejectModalVisible(false)
-            setRejectReason('')
-          }}
-          onOk={handleRejectCompletion}
-          okButtonProps={{ danger: true }}
-          okText='Submit Rejection'
-          styles={{ body: { padding: SPACING.modalPad } }}
-          width='min(92vw, 600px)'
-        >
-          <Input.TextArea
-            rows={4}
-            value={rejectReason}
-            onChange={e => setRejectReason(e.target.value)}
-            placeholder='Please explain why you’re rejecting this intervention’s completion...'
-          />
-        </Modal>
-
-        {/* Expanded Chart Modal */}
-        <Modal
-          title={
-            expandedChart === 'revenue'
-              ? 'Expanded: Revenue vs Workforce'
-              : 'Expanded: Total Revenue vs Average Revenue'
-          }
-          open={!!expandedChart}
-          onCancel={() => setExpandedChart(null)}
-          footer={null}
-          styles={{ body: { padding: SPACING.modalPad } }}
-          width='min(96vw, 980px)'
-        >
-          {expandedChart === 'revenue' && (
-            <HighchartsReact highcharts={Highcharts} options={revenueChart} />
-          )}
-          {expandedChart === 'avgRevenue' && (
-            <HighchartsReact highcharts={Highcharts} options={avgRevenueChart} />
-          )}
         </Modal>
 
         {/* Confirm Completion Modal */}
