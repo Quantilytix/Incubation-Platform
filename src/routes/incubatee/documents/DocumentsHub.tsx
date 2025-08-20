@@ -395,7 +395,7 @@ async function uploadComplianceDoc(type: string, file: File) {
               }
               return false
             }}
-            showUploadList={false
+            showUploadList={false}
             maxCount={1}
           >
             <Tooltip title='Replace document'>
