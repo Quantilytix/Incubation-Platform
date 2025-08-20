@@ -25,8 +25,19 @@ import {
   PlusOutlined,
   EyeOutlined
 } from '@ant-design/icons'
-import { collection, getDocs, query, where } from 'firebase/firestore'
 import { onAuthStateChanged, getAuth } from 'firebase/auth'
+// + Firestore & Storage
+import {
+  getDoc,
+  updateDoc,
+  serverTimestamp,
+  DocumentReference,
+  collection,
+  getDocs,
+  query,
+  where
+} from 'firebase/firestore'
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
 import moment from 'moment'
@@ -58,6 +69,9 @@ export const DocumentHub: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedType, setSelectedType] = useState('')
   const [uploadFile, setUploadFile] = useState<any>(null)
+
+  const [appRef, setAppRef] = useState<DocumentReference | null>(null)
+  const [participantId, setParticipantId] = useState<string | null>(null)
 
   useEffect(() => {
     const auth = getAuth()
@@ -101,6 +115,11 @@ export const DocumentHub: React.FC = () => {
         const appData = appSnap.docs[0].data()
         const docsRaw = appData.complianceDocuments || []
         const docs = Array.isArray(docsRaw) ? docsRaw : Object.values(docsRaw)
+
+        // after appSnap = await getDocs(...)
+        const appDoc = appSnap.docs[0]
+        setAppRef(appDoc.ref)
+        setParticipantId(participantId) // you already computed this above
 
         const presentTypes = docs.map((d: any) => d.type)
         const statusOf = (s: any) => (s || 'missing').toString().toLowerCase()
@@ -228,6 +247,48 @@ export const DocumentHub: React.FC = () => {
     return <Tag color={colorMap[s] || 'default'}>{s.toUpperCase() || '—'}</Tag>
   }
 
+  async function uploadComplianceDoc (type: string, file: File) {
+    if (!appRef || !participantId) {
+      message.error('Cannot upload: missing app reference.')
+      return
+    }
+
+    // 1) Upload to Storage
+    const storage = getStorage()
+    const safeType = type.replace(/[^\w-]+/g, '_')
+    const path = `compliance/${participantId}/${safeType}/${Date.now()}_${
+      file.name
+    }`
+    const sref = ref(storage, path)
+    await uploadBytes(sref, file)
+    const url = await getDownloadURL(sref)
+
+    // 2) Merge into complianceDocuments array (replace existing type if present)
+    const snap = await getDoc(appRef)
+    const data = snap.data() || {}
+    const current = Array.isArray(data.complianceDocuments)
+      ? data.complianceDocuments
+      : Array.isArray(Object.values(data.complianceDocuments || {}))
+      ? Object.values(data.complianceDocuments || {})
+      : []
+
+    const next = [...current]
+    const idx = next.findIndex((d: any) => d?.type === type)
+    const newEntry = {
+      ...(idx >= 0 ? next[idx] : {}),
+      type,
+      status: 'pending', // or 'uploaded'
+      url,
+      fileName: file.name,
+      uploadedAt: serverTimestamp()
+    }
+    if (idx >= 0) next[idx] = newEntry
+    else next.push(newEntry)
+
+    await updateDoc(appRef, { complianceDocuments: next })
+    message.success(`Uploaded ${type} successfully`)
+  }
+
   const columns = [
     { title: 'Document Type', dataIndex: 'type', key: 'type' },
     {
@@ -265,13 +326,20 @@ export const DocumentHub: React.FC = () => {
           )}
 
           <Upload
-            beforeUpload={file => {
-              // TODO: call your uploader with (record.type, file)
+            beforeUpload={async file => {
               message.loading({
                 content: `Uploading ${file.name}...`,
                 key: record.key
               })
-              return false // prevent auto upload
+              try {
+                await uploadComplianceDoc(record.type, file)
+                message.success({ content: 'Upload complete', key: record.key })
+                // optionally re-fetch list or update state locally
+              } catch (e) {
+                console.error(e)
+                message.error({ content: 'Upload failed', key: record.key })
+              }
+              return false // keep preventing auto-upload
             }}
             showUploadList={false}
             maxCount={1}
@@ -285,17 +353,20 @@ export const DocumentHub: React.FC = () => {
     }
   ]
 
-  const handleAddNew = () => {
+  const handleAddNew = async () => {
     if (!selectedType || !uploadFile) {
       message.error('Please select a type and file.')
       return
     }
-
-    // Mock handler – replace with upload logic
-    message.success(`Uploaded ${selectedType} successfully`)
-    setIsModalVisible(false)
-    setSelectedType('')
-    setUploadFile(null)
+    try {
+      await uploadComplianceDoc(selectedType, uploadFile as File)
+      setIsModalVisible(false)
+      setSelectedType('')
+      setUploadFile(null)
+    } catch (e) {
+      console.error(e)
+      message.error('Failed to upload document.')
+    }
   }
 
   if (loading) {
@@ -306,16 +377,22 @@ export const DocumentHub: React.FC = () => {
         </Helmet>
 
         <Alert
-          type="info"
+          type='info'
           showIcon
-          message="Checking document statuses…"
-          description="Hang tight while we load your compliance documents."
+          message='Checking document statuses…'
+          description='Hang tight while we load your compliance documents.'
           style={{ marginBottom: 16 }}
         />
 
-        <Card loading style={{ borderRadius: 8, border: '1px solid #d6e4ff' }} />
+        <Card
+          loading
+          style={{ borderRadius: 8, border: '1px solid #d6e4ff' }}
+        />
         <div style={{ height: 16 }} />
-        <Card loading style={{ borderRadius: 8, border: '1px solid #d6e4ff' }} />
+        <Card
+          loading
+          style={{ borderRadius: 8, border: '1px solid #d6e4ff' }}
+        />
       </Layout>
     )
   }
