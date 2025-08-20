@@ -10,7 +10,12 @@ import {
   Modal,
   Alert,
   Input,
-  Tag
+  Tag,
+  Form,
+  Row,
+  Col,
+  DatePicker,
+  Select
 } from 'antd'
 import {
   collection,
@@ -19,7 +24,9 @@ import {
   getDocs,
   query,
   updateDoc,
-  where
+  where,
+  writeBatch,
+  Timestamp
 } from 'firebase/firestore'
 import { db, auth } from '@/firebase'
 import dayjs from 'dayjs'
@@ -27,6 +34,7 @@ import { SHA256 } from 'crypto-js'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
+const { Option } = Select
 
 const IncubateeGrowthPlanPage = () => {
   const [loading, setLoading] = useState(true)
@@ -36,12 +44,17 @@ const IncubateeGrowthPlanPage = () => {
   const [confirmModalOpen, setConfirmModalOpen] = useState(false)
   const [userSignatureURL, setUserSignatureURL] = useState<string | null>(null)
 
-  // --- Motivation editor state ---
+  // --- Motivation editor ---
   const [motivation, setMotivation] = useState<string>('')
   const [savingMotivation, setSavingMotivation] = useState(false)
   const [motivationPristine, setMotivationPristine] = useState(true)
 
-  // 🔒 Lock editor once incubatee has confirmed
+  // --- Business Overview editor ---
+  const [editingOverview, setEditingOverview] = useState(false)
+  const [savingOverview, setSavingOverview] = useState(false)
+  const [form] = Form.useForm()
+
+  // 🔒 Lock sections once incubatee has confirmed
   const isLocked = useMemo(
     () => Boolean(application?.interventions?.confirmedBy?.incubatee),
     [application]
@@ -54,10 +67,7 @@ const IncubateeGrowthPlanPage = () => {
 
       try {
         const partSnap = await getDocs(
-          query(
-            collection(db, 'participants'),
-            where('email', '==', user.email)
-          )
+          query(collection(db, 'participants'), where('email', '==', user.email))
         )
         if (partSnap.empty) throw new Error('Participant not found')
         const partDoc = partSnap.docs[0]
@@ -78,6 +88,20 @@ const IncubateeGrowthPlanPage = () => {
 
         setMotivation(appData.motivation || '')
         setMotivationPristine(true)
+
+        // Prefill Business Overview form
+        form.setFieldsValue({
+          participantName: partData.participantName || '',
+          beneficiaryName: partData.beneficiaryName || appData.beneficiaryName || '',
+          sector: partData.sector || '',
+          province: partData.province || '',
+          city: partData.city || '',
+          dateOfRegistration: partData.dateOfRegistration?.toDate
+            ? dayjs(partData.dateOfRegistration.toDate())
+            : partData.dateOfRegistration
+            ? dayjs(partData.dateOfRegistration)
+            : null
+        })
 
         const userSnap = await getDocs(
           query(collection(db, 'users'), where('email', '==', user.email))
@@ -117,11 +141,11 @@ const IncubateeGrowthPlanPage = () => {
       }
     }
     fetchData()
-  }, [])
+  }, [form])
 
   const saveMotivation = async () => {
     if (!application?.docId) return
-    if (isLocked) return // safety: no writes when locked
+    if (isLocked) return
 
     const trimmed = (motivation || '').trim()
     if (!trimmed) return message.warning('Motivation cannot be empty')
@@ -163,7 +187,7 @@ const IncubateeGrowthPlanPage = () => {
 
       message.success('Growth Plan Confirmed.')
       setConfirmModalOpen(false)
-      setApplication(prev => ({
+      setApplication((prev: any) => ({
         ...prev,
         interventions: {
           ...prev.interventions,
@@ -182,6 +206,84 @@ const IncubateeGrowthPlanPage = () => {
     }
   }
 
+  // 🔁 Save Business Overview and sync fields across collections
+  const saveBusinessOverview = async () => {
+    if (!participant?.docId || !application?.docId) return
+    try {
+      const values = await form.validateFields()
+      setSavingOverview(true)
+
+      const {
+        participantName, // Business Owner
+        beneficiaryName,
+        sector,
+        province,
+        city,
+        dateOfRegistration
+      } = values
+
+      const batch = writeBatch(db)
+
+      // participants update (source of truth)
+      const pRef = doc(db, 'participants', participant.docId)
+      batch.update(pRef, {
+        participantName: participantName?.trim(),
+        beneficiaryName: (beneficiaryName || participantName)?.trim(),
+        sector: sector || '',
+        province: province || '',
+        city: city || '',
+        dateOfRegistration: dateOfRegistration
+          ? Timestamp.fromDate(dayjs(dateOfRegistration).toDate())
+          : null,
+        updatedAt: Timestamp.now()
+      })
+
+      // mirror a few display fields on applications for consistency
+      const aRef = doc(db, 'applications', application.docId)
+      batch.update(aRef, {
+        beneficiaryName: (beneficiaryName || participantName)?.trim(),
+        sector: sector || application.sector || '',
+        province: province || application.province || '',
+        city: city || application.city || '',
+        updatedAt: new Date().toISOString()
+      })
+
+      await batch.commit()
+
+      // refresh local state
+      setParticipant((prev: any) => ({
+        ...prev,
+        participantName: participantName?.trim(),
+        beneficiaryName: (beneficiaryName || participantName)?.trim(),
+        sector,
+        province,
+        city,
+        dateOfRegistration: dateOfRegistration
+          ? Timestamp.fromDate(dayjs(dateOfRegistration).toDate())
+          : null
+      }))
+      setApplication((prev: any) => ({
+        ...prev,
+        beneficiaryName: (beneficiaryName || participantName)?.trim(),
+        sector: sector || prev?.sector,
+        province: province || prev?.province,
+        city: city || prev?.city
+      }))
+
+      setEditingOverview(false)
+      message.success('Business Overview updated')
+    } catch (e: any) {
+      if (e?.errorFields) {
+        // antd form validation error
+        return
+      }
+      console.error(e)
+      message.error('Failed to save Business Overview')
+    } finally {
+      setSavingOverview(false)
+    }
+  }
+
   if (loading)
     return (
       <Spin tip='Loading...' style={{ marginTop: 48, minHeight: '100vh' }} />
@@ -189,220 +291,308 @@ const IncubateeGrowthPlanPage = () => {
   if (!participant || !application) return <Text>No data found</Text>
 
   return (
-    <Card style={{ padding: 24, minHeight: '100vh' }}>
+    <Card
+      style={{
+        padding: 24,
+        minHeight: '100vh'
+      }}
+      bodyStyle={{ padding: 0 }}
+    >
+      {/* Header band */}
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: '1px solid #d9d9d9',
-          borderRadius: 8,
           padding: 24,
-          marginBottom: 24,
-          width: '100%',
-          boxSizing: 'border-box'
+          borderBottom: '1px solid #f0f0f0',
+          display: 'flex',
+          gap: 16,
+          alignItems: 'center',
+          flexWrap: 'wrap'
         }}
       >
         <div
           style={{
-            width: 200,
-            height: 100,
+            width: 160,
+            height: 80,
             borderRadius: 8,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            marginRight: 24
+            background: '#fff'
           }}
         >
           <img
-            src='/assets/images/RCM.jpg'
+            src='/assets/images/Quantilytix-Logo.jpg'
             alt='Logo'
-            style={{ maxWidth: '90%', maxHeight: '90%' }}
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
           />
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <Text style={{ fontSize: 18, fontWeight: 500 }}>
+        <div style={{ minWidth: 220 }}>
+          <Text style={{ fontSize: 16, fontWeight: 500 }}>
             {participant.beneficiaryName || 'Participant'}
           </Text>
-          <Text style={{ fontSize: 36, fontWeight: 700, color: '#222' }}>
+          <div style={{ fontSize: 28, fontWeight: 700, color: '#222' }}>
             Growth Plan
-          </Text>
+          </div>
         </div>
       </div>
-      <Divider>Business Overview</Divider>
-      <Text strong>Business Owner:</Text> {participant.participantName}
-      <br />
-      <Text strong>Sector:</Text> {participant.sector}
-      <br />
-      <Text strong>Province:</Text> {participant.province}
-      <br />
-      <Text strong>City:</Text> {participant.city}
-      <br />
-      <Text strong>Date of Registration:</Text>{' '}
-      {participant.dateOfRegistration?.toDate
-        ? dayjs(participant.dateOfRegistration.toDate()).format('YYYY-MM-DD')
-        : participant.dateOfRegistration || 'N/A'}
-      {/* ===== Motivation editor ===== */}
-      <Divider>Motivation</Divider>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          marginBottom: 8
-        }}
-      >
-        {isLocked ? (
-          <Tag color='default'>Locked after participant confirmation</Tag>
-        ) : (
-          <Tag color='blue'>Editable</Tag>
-        )}
-        {application.motivationUpdatedAt && (
-          <Text type='secondary'>
-            Last updated:{' '}
-            {dayjs(application.motivationUpdatedAt).format('YYYY-MM-DD HH:mm')}
-          </Text>
-        )}
-      </div>
-      <TextArea
-        autoSize={{ minRows: 4, maxRows: 10 }}
-        maxLength={2000}
-        value={motivation}
-        onChange={e => {
-          if (isLocked) return
-          setMotivation(e.target.value)
-          setMotivationPristine(
-            e.target.value === (application?.motivation || '')
-          )
-        }}
-        placeholder='Describe your motivation for joining the incubation programme...'
-        disabled={isLocked}
-      />
-      <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-        <Button
-          type='primary'
-          loading={savingMotivation}
-          disabled={isLocked || motivationPristine || savingMotivation}
-          onClick={saveMotivation}
-        >
-          Save Motivation
-        </Button>
-        <Button
-          disabled={isLocked || motivationPristine}
-          onClick={() => {
-            if (isLocked) return
-            setMotivation(application?.motivation || '')
-            setMotivationPristine(true)
+
+      {/* CONTENT: unified padding for consistency */}
+      <div style={{ padding: 24 }}>
+        {/* ===== Business Overview (Editable) ===== */}
+        <Divider>Business Overview</Divider>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            marginBottom: 16,
+            flexWrap: 'wrap'
           }}
         >
-          Reset
-        </Button>
-      </div>
-      {!application.interventions?.confirmedBy?.operations ? (
-        <>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              marginTop: 32,
-              marginBottom: 24
+          {isLocked ? (
+            <Tag color='default'>Locked after participant confirmation</Tag>
+          ) : editingOverview ? (
+            <Tag color='processing'>Editing</Tag>
+          ) : (
+            <Tag color='blue'>View</Tag>
+          )}
+
+          {!isLocked && !editingOverview && (
+            <Button onClick={() => setEditingOverview(true)}>Edit</Button>
+          )}
+          {!isLocked && editingOverview && (
+            <>
+              <Button onClick={() => setEditingOverview(false)}>Cancel</Button>
+              <Button
+                type='primary'
+                loading={savingOverview}
+                onClick={saveBusinessOverview}
+              >
+                Save Changes
+              </Button>
+            </>
+          )}
+        </div>
+
+        <Form
+          form={form}
+          layout='vertical'
+          disabled={isLocked || !editingOverview}
+          autoComplete='off'
+        >
+          <Row gutter={[16, 8]}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label='Business Owner'
+                name='participantName'
+                rules={[{ required: true, message: 'Please enter owner name' }]}
+                tooltip='Also updates participantName in participants collection'
+              >
+                <Input placeholder='e.g. Jane Doe' />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={12}>
+              <Form.Item
+                label='Display / Beneficiary Name'
+                name='beneficiaryName'
+                tooltip='Shown on documents; defaults to Business Owner if left empty'
+              >
+                <Input placeholder='e.g. Jane Doe / Doe Industries' />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={12}>
+              <Form.Item label='Sector' name='sector'>
+                <Input placeholder='e.g. Manufacturing' />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={6}>
+              <Form.Item label='Province' name='province'>
+                <Input placeholder='e.g. Gauteng' />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={6}>
+              <Form.Item label='City' name='city'>
+                <Input placeholder='e.g. Springs' />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={12}>
+              <Form.Item label='Date of Registration' name='dateOfRegistration'>
+                <DatePicker style={{ width: '100%' }} format='YYYY-MM-DD' />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Form>
+
+        {/* ===== Motivation editor ===== */}
+        <Divider>Motivation</Divider>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            marginBottom: 8,
+            flexWrap: 'wrap'
+          }}
+        >
+          {isLocked ? (
+            <Tag color='default'>Locked after participant confirmation</Tag>
+          ) : (
+            <Tag color='blue'>Editable</Tag>
+          )}
+          {application.motivationUpdatedAt && (
+            <Text type='secondary'>
+              Last updated:{' '}
+              {dayjs(application.motivationUpdatedAt).format('YYYY-MM-DD HH:mm')}
+            </Text>
+          )}
+        </div>
+
+        <TextArea
+          autoSize={{ minRows: 4, maxRows: 10 }}
+          maxLength={2000}
+          value={motivation}
+          onChange={e => {
+            if (isLocked) return
+            setMotivation(e.target.value)
+            setMotivationPristine(e.target.value === (application?.motivation || ''))
+          }}
+          placeholder='Describe your motivation for joining the incubation programme...'
+          disabled={isLocked}
+        />
+        <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
+          <Button
+            type='primary'
+            loading={savingMotivation}
+            disabled={isLocked || motivationPristine || savingMotivation}
+            onClick={saveMotivation}
+          >
+            Save Motivation
+          </Button>
+          <Button
+            disabled={isLocked || motivationPristine}
+            onClick={() => {
+              if (isLocked) return
+              setMotivation(application?.motivation || '')
+              setMotivationPristine(true)
             }}
           >
+            Reset
+          </Button>
+        </div>
+
+        {!application.interventions?.confirmedBy?.operations ? (
+          <>
             <div
               style={{
-                width: 160,
-                height: 160,
-                borderRadius: '50%',
-                border: '8px solid #1890ff',
                 display: 'flex',
                 justifyContent: 'center',
-                alignItems: 'center',
-                fontSize: 28,
-                fontWeight: 'bold',
-                color: '#1890ff'
+                marginTop: 32,
+                marginBottom: 24
               }}
             >
-              37%
+              <div
+                style={{
+                  width: 160,
+                  height: 160,
+                  borderRadius: '50%',
+                  border: '8px solid #1890ff',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  fontSize: 28,
+                  fontWeight: 'bold',
+                  color: '#1890ff'
+                }}
+              >
+                37%
+              </div>
             </div>
-          </div>
-          <Alert
-            type='info'
-            message='Please be patient'
-            description='Your growth plan is currently being finalized by the operations team. You will be able to confirm it once it is ready.'
-            showIcon
-          />
-        </>
-      ) : (
-        <>
-          <Divider>Planned Interventions</Divider>
-          <Table
-            dataSource={interventions}
-            rowKey='id'
-            size='small'
-            bordered
-            pagination={false}
-            columns={[
-              { title: 'Title', dataIndex: 'interventionTitle' },
-              { title: 'Area', dataIndex: 'areaOfSupport' }
-            ]}
-          />
-          <Divider />
-          {application.interventions?.confirmedBy?.incubatee ? (
-            <>
-              <Divider>Participant Confirmation</Divider>
-              <Text strong>Cryptographic Signature:</Text>
-              <br />
-              <Text copyable>{application.digitalSignature}</Text>
-
-              {userSignatureURL && (
-                <>
-                  <br />
-                  <Text strong>Digital Signature Image:</Text>
-                  <br />
-                  <img
-                    src={userSignatureURL}
-                    alt='Signature'
-                    style={{
-                      maxWidth: 200,
-                      marginTop: 8,
-                      border: '1px solid #ccc'
-                    }}
-                  />
-                </>
-              )}
-
-              <br />
-              <Text>
-                <strong>Confirmed At:</strong>{' '}
-                {dayjs(application.confirmedAt).format('YYYY-MM-DD')}
-              </Text>
-            </>
-          ) : (
-            <Button
-              type='primary'
-              style={{ marginTop: 24 }}
-              onClick={() => setConfirmModalOpen(true)}
-            >
-              Confirm Growth Plan
-            </Button>
-          )}
-          <Modal
-            title='Confirm Growth Plan'
-            open={confirmModalOpen}
-            onCancel={() => setConfirmModalOpen(false)}
-            onOk={handleConfirm}
-            okText='Confirm & Sign'
-          >
             <Alert
-              message='Final Confirmation'
-              description='By confirming, you add your digital signature to this growth plan. This action is final and notifies the operations team that you accept the interventions.'
               type='info'
+              message='Please be patient'
+              description='Your growth plan is currently being finalized by the operations team. You will be able to confirm it once it is ready.'
               showIcon
             />
-          </Modal>
-        </>
-      )}
+          </>
+        ) : (
+          <>
+            <Divider>Planned Interventions</Divider>
+            <Table
+              dataSource={interventions}
+              rowKey='id'
+              size='small'
+              bordered
+              pagination={false}
+              columns={[
+                { title: 'Title', dataIndex: 'interventionTitle' },
+                { title: 'Area', dataIndex: 'areaOfSupport' }
+              ]}
+              scroll={{ x: true }}
+            />
+            <Divider />
+            {application.interventions?.confirmedBy?.incubatee ? (
+              <>
+                <Divider>Participant Confirmation</Divider>
+                <Text strong>Cryptographic Signature:</Text>
+                <br />
+                <Text copyable>{application.digitalSignature}</Text>
+
+                {userSignatureURL && (
+                  <>
+                    <br />
+                    <Text strong>Digital Signature Image:</Text>
+                    <br />
+                    <img
+                      src={userSignatureURL}
+                      alt='Signature'
+                      style={{
+                        maxWidth: 200,
+                        marginTop: 8,
+                        border: '1px solid #ccc'
+                      }}
+                    />
+                  </>
+                )}
+
+                <br />
+                <Text>
+                  <strong>Confirmed At:</strong>{' '}
+                  {dayjs(application.confirmedAt).format('YYYY-MM-DD')}
+                </Text>
+              </>
+            ) : (
+              <Button
+                type='primary'
+                style={{ marginTop: 24 }}
+                onClick={() => setConfirmModalOpen(true)}
+              >
+                Confirm Growth Plan
+              </Button>
+            )}
+            <Modal
+              title='Confirm Growth Plan'
+              open={confirmModalOpen}
+              onCancel={() => setConfirmModalOpen(false)}
+              onOk={handleConfirm}
+              okText='Confirm & Sign'
+            >
+              <Alert
+                message='Final Confirmation'
+                description='By confirming, you add your digital signature to this growth plan. This action is final and notifies the operations team that you accept the interventions.'
+                type='info'
+                showIcon
+              />
+            </Modal>
+          </>
+        )}
+      </div>
     </Card>
   )
 }
