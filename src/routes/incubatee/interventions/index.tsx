@@ -859,7 +859,7 @@ const InterventionsTrackingView: React.FC = () => {
                 action={
                   <Button
                     type='primary'
-                    onClick={() => navigate('/incubatee/interventions')}
+                    onClick={() => navigate('/incubatee/diagnostic')}
                   >
                     Go
                   </Button>
@@ -1303,4 +1303,5 @@ const InterventionsTrackingView: React.FC = () => {
 }
 
 export default InterventionsTrackingView
+
 
