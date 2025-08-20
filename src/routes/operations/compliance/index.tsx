@@ -386,71 +386,81 @@ const OperationsCompliance: React.FC = () => {
     }
   }
 
-  const handleVerification = async (
-    status: 'verified' | 'queried',
-    comment?: string
-  ) => {
-    if (!verifyingDocument) return
+const handleVerification = async (
+  status: 'verified' | 'queried',
+  comment?: string
+) => {
+  if (!verifyingDocument) return;
 
-    try {
-      const appSnap = await getDocs(
-        query(
-          collection(db, 'applications'),
-          where('participantId', '==', verifyingDocument.participantId),
-          where('companyCode', '==', user?.companyCode)
-        )
+  try {
+    const appSnap = await getDocs(
+      query(
+        collection(db, 'applications'),
+        where('participantId', '==', verifyingDocument.participantId),
+        where('companyCode', '==', user?.companyCode)
       )
+    );
 
-      if (appSnap.empty) return message.error('Application not found')
+    if (appSnap.empty) {
+      message.error('Application not found');
+      return;
+    }
 
-      const docRef = appSnap.docs[0].ref
-      const currentData = appSnap.docs[0].data()
-      const docs = currentData.complianceDocuments || []
+    const docRef = appSnap.docs[0].ref;
+    const current = appSnap.docs[0].data()?.complianceDocuments || [];
 
-      const updatedDocs = docs.map((doc: ComplianceDocument) =>
-        doc.id === verifyingDocument.id
+    // robust match: prefer id; fall back to (type+url)
+    const isSame = (a: any, b: ComplianceDocument) =>
+      (a?.id && b?.id && a.id === b.id) ||
+      (!!a?.type && a.type === b.type && !!a?.url && a.url === b.url);
+
+    const updatedDocs = current.map((d: any) =>
+      isSame(d, verifyingDocument)
+        ? {
+            ...d,
+            verificationStatus: status,
+            verificationComment: comment || '',
+            lastVerifiedBy: user?.name || 'Unknown',
+            lastVerifiedAt: new Date().toISOString(),
+            // ⬇️ force Firestore "status" as well
+            status: status === 'verified' ? 'valid' : 'invalid',
+          }
+        : d
+    );
+
+    const updatedScore = calculateComplianceScore(updatedDocs);
+
+    await updateDoc(docRef, {
+      complianceDocuments: updatedDocs,
+      complianceScore: updatedScore,
+    });
+
+    // reflect in UI
+    setDocuments(prev =>
+      prev.map(p =>
+        (p.id && verifyingDocument.id && p.id === verifyingDocument.id) ||
+        (p.type === verifyingDocument.type && p.url === verifyingDocument.url)
           ? {
-              ...doc,
+              ...p,
               verificationStatus: status,
               verificationComment: comment || '',
               lastVerifiedBy: user?.name || 'Unknown',
-              lastVerifiedAt: new Date().toISOString().split('T')[0],
-              status: status === 'queried' ? 'invalid' : doc.status // ✅ override to invalid
+              lastVerifiedAt: new Date().toISOString(),
+              status: status === 'verified' ? 'valid' : 'invalid',
             }
-          : doc
+          : p
       )
+    );
 
-      const updatedScore = calculateComplianceScore(updatedDocs)
-
-      await updateDoc(docRef, {
-        complianceDocuments: updatedDocs,
-        complianceScore: updatedScore
-      })
-
-      setDocuments(prev =>
-        prev.map(doc =>
-          doc.id === verifyingDocument.id
-            ? {
-                ...doc,
-                verificationStatus: status,
-                verificationComment: comment || '',
-                lastVerifiedBy: user?.name || 'Unknown',
-                lastVerifiedAt: new Date().toISOString().split('T')[0],
-                status: status === 'queried' ? 'invalid' : doc.status
-              }
-            : doc
-        )
-      )
-
-      message.success(
-        status === 'verified' ? '✅ Document verified' : '❌ Document queried'
-      )
-      setVerificationModalVisible(false)
-    } catch (err) {
-      console.error('❌ Verification failed', err)
-      message.error('Failed to verify document')
-    }
+    message.success(
+      status === 'verified' ? '✅ Document verified' : '❌ Document queried'
+    );
+    setVerificationModalVisible(false);
+  } catch (err) {
+    console.error('❌ Verification failed', err);
+    message.error('Failed to verify document');
   }
+};
 
   // Show ED Agreement modal for specific participant
   const showEDAgreementModal = (participantId: string) => {
