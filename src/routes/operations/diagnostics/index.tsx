@@ -1,21 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import {
-  Row,
-  Col,
-  Card,
-  Statistic,
-  Space,
-  Typography,
-  Button,
-  Modal,
-  Table,
-  Tag
+  Row, Col, Card, Statistic, Space, Typography, Button, Modal, Table, Tag
 } from 'antd'
-import {
-  TeamOutlined,
-  CheckCircleOutlined,
-  FileAddOutlined
-} from '@ant-design/icons'
+import { TeamOutlined, CheckCircleOutlined, FileAddOutlined } from '@ant-design/icons'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
 import GrowthPlanPage from './growth-plan'
@@ -24,23 +11,45 @@ import { motion } from 'framer-motion'
 
 const { Title } = Typography
 
-type AnyRecord = Record<string, any>
+// Normalize Firestore Timestamp | ISO string | Date -> Date | null
+const normalizeFsDate = (v: any): Date | null => {
+  if (!v) return null
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v
+  if (typeof v === 'string') {
+    const d = new Date(v)
+    return isNaN(d.getTime()) ? null : d
+  }
+  if (v && typeof v.toDate === 'function') {
+    const d = v.toDate()
+    return isNaN(d.getTime()) ? null : d
+  }
+  if (v && typeof v.seconds === 'number') {
+    const d = new Date(v.seconds * 1000)
+    return isNaN(d.getTime()) ? null : d
+  }
+  return null
+}
 
 const DiagnosticsDashboard = () => {
   const { user } = useFullIdentity()
   const [loading, setLoading] = useState(true)
   const [metrics, setMetrics] = useState({
     totalParticipants: 0,
-    confirmedGrowthPlans: 0,
+    confirmedGrowthPlans: 0, // only BOTH confirmed
     totalRequiredInterventions: 0
   })
   const [participants, setParticipants] = useState<any[]>([])
   const [selectedParticipant, setSelectedParticipant] = useState<any>(null)
-  const [applicationMap, setApplicationMap] = useState<Record<string, AnyRecord>>({})
+  const [applicationMap, setApplicationMap] = useState<Record<string, any>>({})
 
-  // Helper: did Operations confirm?
-  const isOpsConfirmed = (app?: AnyRecord) =>
-    !!app?.interventions?.confirmedBy?.operations
+  const isOpsConfirmed = (app: any): boolean => {
+    const hasConfirmedAt = !!normalizeFsDate(app?.confirmedAt)
+    const legacyOps = !!app?.interventions?.confirmedBy?.operations
+    return hasConfirmedAt || legacyOps
+  }
+
+  const isIncubateeConfirmed = (app: any): boolean =>
+    !!app?.interventions?.confirmedBy?.incubatee
 
   useEffect(() => {
     const fetchAllData = async () => {
@@ -53,17 +62,22 @@ const DiagnosticsDashboard = () => {
             where('applicationStatus', 'in', ['accepted', 'Accepted'])
           )
         )
-        const apps = appSnap.docs.map(d => d.data() as AnyRecord)
 
-        const appMap: Record<string, AnyRecord> = {}
+        const apps = appSnap.docs.map(doc => doc.data())
+        const appMap: Record<string, any> = {}
         let requiredCount = 0
-        let confirmedCount = 0
+        let confirmedBothCount = 0
 
         apps.forEach(app => {
           appMap[app.email] = app
-          if (isOpsConfirmed(app)) confirmedCount++
+
           if (Array.isArray(app.interventions?.required)) {
             requiredCount += app.interventions.required.length
+          }
+
+          // Count only when BOTH Ops and Incubatee are confirmed
+          if (isOpsConfirmed(app) && isIncubateeConfirmed(app)) {
+            confirmedBothCount++
           }
         })
 
@@ -71,20 +85,16 @@ const DiagnosticsDashboard = () => {
         const allParticipants = partSnap.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        } as AnyRecord))
-
-        // Keep only participants that have an accepted application
+        }))
         const participantsWithApplications = Array.from(
           new Map(
-            allParticipants
-              .filter(p => appMap[p.email])
-              .map(p => [p.email, p])
+            allParticipants.filter(p => appMap[p.email]).map(p => [p.email, p])
           ).values()
         )
 
         setMetrics({
           totalParticipants: participantsWithApplications.length,
-          confirmedGrowthPlans: confirmedCount, // now based on Operations confirmation
+          confirmedGrowthPlans: confirmedBothCount, // <-- BOTH only
           totalRequiredInterventions: requiredCount
         })
 
@@ -101,30 +111,18 @@ const DiagnosticsDashboard = () => {
   }, [user])
 
   const columns = [
-    {
-      title: 'Name',
-      dataIndex: 'beneficiaryName',
-      key: 'name'
-    },
-    {
-      title: 'Sector',
-      dataIndex: 'sector',
-      key: 'sector'
-    },
-    {
-      title: 'Province',
-      dataIndex: 'province',
-      key: 'province'
-    },
+    { title: 'Name', dataIndex: 'beneficiaryName', key: 'name' },
+    { title: 'Sector', dataIndex: 'sector', key: 'sector' },
+    { title: 'Province', dataIndex: 'province', key: 'province' },
     {
       title: 'Status',
       key: 'status',
       render: (_: any, record: any) => {
         const app = applicationMap[record.email]
-        const confirmed = isOpsConfirmed(app)
+        const both = isOpsConfirmed(app) && isIncubateeConfirmed(app)
         return (
-          <Tag color={confirmed ? 'green' : 'orange'}>
-            {confirmed ? 'Confirmed (Ops)' : 'Pending (Ops)'}
+          <Tag color={both ? 'green' : 'orange'}>
+            {both ? 'Confirmed' : 'Pending'}
           </Tag>
         )
       }
@@ -154,26 +152,15 @@ const DiagnosticsDashboard = () => {
               background: 'transparent'
             }}
           >
-            <Card
-              hoverable
-              style={{
-                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                transition: 'all 0.3s ease',
-                borderRadius: 8,
-                border: '1px solid #d6e4ff'
-              }}
-            >
+            <Card hoverable style={{ boxShadow: '0 12px 32px rgba(0,0,0,0.12)', transition: 'all 0.3s ease', borderRadius: 8, border: '1px solid #d6e4ff' }}>
               <Statistic
-                title={
-                  <Space>
-                    <TeamOutlined /> Total Participants
-                  </Space>
-                }
+                title={<Space><TeamOutlined /> Total Participants</Space>}
                 value={metrics.totalParticipants}
               />
             </Card>
           </motion.div>
         </Col>
+
         <Col xs={24} sm={12} md={8}>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -187,27 +174,16 @@ const DiagnosticsDashboard = () => {
               background: 'transparent'
             }}
           >
-            <Card
-              hoverable
-              style={{
-                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                transition: 'all 0.3s ease',
-                borderRadius: 8,
-                border: '1px solid #d6e4ff'
-              }}
-            >
+            <Card hoverable style={{ boxShadow: '0 12px 32px rgba(0,0,0,0.12)', transition: 'all 0.3s ease', borderRadius: 8, border: '1px solid #d6e4ff' }}>
               <Statistic
-                title={
-                  <Space>
-                    <CheckCircleOutlined style={{ color: '#52c41a' }} /> Confirmed Plans (Ops)
-                  </Space>
-                }
-                value={metrics.confirmedGrowthPlans}
+                title={<Space><CheckCircleOutlined style={{ color: '#52c41a' }} /> Confirmed Plans</Space>}
+                value={metrics.confirmedGrowthPlans} // BOTH confirmed
                 valueStyle={{ color: '#52c41a' }}
               />
             </Card>
           </motion.div>
         </Col>
+
         <Col xs={24} sm={12} md={8}>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -221,21 +197,9 @@ const DiagnosticsDashboard = () => {
               background: 'transparent'
             }}
           >
-            <Card
-              hoverable
-              style={{
-                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                transition: 'all 0.3s ease',
-                borderRadius: 8,
-                border: '1px solid #d6e4ff'
-              }}
-            >
+            <Card hoverable style={{ boxShadow: '0 12px 32px rgba(0,0,0,0.12)', transition: 'all 0.3s ease', borderRadius: 8, border: '1px solid #d6e4ff' }}>
               <Statistic
-                title={
-                  <Space>
-                    <FileAddOutlined /> Required Interventions
-                  </Space>
-                }
+                title={<Space><FileAddOutlined /> Required Interventions</Space>}
                 value={metrics.totalRequiredInterventions}
               />
             </Card>
@@ -255,15 +219,7 @@ const DiagnosticsDashboard = () => {
           background: 'transparent'
         }}
       >
-        <Card
-          hoverable
-          style={{
-            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-            transition: 'all 0.3s ease',
-            borderRadius: 8,
-            border: '1px solid #d6e4ff'
-          }}
-        >
+        <Card hoverable style={{ boxShadow: '0 12px 32px rgba(0,0,0,0.12)', transition: 'all 0.3s ease', borderRadius: 8, border: '1px solid #d6e4ff' }}>
           <Table
             dataSource={participants}
             columns={columns}
@@ -280,9 +236,7 @@ const DiagnosticsDashboard = () => {
         width={1000}
         footer={null}
       >
-        {selectedParticipant && (
-          <GrowthPlanPage participant={selectedParticipant} />
-        )}
+        {selectedParticipant && <GrowthPlanPage participant={selectedParticipant} />}
       </Modal>
     </div>
   )
