@@ -357,11 +357,11 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
 
       const confirmedAt = app?.confirmedAt || null
       const digitalSignature = app?.digitalSignature || null
+      const confirmedAtRaw = app?.confirmedAt || null
 
-      // Store these for use
       setApplicationData({
         ...app,
-        confirmedAt,
+        confirmedAt: confirmedAtRaw, // keep raw for persistence parity
         digitalSignature
       })
 
@@ -469,6 +469,27 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
   useEffect(() => {
     fetchData()
   }, [participant])
+
+  // Helper: normalize Firestore Timestamp | ISO string | Date -> Date | null
+  const normalizeFsDate = (v: any): Date | null => {
+    if (!v) return null
+    if (v instanceof Date) return isNaN(v.getTime()) ? null : v
+    if (typeof v === 'string') {
+      const d = new Date(v)
+      return isNaN(d.getTime()) ? null : d
+    }
+    // Firestore Timestamp (has toDate)
+    if (v && typeof v.toDate === 'function') {
+      const d = v.toDate()
+      return isNaN(d.getTime()) ? null : d
+    }
+    // Plain timestamp-like { seconds, nanoseconds }
+    if (v && typeof v.seconds === 'number') {
+      const d = new Date(v.seconds * 1000)
+      return isNaN(d.getTime()) ? null : d
+    }
+    return null
+  }
 
   const filteredInterventions = availableInterventions.filter(
     i =>
@@ -626,12 +647,18 @@ const GrowthPlanPage = ({ participant }: { participant: any }) => {
               )}
             </>
           )}
+
           <Divider>Confirmation Details</Divider>
-          <Text strong>Confirmed At:</Text>{' '}
-          {applicationData.confirmedAt?.toDate
-            ? dayjs(applicationData.confirmedAt.toDate()).format('YYYY-MM-DD')
-            : 'N/A'}
-          <br />
+          {(() => {
+            const d = normalizeFsDate(applicationData.confirmedAt)
+            return (
+              <>
+                <Text strong>Confirmed At:</Text>{' '}
+                {d ? dayjs(d).format('YYYY-MM-DD') : 'N/A'}
+                <br />
+              </>
+            )
+          })()}
         </>
       )}
       <Divider />
