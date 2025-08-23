@@ -7,7 +7,6 @@ import {
   Space,
   Typography,
   Button,
-  Spin,
   Modal,
   Table,
   Tag
@@ -25,6 +24,8 @@ import { motion } from 'framer-motion'
 
 const { Title } = Typography
 
+type AnyRecord = Record<string, any>
+
 const DiagnosticsDashboard = () => {
   const { user } = useFullIdentity()
   const [loading, setLoading] = useState(true)
@@ -35,7 +36,11 @@ const DiagnosticsDashboard = () => {
   })
   const [participants, setParticipants] = useState<any[]>([])
   const [selectedParticipant, setSelectedParticipant] = useState<any>(null)
-  const [applicationMap, setApplicationMap] = useState<any>({})
+  const [applicationMap, setApplicationMap] = useState<Record<string, AnyRecord>>({})
+
+  // Helper: did Operations confirm?
+  const isOpsConfirmed = (app?: AnyRecord) =>
+    !!app?.interventions?.confirmedBy?.operations
 
   useEffect(() => {
     const fetchAllData = async () => {
@@ -48,14 +53,15 @@ const DiagnosticsDashboard = () => {
             where('applicationStatus', 'in', ['accepted', 'Accepted'])
           )
         )
-        const apps = appSnap.docs.map(doc => doc.data())
-        const appMap: Record<string, any> = {}
+        const apps = appSnap.docs.map(d => d.data() as AnyRecord)
+
+        const appMap: Record<string, AnyRecord> = {}
         let requiredCount = 0
         let confirmedCount = 0
 
         apps.forEach(app => {
           appMap[app.email] = app
-          if (app.growthPlanConfirmed) confirmedCount++
+          if (isOpsConfirmed(app)) confirmedCount++
           if (Array.isArray(app.interventions?.required)) {
             requiredCount += app.interventions.required.length
           }
@@ -65,16 +71,20 @@ const DiagnosticsDashboard = () => {
         const allParticipants = partSnap.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        }))
+        } as AnyRecord))
+
+        // Keep only participants that have an accepted application
         const participantsWithApplications = Array.from(
           new Map(
-            allParticipants.filter(p => appMap[p.email]).map(p => [p.email, p])
+            allParticipants
+              .filter(p => appMap[p.email])
+              .map(p => [p.email, p])
           ).values()
         )
 
         setMetrics({
           totalParticipants: participantsWithApplications.length,
-          confirmedGrowthPlans: confirmedCount,
+          confirmedGrowthPlans: confirmedCount, // now based on Operations confirmation
           totalRequiredInterventions: requiredCount
         })
 
@@ -109,11 +119,12 @@ const DiagnosticsDashboard = () => {
     {
       title: 'Status',
       key: 'status',
-      render: (_, record) => {
-        const confirmed = applicationMap[record.email]?.growthPlanConfirmed
+      render: (_: any, record: any) => {
+        const app = applicationMap[record.email]
+        const confirmed = isOpsConfirmed(app)
         return (
           <Tag color={confirmed ? 'green' : 'orange'}>
-            {confirmed ? 'Confirmed' : 'Pending'}
+            {confirmed ? 'Confirmed (Ops)' : 'Pending (Ops)'}
           </Tag>
         )
       }
@@ -121,7 +132,7 @@ const DiagnosticsDashboard = () => {
     {
       title: 'Action',
       key: 'action',
-      render: (_, record) => (
+      render: (_: any, record: any) => (
         <Button onClick={() => setSelectedParticipant(record)}>View</Button>
       )
     }
@@ -134,11 +145,7 @@ const DiagnosticsDashboard = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: 0.1,
-              ease: 'easeOut'
-            }}
+            transition={{ duration: 0.4, delay: 0.1, ease: 'easeOut' }}
             whileHover={{
               y: -3,
               boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
@@ -171,11 +178,7 @@ const DiagnosticsDashboard = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: 0.1,
-              ease: 'easeOut'
-            }}
+            transition={{ duration: 0.4, delay: 0.1, ease: 'easeOut' }}
             whileHover={{
               y: -3,
               boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
@@ -196,8 +199,7 @@ const DiagnosticsDashboard = () => {
               <Statistic
                 title={
                   <Space>
-                    <CheckCircleOutlined style={{ color: '#52c41a' }} />{' '}
-                    Confirmed Plans
+                    <CheckCircleOutlined style={{ color: '#52c41a' }} /> Confirmed Plans (Ops)
                   </Space>
                 }
                 value={metrics.confirmedGrowthPlans}
@@ -210,11 +212,7 @@ const DiagnosticsDashboard = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.4,
-              delay: 0.1,
-              ease: 'easeOut'
-            }}
+            transition={{ duration: 0.4, delay: 0.1, ease: 'easeOut' }}
             whileHover={{
               y: -3,
               boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
@@ -248,11 +246,7 @@ const DiagnosticsDashboard = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{
-          duration: 0.4,
-          delay: 0.1,
-          ease: 'easeOut'
-        }}
+        transition={{ duration: 0.4, delay: 0.1, ease: 'easeOut' }}
         whileHover={{
           y: -3,
           boxShadow: '0 6px 16px 0 rgba(0,0,0,0.12)',
@@ -274,7 +268,7 @@ const DiagnosticsDashboard = () => {
             dataSource={participants}
             columns={columns}
             loading={loading}
-            rowKey='id'
+            rowKey="id"
             pagination={{ pageSize: 10 }}
           />
         </Card>
