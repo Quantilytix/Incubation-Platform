@@ -99,7 +99,7 @@ export const LoginPage: React.FC = () => {
     'government'
   ]
 
-  async function checkUser (user) {
+async function checkUser (user) {
     const userRef = doc(db, 'users', user.uid)
     const userSnap = await getDoc(userRef)
 
@@ -114,6 +114,48 @@ export const LoginPage: React.FC = () => {
     return {
       role: normalizeRole(data.role),
       firstLoginComplete: !!data.firstLoginComplete
+    }
+  }
+
+  // EXTRACTED DUPLICATED LOGIC INTO REUSABLE FUNCTION
+  const handleIncubateeRouting = async (userEmail, role) => {
+    try {
+      const appsSnap = await getDocs(
+        query(
+          collection(db, 'applications'),
+          where('email', '==', userEmail)
+        )
+      )
+      const apps = appsSnap.docs.map(doc => doc.data())
+
+      if (apps.length === 0) {
+        navigate('/incubatee/sme')
+        return
+      }
+      
+      const pending = apps.find(
+        app =>
+          app.applicationStatus?.toLowerCase?.() === 'pending' ||
+          !app.applicationStatus
+      )
+      const accepted = apps.find(
+        app => app.applicationStatus?.toLowerCase?.() === 'accepted'
+      )
+
+      if (pending) {
+        navigate('/incubatee/tracker')
+        return
+      }
+      if (accepted) {
+        navigate(`/${role}`)
+        return
+      }
+      navigate('/incubatee/sme')
+    } catch (error) {
+      console.error('Error fetching applications:', error)
+      message.error('Failed to check application status. Please try again.')
+      // Fallback to role-based routing if application check fails
+      navigate(`/${role}`)
     }
   }
 
@@ -136,38 +178,10 @@ export const LoginPage: React.FC = () => {
       const { role, firstLoginComplete } = result
 
       if (role === 'incubatee') {
-        const appsSnap = await getDocs(
-          query(
-            collection(db, 'applications'),
-            where('email', '==', user.email)
-          )
-        )
-        const apps = appsSnap.docs.map(doc => doc.data())
-
-        if (apps.length === 0) {
-          navigate('/incubatee/sme')
-          return
-        }
-        const pending = apps.find(
-          app =>
-            app.applicationStatus?.toLowerCase?.() === 'pending' ||
-            !app.applicationStatus
-        )
-        const accepted = apps.find(
-          app => app.applicationStatus?.toLowerCase?.() === 'accepted'
-        )
-
-        if (pending) {
-          navigate('/incubatee/tracker')
-          return
-        }
-        if (accepted) {
-          navigate(`/${role}`)
-          return
-        }
-        navigate('/incubatee/sme')
+        await handleIncubateeRouting(user.email, role)
         return
       }
+      
       if (role === 'director' && !firstLoginComplete) {
         navigate('/director/onboarding')
       } else {
@@ -203,36 +217,7 @@ export const LoginPage: React.FC = () => {
       setRedirecting(true)
 
       if (role === 'incubatee') {
-        const appsSnap = await getDocs(
-          query(
-            collection(db, 'applications'),
-            where('email', '==', user.email)
-          )
-        )
-        const apps = appsSnap.docs.map(doc => doc.data())
-
-        if (apps.length === 0) {
-          navigate('/incubatee/sme')
-          return
-        }
-        const pending = apps.find(
-          app =>
-            app.applicationStatus?.toLowerCase?.() === 'pending' ||
-            !app.applicationStatus
-        )
-        const accepted = apps.find(
-          app => app.applicationStatus?.toLowerCase?.() === 'accepted'
-        )
-
-        if (pending) {
-          navigate('/incubatee/tracker')
-          return
-        }
-        if (accepted) {
-          navigate(`/${role}`)
-          return
-        }
-        navigate('/incubatee/sme')
+        await handleIncubateeRouting(user.email, role)
         return
       }
 
@@ -246,6 +231,7 @@ export const LoginPage: React.FC = () => {
       message.error(formatFirebaseError(error))
     } finally {
       setGoogleLoading(false)
+      setRedirecting(false) // Ensure redirecting state is reset
     }
   }
 
