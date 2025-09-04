@@ -137,6 +137,8 @@ import AppointmentsManager from './routes/consultants/appointments'
 import AllocatedHistory from './routes/consultants/allocated/history'
 import { TasksManager } from './routes/operations/tasks'
 import DiagnosticsDashboard from './routes/operations/diagnostics'
+import ConsultantPerformance from './routes/operations/consultants/perfomance'
+import IncubateePerformancePage from './routes/operations/participants/[id]/perfomance'
 
 const queryClient = new QueryClient()
 
@@ -305,8 +307,16 @@ const App = () => {
                           path='participants'
                           element={<OperationsParticipantsManagement />}
                         />
+                        <Route
+                          path='/operations/participants/:participantId/performance'
+                          element={<IncubateePerformancePage />}
+                        />
                         <Route path='consultants'>
                           <Route index element={<ConsultantPage />} />
+                          <Route
+                            path=':id/performance'
+                            element={<ConsultantPerformance />}
+                          />
                         </Route>
                         <Route
                           path='resources'
