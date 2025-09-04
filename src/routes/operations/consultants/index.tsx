@@ -15,18 +15,19 @@ import {
   Input,
   Select,
   message,
-  Skeleton
+  Skeleton,
+  Grid,
+  List,
+  Avatar,
+  Empty
 } from 'antd'
 import { db } from '@/firebase'
 import {
   collection,
   getDocs,
-  addDoc,
   doc,
-  deleteDoc,
   updateDoc,
   query,
-  setDoc,
   where
 } from 'firebase/firestore'
 import {
@@ -40,14 +41,17 @@ import {
 } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import { CSVLink } from 'react-csv'
-import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '@/firebase'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '@/firebase' // Make sure you export your `functions` from your Firebase config
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { compareObjs } from '@fullcalendar/core/internal'
+import SHA256 from 'crypto-js/sha256'
+import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
+import { MotionCard } from '@/components/shared/Header'
 
-const { Title } = Typography
+const { Title, Text } = Typography
 const { Option } = Select
 
 interface Consultant {
@@ -56,8 +60,9 @@ interface Consultant {
   email: string
   expertise: string[]
   assignmentsCount: number
-  rating: number
-  active: boolean
+  rate: number
+  rating?: number
+  active?: boolean
 }
 
 const defaultExpertise = [
@@ -73,6 +78,7 @@ const defaultExpertise = [
 export const ConsultantPage: React.FC = () => {
   const [consultants, setConsultants] = useState<Consultant[]>([])
   const [loading, setLoading] = useState(true)
+  const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState(false)
   const [addModalVisible, setAddModalVisible] = useState(false)
   const [editModalVisible, setEditModalVisible] = useState(false)
@@ -83,20 +89,21 @@ export const ConsultantPage: React.FC = () => {
   )
   const [newConsultantId, setNewConsultantId] = useState<string | null>(null)
   const [searchText, setSearchText] = useState('')
-  const { user, loading: identityLoading } = useFullIdentity()
+  const { user } = useFullIdentity()
   const [companyCode, setCompanyCode] = useState<string>('')
-  const [addLoading, setAddLoading] = useState(false)
+  const navigate = useNavigate()
+  // 2) INSIDE ConsultantPage component (near other hooks)
+  const screens = Grid.useBreakpoint()
+  const isMobile = !screens.md
 
   useEffect(() => {
-    if (!identityLoading) {
-      if (user?.companyCode) {
-        setCompanyCode(user.companyCode)
-        fetchConsultants(user.companyCode)
-      } else {
-        setLoading(false) // stop the spinner
-      }
+    if (user?.companyCode) {
+      setCompanyCode(user.companyCode)
+    } else if (user === null) {
+      // explicitly no logged-in user
+      setLoading(false)
     }
-  }, [identityLoading, user?.companyCode])
+  }, [user])
 
   useEffect(() => {
     if (newConsultantId) {
@@ -107,80 +114,110 @@ export const ConsultantPage: React.FC = () => {
     }
   }, [newConsultantId])
 
-  const fetchConsultants = async (companyCode: string, userDep?: any) => {
+  const fetchConsultants = async (companyCode: string) => {
     setLoading(true)
     try {
-      let q
-      q = query(
+      const q = query(
         collection(db, 'consultants'),
         where('companyCode', '==', companyCode)
       )
-
       const snapshot = await getDocs(q)
-      setConsultants(
-        snapshot.docs.map(docSnap => ({
-          id: docSnap.id,
-          ...docSnap.data()
-        }))
+
+      const consultantsData: Consultant[] = await Promise.all(
+        snapshot.docs.map(async docSnap => {
+          const data = docSnap.data() as any
+          const c: Consultant = {
+            id: docSnap.id,
+            name: String(data?.name ?? ''),
+            email: String(data?.email ?? ''),
+            rate: Number(data?.rate ?? 0),
+            expertise: Array.isArray(data?.expertise) ? data.expertise : [],
+            assignmentsCount: 0,
+            rating: data?.rating != null ? Number(data.rating) : undefined,
+            active: data?.active != null ? Boolean(data.active) : true
+          }
+
+          const assignmentsSnap = await getDocs(
+            query(
+              collection(db, 'assignedInterventions'),
+              where('consultantId', '==', c.id)
+            )
+          )
+          c.assignmentsCount = assignmentsSnap.size
+          return c
+        })
       )
-    } catch (error) {
-      console.error('Error fetching consultants:', error)
+
+      setConsultants(consultantsData)
+    } catch (e) {
+      console.error('Error fetching consultants:', e)
+      message.error('Failed to load consultants.')
     } finally {
       setLoading(false)
     }
   }
 
+  // Fetch consultants and set userDepartment
   useEffect(() => {
-    if (!identityLoading && user?.companyCode) {
-      setCompanyCode(user.companyCode)
+    if (companyCode) {
+      fetchConsultants(companyCode)
     }
-  }, [identityLoading, user?.companyCode])
+  }, [companyCode])
+
+  const generateConsultantSignature = (uid: string, email: string): string => {
+    const timestamp = new Date().toISOString()
+    return SHA256(`${uid}:${email}:${timestamp}`).toString()
+  }
 
   const handleAddConsultant = async (values: any) => {
-    setAddLoading(true) // 🔥 START LOADING
+    setAdding(true)
     try {
-      const { email, name, expertise, rate } = values
-
-      const userCred = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        'Password@1'
-      )
-      const uid = userCred.user.uid
-
-      const newConsultant = {
-        name,
-        email,
-        expertise,
-        rate,
-        assignmentsCount: 0,
-        rating: 0,
-        active: true,
-        authUid: uid,
-        companyCode,
-        createdAt: new Date().toISOString()
+      const idToken = await auth.currentUser?.getIdToken()
+      if (!idToken) {
+        message.error('Not authenticated')
+        return
       }
-      await addDoc(collection(db, 'consultants'), newConsultant)
-      setNewConsultantId(uid) // after adding
 
-      const newUser = {
-        name,
-        email,
-        companyCode,
+      const payload = {
+        email: values.email,
+        name: values.name,
         role: 'consultant',
-        createdAt: new Date().toISOString()
+        companyCode,
+        // consultant extras
+        expertise: values.expertise || [],
+        rate: Number(values.rate),
+        // options
+        sendEmail: true,
+        sendResetLink: true,
+        allowExisting: false
       }
-      await setDoc(doc(db, 'users', uid), newUser)
 
-      message.success('Consultant registered and notified!')
+      const resp = await fetch(
+        `https://us-central1-lph-smart-inc.cloudfunctions.net/createPlatformUser`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`
+          },
+          body: JSON.stringify(payload)
+        }
+      )
+
+      const data = await resp.json()
+      if (!resp.ok || !data.ok) {
+        throw new Error(data?.error || 'create_failed')
+      }
+
+      message.success('Consultant created. Password reset email sent.')
       form.resetFields()
       setAddModalVisible(false)
-      fetchConsultants(companyCode)
+      fetchConsultants(companyCode) // refresh list
     } catch (error: any) {
       console.error(error)
       message.error(error?.message || 'Failed to register consultant.')
     } finally {
-      setAddLoading(false) // 🔥 STOP LOADING
+      setAdding(false)
     }
   }
 
@@ -188,12 +225,14 @@ export const ConsultantPage: React.FC = () => {
     if (!editingConsultant) return
     setEditing(true)
     try {
+      // Spread the values
       const updated = {
         ...values
       }
       await updateDoc(doc(db, 'consultants', editingConsultant.id), updated)
       setEditModalVisible(false)
       setEditingConsultant(null)
+      message.success('Consultant details successfully updated ')
       editForm.resetFields()
       fetchConsultants(companyCode)
     } catch (error) {
@@ -222,7 +261,7 @@ export const ConsultantPage: React.FC = () => {
           const deleteUser = httpsCallable(functions, 'deleteUserAndFirestore')
           await deleteUser({ email: consultant.email, role: 'consultant' })
           message.success('Consultant deleted successfully.')
-          fetchConsultants(companyCode, userDepartment)
+          fetchConsultants(companyCode)
         } catch (error: any) {
           console.error('Error deleting consultant:', error)
           message.error(
@@ -248,19 +287,20 @@ export const ConsultantPage: React.FC = () => {
     }
   }
 
-  const filteredConsultants = consultants.filter(
-    c =>
-      c.name.toLowerCase().includes(searchText.toLowerCase()) ||
-      c.email.toLowerCase().includes(searchText.toLowerCase())
-  )
+  const filteredConsultants = consultants.filter(c => {
+    const name = (c.name ?? '').toLowerCase()
+    const email = (c.email ?? '').toLowerCase()
+    const matchesSearch =
+      name.includes(searchText.toLowerCase()) ||
+      email.includes(searchText.toLowerCase())
+    return matchesSearch
+  })
 
   const activeCount = consultants.filter(c => c.active).length
   const totalConsultants = consultants.length
   const averageRating = totalConsultants
-    ? (
-        consultants.reduce((sum, c) => sum + (c.rating || 0), 0) /
-        totalConsultants
-      ).toFixed(1)
+    ? consultants.reduce((sum, c) => sum + (c.rating ?? 0), 0) /
+      totalConsultants
     : 0
 
   const columns = [
@@ -282,7 +322,6 @@ export const ConsultantPage: React.FC = () => {
       key: 'rate',
       render: val => `R ${val}`
     },
-
     {
       title: 'Expertise',
       dataIndex: 'expertise',
@@ -308,7 +347,8 @@ export const ConsultantPage: React.FC = () => {
       title: 'Rating',
       dataIndex: 'rating',
       key: 'rating',
-      sorter: (a: Consultant, b: Consultant) => a.rating - b.rating
+      sorter: (a: Consultant, b: Consultant) =>
+        (a.rating ?? 0) - (b.rating ?? 0)
     },
     {
       title: 'Status',
@@ -327,6 +367,17 @@ export const ConsultantPage: React.FC = () => {
       key: 'actions',
       render: (_: any, record: Consultant) => (
         <Space>
+          <Button
+            size='small'
+            onClick={() =>
+              navigate(`/operations/consultants/${record.id}/performance`, {
+                state: { consultantName: record.name }
+              })
+            }
+          >
+            View Performance
+          </Button>
+
           <Button
             size='small'
             icon={<EditOutlined />}
@@ -353,196 +404,298 @@ export const ConsultantPage: React.FC = () => {
   return (
     <div
       style={{
-        padding: 24,
-        minHeight: '100vh',
-        overflow: 'auto',
-        background: '#fff'
+        padding: 8,
+        minHeight: '100vh'
       }}
     >
       <Helmet>
         <title>Consultants | Smart Incubation</title>
       </Helmet>
-
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 12 }}>
         <Col xs={24} sm={8}>
-          <Card
-            loading={loading}
-            hoverable
-            style={{
-              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
-              transition: 'all 0.3s ease',
-              borderRadius: 8
-            }}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
           >
-            <Statistic
-              title={
-                <Space>
-                  <div
-                    style={{
-                      background: '#e6f7ff',
-                      padding: 8,
-                      borderRadius: '50%',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <UserOutlined style={{ fontSize: 18, color: '#1890ff' }} />
-                  </div>
-                  <span>Total Consultants</span>
-                </Space>
-              }
-              value={totalConsultants}
-            />
-          </Card>
+            <MotionCard>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  marginBottom: 12
+                }}
+              >
+                <div
+                  style={{
+                    background: '#e6f7ff',
+                    padding: 10,
+                    borderRadius: '50%',
+                    marginRight: 16
+                  }}
+                >
+                  <UserOutlined style={{ fontSize: 20, color: '#1890ff' }} />
+                </div>
+                <Text strong>Total Consultants</Text>
+              </div>
+              <Title level={3} style={{ margin: 0 }}>
+                {totalConsultants}
+              </Title>
+            </MotionCard>
+          </motion.div>
         </Col>
 
         <Col xs={24} sm={8}>
-          <Card
-            loading={loading}
-            hoverable
-            style={{
-              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
-              transition: 'all 0.3s ease',
-              borderRadius: 8
-            }}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
           >
-            <Statistic
-              title={
-                <Space>
-                  <div
-                    style={{
-                      background: '#f6ffed',
-                      padding: 8,
-                      borderRadius: '50%',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <CheckCircleOutlined
-                      style={{ fontSize: 18, color: '#52c41a' }}
-                    />
-                  </div>
-                  <span>Active Consultants</span>
-                </Space>
-              }
-              value={activeCount}
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
+            <MotionCard>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  marginBottom: 12
+                }}
+              >
+                <div
+                  style={{
+                    background: '#f6ffed',
+                    padding: 10,
+                    borderRadius: '50%',
+                    marginRight: 16
+                  }}
+                >
+                  <CheckCircleOutlined
+                    style={{ fontSize: 20, color: '#52c41a' }}
+                  />
+                </div>
+                <Text strong>Active Consultants</Text>
+              </div>
+              <Title level={3} style={{ margin: 0, color: '#52c41a' }}>
+                {activeCount}
+              </Title>
+            </MotionCard>
+          </motion.div>
         </Col>
 
         <Col xs={24} sm={8}>
-          <Card
-            loading={loading}
-            hoverable
-            style={{
-              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
-              transition: 'all 0.3s ease',
-              borderRadius: 8
-            }}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
           >
-            <Statistic
-              title={
-                <Space>
-                  <div
-                    style={{
-                      background: '#fffbe6',
-                      padding: 8,
-                      borderRadius: '50%',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <StarOutlined style={{ fontSize: 18, color: '#faad14' }} />
-                  </div>
-                  <span>Average Rating</span>
-                </Space>
-              }
-              valueRender={() => (
-                <Rate
-                  disabled
-                  allowHalf
-                  value={parseFloat(averageRating.toString())}
-                />
-              )}
-            />
-          </Card>
+            <MotionCard>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  marginBottom: 12
+                }}
+              >
+                <div
+                  style={{
+                    background: '#fffbe6',
+                    padding: 10,
+                    borderRadius: '50%',
+                    marginRight: 16
+                  }}
+                >
+                  <StarOutlined style={{ fontSize: 20, color: '#faad14' }} />
+                </div>
+                <Text strong>Average Rating</Text>
+              </div>
+              <Rate
+                disabled
+                allowHalf
+                value={parseFloat(averageRating.toString())}
+                style={{ fontSize: 24 }}
+              />
+            </MotionCard>
+          </motion.div>
         </Col>
       </Row>
-      <Card
-        hoverable
-        style={{
-          boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
-          transition: 'all 0.3s ease',
-          borderRadius: 8,
-          marginBottom: 10
-        }}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
       >
-        <Col style={{ marginBottom: 10 }}>
-          <Space>
-            <Input.Search
-              placeholder='Search by name or email'
-              onSearch={value => setSearchText(value)}
-              allowClear
-              style={{ width: 250 }}
-            />
-            <Button
-              type='primary'
-              icon={<PlusOutlined />}
-              onClick={() => setAddModalVisible(true)}
-            >
-              Add Consultant
-            </Button>
-            <Button icon={<DownloadOutlined />} type='default'>
-              <CSVLink
-                filename='consultants.csv'
-                data={consultants}
-                style={{ color: 'inherit' }}
+        <MotionCard>
+          <Col style={{ marginBottom: 10 }}>
+            <Space>
+              <Input.Search
+                placeholder='Search by name or email'
+                onSearch={value => setSearchText(value)}
+                allowClear
+                style={{ width: 250 }}
+              />
+              <Button
+                type='primary'
+                icon={<PlusOutlined />}
+                onClick={() => setAddModalVisible(true)}
               >
-                Export
-              </CSVLink>
-            </Button>
-          </Space>
-        </Col>
-      </Card>
+                Add Consultant
+              </Button>
+              <Button icon={<DownloadOutlined />} type='default'>
+                <CSVLink
+                  filename='consultants.csv'
+                  data={consultants}
+                  style={{ color: 'inherit' }}
+                >
+                  Export
+                </CSVLink>
+              </Button>
+            </Space>
+          </Col>
+        </MotionCard>
+      </motion.div>
 
-      <Card
-        hoverable
-        style={{
-          boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
-          transition: 'all 0.3s ease',
-          borderRadius: 8
-        }}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
       >
-        <Skeleton active loading={loading}>
-          <Table
-            columns={columns}
-            dataSource={filteredConsultants}
-            rowKey='id'
-            pagination={{ pageSize: 8 }}
-            rowClassName={record =>
-              record.id === newConsultantId ? 'highlighted-row' : ''
-            }
-          />
-        </Skeleton>
-      </Card>
-
+        <MotionCard style={{ marginTop: 15 }}>
+          {!loading && filteredConsultants.length === 0 ? (
+            <Empty description='No consultants found' />
+          ) : (
+            <Skeleton active loading={loading}>
+              {isMobile ? (
+                <List
+                  dataSource={filteredConsultants}
+                  rowKey='id'
+                  pagination={{ pageSize: 8 }}
+                  renderItem={(c: Consultant) => (
+                    <List.Item
+                      key={c.id}
+                      actions={[
+                        <Button
+                          key='perf'
+                          size='small'
+                          onClick={() =>
+                            navigate(
+                              `/operations/consultants/${c.id}/performance`,
+                              {
+                                state: { consultantName: c.name }
+                              }
+                            )
+                          }
+                        >
+                          View Performance
+                        </Button>,
+                        <Button
+                          key='edit'
+                          size='small'
+                          icon={<EditOutlined />}
+                          onClick={() => {
+                            setEditingConsultant(c)
+                            editForm.setFieldsValue(c)
+                            setEditModalVisible(true)
+                          }}
+                        />,
+                        <Button
+                          key='del'
+                          size='small'
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() => handleDeleteConsultant(c.id)}
+                        />,
+                        <Button
+                          key='toggle'
+                          size='small'
+                          onClick={() => handleActivateToggle(c)}
+                        >
+                          {c.active ? 'Deactivate' : 'Activate'}
+                        </Button>
+                      ]}
+                    >
+                      <List.Item.Meta
+                        avatar={
+                          <Avatar style={{ backgroundColor: '#1677ff' }}>
+                            {(c.name || 'C').charAt(0).toUpperCase()}
+                          </Avatar>
+                        }
+                        title={
+                          <Space size={8} wrap>
+                            <Text strong style={{ fontSize: 16 }}>
+                              {c.name}
+                            </Text>
+                            <Tag color={c.active ? 'green' : 'red'}>
+                              {c.active ? 'Active' : 'Inactive'}
+                            </Tag>
+                            <Tag
+                              color={c.type === 'Internal' ? 'blue' : 'purple'}
+                            >
+                              {c.type}
+                            </Tag>
+                          </Space>
+                        }
+                        description={
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ marginBottom: 6 }}>
+                              <Text type='secondary'>{c.email}</Text>
+                            </div>
+                            <Space
+                              wrap
+                              size={[6, 6]}
+                              style={{ marginBottom: 6 }}
+                            >
+                              {(c.expertise || []).map((e, i) => (
+                                <Tag key={i} color='blue'>
+                                  {e}
+                                </Tag>
+                              ))}
+                            </Space>
+                            <Space size='middle' wrap>
+                              <Text>
+                                Rate/hr:{' '}
+                                <Text strong>R {Number(c.rate ?? 0)}</Text>
+                              </Text>
+                              <Text>
+                                Assignments:{' '}
+                                <Text strong>{c.assignmentsCount ?? 0}</Text>
+                              </Text>
+                              <Space>
+                                <Text>Rating:</Text>
+                                <Rate
+                                  disabled
+                                  allowHalf
+                                  value={Number(c.rating ?? 0)}
+                                />
+                              </Space>
+                            </Space>
+                          </div>
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              ) : (
+                <Table
+                  columns={columns}
+                  dataSource={filteredConsultants}
+                  rowKey='id'
+                  pagination={{ pageSize: 8 }}
+                  rowClassName={record =>
+                    record.id === newConsultantId ? 'highlighted-row' : ''
+                  }
+                />
+              )}
+            </Skeleton>
+          )}
+        </MotionCard>
+      </motion.div>
       {/* Add Consultant Modal */}
       <Modal
         title='Add New Consultant'
         open={addModalVisible}
-        onCancel={() => {
-          form.resetFields()
-          setAddModalVisible(false)
-        }}
+        onCancel={() => setAddModalVisible(false)}
         onOk={() => form.submit()}
         okText='Add Consultant'
-        confirmLoading={addLoading} // 🔥 HERE
         centered
-        bodyStyle={{ maxHeight: '70vh', overflowY: 'auto' }}
+        confirmLoading={adding}
+        bodyStyle={{ maxHeight: '70vh', overflowY: 'auto' }} // 👉 limit height nicely
       >
         <Form form={form} layout='vertical' onFinish={handleAddConsultant}>
           <Form.Item
@@ -571,15 +724,12 @@ export const ConsultantPage: React.FC = () => {
           >
             <Select
               mode='tags'
-              style={{ width: '100%' }}
               placeholder='Add expertise areas'
-            >
-              {defaultExpertise.map(area => (
-                <Option key={area} value={area}>
-                  {area}
-                </Option>
-              ))}
-            </Select>
+              options={defaultExpertise.map(area => ({
+                value: area,
+                label: area
+              }))}
+            />
           </Form.Item>
           <Form.Item
             name='rate'
@@ -588,9 +738,20 @@ export const ConsultantPage: React.FC = () => {
           >
             <Input type='number' min={0} />
           </Form.Item>
+          <Form.Item
+            name='type'
+            label='Consultant Type'
+            rules={[
+              { required: true, message: 'Please select consultant type' }
+            ]}
+          >
+            <Select placeholder='Select type'>
+              <Option value='Internal'>Internal</Option>
+              <Option value='External'>External</Option>
+            </Select>
+          </Form.Item>
         </Form>
       </Modal>
-
       {/* Edit Consultant Modal */}
       <Modal
         title='Edit Consultant'
@@ -619,6 +780,7 @@ export const ConsultantPage: React.FC = () => {
           >
             <Input />
           </Form.Item>
+
           <Form.Item
             name='expertise'
             label='Expertise Areas'
@@ -648,9 +810,20 @@ export const ConsultantPage: React.FC = () => {
           >
             <Input type='number' min={0} />
           </Form.Item>
+          <Form.Item
+            name='type'
+            label='Consultant Type'
+            rules={[
+              { required: true, message: 'Please select consultant type' }
+            ]}
+          >
+            <Select placeholder='Select type'>
+              <Option value='Internal'>Internal</Option>
+              <Option value='External'>External</Option>
+            </Select>
+          </Form.Item>
         </Form>
       </Modal>
-
       <style>{`
         .highlighted-row {
           background-color: #fff7e6 !important;
