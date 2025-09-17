@@ -193,16 +193,17 @@ export const ConsultantPage: React.FC = () => {
       }
 
       const resp = await fetch(
-        `https://us-central1-lph-smart-inc.cloudfunctions.net/createPlatformUser`,
+        'https://createplatformuser-zv4wtb2ujq-uc.a.run.app',
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${idToken}`
+            Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         }
-      )
+      );
+
 
       const data = await resp.json()
       if (!resp.ok || !data.ok) {
