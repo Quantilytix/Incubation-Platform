@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Card,
   Typography,
@@ -48,6 +48,7 @@ import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { MotionCard } from '@/components/shared/Header'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
+import InterventionSuggestions from '@/components/interventions/InterventionsSuggestions'
 
 const { Title, Text, Paragraph } = Typography
 const { TabPane } = Tabs
@@ -60,6 +61,9 @@ interface Assignment {
   beneficiaryName: string
   interventionId: string
   interventionTitle: string
+  subtitle?: string | null
+  implementationDate?: Timestamp | null
+  isRecurring?: boolean
   type: InterventionType
   consultantId: string
   consultantName: string
@@ -115,6 +119,8 @@ type AnalyticsFilters = {
 export const ConsultantAssignments: React.FC = () => {
   const { user } = useFullIdentity()
 
+  const [isRecurringSelected, setIsRecurringSelected] = useState(false)
+
   const [participants, setParticipants] = useState<Participant[]>([])
   const [consultants, setConsultants] = useState<
     { id: string; name: string }[]
@@ -165,6 +171,19 @@ export const ConsultantAssignments: React.FC = () => {
     dueWithinDays: null,
     progressRange: [0, 100]
   })
+
+  const coordinatorsForSuggest = useMemo(
+    () =>
+      consultants.map(c => ({
+        id: c.id,
+        name: c.name,
+        departmentName:
+          (c as any).departmentName || (c as any).department || undefined,
+        rating: (c as any).rating ?? undefined,
+        expertise: (c as any).expertise ?? []
+      })),
+    [consultants]
+  )
 
   // ---------- data load ----------
   const fetchAssignments = async () => {
@@ -244,7 +263,6 @@ export const ConsultantAssignments: React.FC = () => {
             email: pdata.email || app.email || '—'
           }
         })
-        console.log(fetchedParticipants)
 
         const pim: Record<string, string[]> = {}
         fetchedParticipants.forEach(p => {
@@ -314,6 +332,70 @@ export const ConsultantAssignments: React.FC = () => {
   const openReview = (row: SuggestionRow) => {
     setReviewRow(row)
     setReviewOpen(true)
+  }
+
+  // all IDs for quick "select all"
+  const allParticipantIds = useMemo(
+    () => participants.map(p => p.id),
+    [participants]
+  )
+
+  const computeSharedInterventions = (ids: string[]) => {
+    const selectedList = participants.filter(p => ids.includes(p.id))
+    if (!selectedList.length) {
+      setSharedInterventions([])
+      return
+    }
+    const sets = selectedList.map(
+      p => new Set((p.requiredInterventions || []).map(i => i.id))
+    )
+    const sharedIds = sets.reduce(
+      (acc, set) => new Set([...acc].filter(id => set.has(id))),
+      sets[0]
+    )
+    const intersection = [...sharedIds]
+      .map(id => {
+        const ex = selectedList.find(p =>
+          (p.requiredInterventions || []).some(i => i.id === id)
+        )
+        return ex?.requiredInterventions.find(i => i.id === id)
+      })
+      .filter(Boolean) as any[]
+    setSharedInterventions(intersection)
+  }
+
+  const selectAllGrouped = () => {
+    assignmentForm.setFieldsValue({ participants: allParticipantIds })
+    computeSharedInterventions(allParticipantIds)
+  }
+
+  const clearAllGrouped = () => {
+    assignmentForm.setFieldsValue({ participants: [] })
+    setSharedInterventions([])
+  }
+
+  // cache to avoid re-fetching
+  const interventionMetaCacheRef = useRef<
+    Map<string, { isRecurring?: boolean; frequency?: string }>
+  >(new Map())
+
+  async function getInterventionMeta (interventionId: string) {
+    if (!interventionId) return { isRecurring: false }
+    const cache = interventionMetaCacheRef.current
+    if (cache.has(interventionId)) return cache.get(interventionId)!
+    try {
+      const ref = doc(collection(db, 'interventions'), interventionId)
+      const snap = await getDoc(ref)
+      const data = (snap.exists() ? snap.data() : {}) as any
+      const meta = {
+        isRecurring: !!data?.isRecurring,
+        frequency: data?.frequency || undefined
+      }
+      cache.set(interventionId, meta)
+      return meta
+    } catch {
+      return { isRecurring: false }
+    }
   }
 
   // keep modal and table in sync when you edit inside the modal
@@ -1134,31 +1216,22 @@ export const ConsultantAssignments: React.FC = () => {
 
         {/* SUGGESTIONS */}
         <TabPane tab='Suggestions' key='suggestions'>
-          <Card
-            title='Suggested Interventions (auto-grouped & scheduled)'
-            bordered
-            extra={
-              <Space>
-                <Button onClick={() => setRows(suggestedRows)}>Reset</Button>
-                <Button type='primary' onClick={() => approveRows(rows)}>
-                  Approve All
-                </Button>
-              </Space>
+          <InterventionSuggestions
+            user={user}
+            participants={participants}
+            coordinators={coordinatorsForSuggest}
+            departments={
+              user?.departmentName
+                ? [
+                    {
+                      id: user.departmentId || 'dept',
+                      name: user.departmentName,
+                      isMain: (user as any).isMainDepartment || false
+                    }
+                  ]
+                : []
             }
-          >
-            <Text type='secondary'>
-              • Groups (≥2 needing same intervention) default to next Tuesday.
-              Singles default to the earliest non-Tuesday weekday. Edit
-              date/consultant per row before approving.
-            </Text>
-            <div style={{ height: 8 }} />
-            <Table<SuggestionRow>
-              rowKey='key'
-              columns={suggestionColumns as any}
-              dataSource={rows}
-              pagination={{ pageSize: 8 }}
-            />
-          </Card>
+          />
         </TabPane>
 
         {/* ANALYTICS */}
@@ -1495,6 +1568,10 @@ export const ConsultantAssignments: React.FC = () => {
                 return
               }
 
+              // resolve interventionId & meta
+              let interventionId: string = values.intervention
+              const meta = await getInterventionMeta(interventionId)
+
               const selectedParticipants = selectedIds
                 .map((pid: string) => participants.find(p => p.id === pid))
                 .filter(Boolean) as Participant[]
@@ -1503,7 +1580,6 @@ export const ConsultantAssignments: React.FC = () => {
                 return
               }
 
-              let interventionId: string = values.intervention
               if (isGrouped && !interventionId) {
                 message.error('Select a shared intervention')
                 return
@@ -1511,7 +1587,7 @@ export const ConsultantAssignments: React.FC = () => {
               if (!isGrouped) {
                 const p0 = selectedParticipants[0]
                 const found = (p0.requiredInterventions || []).find(
-                  i => i.id === values.intervention
+                  i => i.id === interventionId
                 )
                 if (!found) {
                   message.error(
@@ -1525,6 +1601,9 @@ export const ConsultantAssignments: React.FC = () => {
               const now = Timestamp.now()
               const dueTs = values.dueDate
                 ? Timestamp.fromDate(values.dueDate.toDate())
+                : null
+              const implTs = values.implementationDate
+                ? Timestamp.fromDate(values.implementationDate.toDate())
                 : null
 
               let groupId: string | null = null
@@ -1540,6 +1619,8 @@ export const ConsultantAssignments: React.FC = () => {
                   interventionId,
                   participantIds: selectedParticipants.map(p => p.id),
                   dueDate: dueTs,
+                  implementationDate: implTs, // 👈 save implementationDate to group record too
+                  isRecurring: !!meta.isRecurring, // 👈 optional but useful
                   createdAt: now,
                   updatedAt: now
                 })
@@ -1561,9 +1642,12 @@ export const ConsultantAssignments: React.FC = () => {
                   consultantName: consultant.name,
                   interventionId: intv.id,
                   interventionTitle: intv.title,
+                  subtitle: meta.isRecurring ? values.subtitle || null : null, // 👈 NEW
+                  isRecurring: !!meta.isRecurring, // 👈 optional
                   targetType: values.targetType,
                   targetValue: values.targetValue ?? null,
                   targetMetric: values.targetMetric ?? null,
+                  implementationDate: implTs, // 👈 NEW
                   dueDate: dueTs,
                   status: 'assigned',
                   consultantStatus: 'pending',
@@ -1578,8 +1662,14 @@ export const ConsultantAssignments: React.FC = () => {
               await batch.commit()
               message.success(
                 isGrouped
-                  ? `Assigned shared intervention to ${selectedParticipants.length} participant(s)`
-                  : 'Intervention assigned'
+                  ? `Assigned${
+                      meta.isRecurring ? ' (recurring)' : ''
+                    } intervention to ${
+                      selectedParticipants.length
+                    } participant(s)`
+                  : `Intervention assigned${
+                      meta.isRecurring ? ' (recurring)' : ''
+                    }`
               )
 
               setAssignmentModalVisible(false)
@@ -1592,34 +1682,38 @@ export const ConsultantAssignments: React.FC = () => {
               message.error('Failed to create assignment(s)')
             }
           }}
-          onValuesChange={changedValues => {
-            if (changedValues.type) setSelectedType(changedValues.type)
-            if (changedValues.participants && selectedType === 'grouped') {
-              const selectedIds: string[] = changedValues.participants
-              const selectedList = participants.filter(p =>
-                selectedIds.includes(p.id)
-              )
-              const sets = selectedList.map(
-                p => new Set((p.requiredInterventions || []).map(i => i.id))
-              )
-              const sharedIds = sets.reduce(
-                (acc, set) => new Set([...acc].filter(id => set.has(id))),
-                sets[0] || new Set<string>()
-              )
-              const intersection = [...sharedIds]
-                .map(id => {
-                  const example = selectedList.find(p =>
-                    (p.requiredInterventions || []).some(i => i.id === id)
-                  )
-                  return example?.requiredInterventions.find(i => i.id === id)
-                })
-                .filter(Boolean)
-              setSharedInterventions(intersection as any[])
+          onValuesChange={async (changed, all) => {
+            if (changed.type) setSelectedType(changed.type)
+
+            if (
+              Array.isArray(changed.participants) &&
+              selectedType === 'grouped'
+            ) {
+              computeSharedInterventions(changed.participants)
             }
 
-            if (changedValues.targetType === 'percentage') {
+            if (changed.intervention) {
+              const meta = await getInterventionMeta(changed.intervention)
+              setIsRecurringSelected(!!meta.isRecurring)
+              if (meta.isRecurring) {
+                const impl = assignmentForm.getFieldValue(
+                  'implementationDate'
+                ) as Dayjs | undefined
+                assignmentForm.setFieldsValue({
+                  subtitle:
+                    assignmentForm.getFieldValue('subtitle') ||
+                    (impl
+                      ? `Session - ${impl.format('YYYY-MM-DD')}`
+                      : 'Session')
+                })
+              } else {
+                assignmentForm.setFieldsValue({ subtitle: undefined })
+              }
+            }
+
+            if (changed.targetType === 'percentage') {
               assignmentForm.setFieldsValue({ targetMetric: 'Completion' })
-            } else if (changedValues.targetType) {
+            } else if (changed.targetType) {
               assignmentForm.setFieldsValue({ targetMetric: undefined })
             }
           }}
@@ -1640,21 +1734,55 @@ export const ConsultantAssignments: React.FC = () => {
           </Form.Item>
 
           {selectedType === 'grouped' ? (
-            <Form.Item
-              name='participants'
-              label='Select Multiple Beneficiaries'
-              rules={[
-                { required: true, message: 'Please select participants' }
-              ]}
-            >
-              <Select mode='multiple' placeholder='Choose beneficiaries'>
-                {participants.map(p => (
-                  <Select.Option key={p.id} value={p.id}>
-                    {p.beneficiaryName}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
+            <>
+              <Form.Item label='Select Multiple Beneficiaries'>
+                <Space style={{ marginBottom: 8 }}>
+                  <Button
+                    size='small'
+                    onClick={() => {
+                      const allIds = participants.map(p => p.id)
+                      assignmentForm.setFieldsValue({ participants: allIds })
+                      computeSharedInterventions(allIds) // keep in sync
+                    }}
+                  >
+                    Select all ({participants.length})
+                  </Button>
+                  <Button
+                    size='small'
+                    onClick={() => {
+                      assignmentForm.setFieldsValue({ participants: [] })
+                      computeSharedInterventions([]) // or setSharedInterventions([])
+                    }}
+                  >
+                    Clear
+                  </Button>
+                </Space>
+
+                {/* 👇 bind the field here (single direct child for the named item) */}
+                <Form.Item
+                  name='participants'
+                  noStyle
+                  rules={[
+                    { required: true, message: 'Please select participants' }
+                  ]}
+                >
+                  <Select
+                    mode='multiple'
+                    placeholder='Choose beneficiaries'
+                    onChange={(ids: string[]) =>
+                      computeSharedInterventions(ids)
+                    }
+                    // value is injected by Form context; no need to pass it
+                  >
+                    {participants.map(p => (
+                      <Select.Option key={p.id} value={p.id}>
+                        {p.beneficiaryName}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Form.Item>
+            </>
           ) : (
             <Form.Item
               name='participant'
@@ -1728,6 +1856,22 @@ export const ConsultantAssignments: React.FC = () => {
             }}
           </Form.Item>
 
+          {/* after your Intervention select */}
+          {isRecurringSelected && (
+            <Form.Item
+              name='subtitle'
+              label='Subtitle (for recurring sessions)'
+              rules={[
+                {
+                  required: true,
+                  message: 'Please add a subtitle to distinguish this session'
+                }
+              ]}
+            >
+              <Input placeholder='e.g., Week 1 — Intro to Bookkeeping' />
+            </Form.Item>
+          )}
+
           <Form.Item
             name='consultant'
             label='Select Consultant'
@@ -1795,6 +1939,16 @@ export const ConsultantAssignments: React.FC = () => {
                 </>
               ) : null
             }
+          </Form.Item>
+
+          <Form.Item
+            name='implementationDate'
+            label='Date Of Implementation'
+            rules={[
+              { required: true, message: 'Please select a implementation date' }
+            ]}
+          >
+            <DatePicker style={{ width: '100%' }} />
           </Form.Item>
 
           <Form.Item
