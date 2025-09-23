@@ -24,8 +24,8 @@ import {
   ClockCircleOutlined,
   CloseCircleOutlined
 } from '@ant-design/icons'
-import { FormBuilder } from '@/components/form-builder/FormBuilder'
-import { FormResponseViewer } from '@/components/form-response-viewer/FormResponseViewer'
+import FormBuilder from '@/components/form-builder/FormBuilder'
+import FormResponseViewer from '@/components/form-response-viewer/FormResponseViewer'
 import { useGetIdentity } from '@refinedev/core'
 import { useNavigate } from 'react-router-dom'
 
