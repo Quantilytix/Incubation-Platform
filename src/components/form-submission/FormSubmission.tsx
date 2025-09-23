@@ -1,511 +1,517 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Card, 
-  Form, 
-  Input, 
-  Button, 
-  Select, 
-  Switch, 
-  Typography, 
-  Space, 
-  Divider, 
-  message, 
+import React, { useState, useEffect, useMemo } from 'react'
+import {
+  Card,
+  Form,
+  Input,
+  Button,
+  Select,
+  Typography,
+  Space,
+  Divider,
+  App,
   Upload,
-  DatePicker, 
+  DatePicker,
   Checkbox,
   Radio,
   Alert,
-  Steps,
-  Result
-} from 'antd';
-import { 
+  Result,
+  Rate
+} from 'antd'
+import {
   UploadOutlined,
-  SaveOutlined,
   SendOutlined,
   LoadingOutlined,
-  CheckCircleOutlined
-} from '@ant-design/icons';
-import { doc, getDoc, collection, addDoc, setDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '@/firebase';
-import { useGetIdentity } from "@refinedev/core";
-import { useParams, useNavigate } from 'react-router-dom';
+  SaveOutlined
+} from '@ant-design/icons'
+import { doc, getDoc, collection, addDoc, updateDoc } from 'firebase/firestore'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { db, storage } from '@/firebase'
+import { useGetIdentity } from '@refinedev/core'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import dayjs, { Dayjs } from 'dayjs'
 
-const { Title, Text, Paragraph } = Typography;
-const { Option } = Select;
-const { Step } = Steps;
-const { TextArea } = Input;
+const { Title, Text, Paragraph } = Typography
+const { Option } = Select
+const { TextArea } = Input
 
+// ---------- Types ----------
 interface FormField {
-  id: string;
-  type: string;
-  label: string;
-  placeholder?: string;
-  required: boolean;
-  options?: string[];
-  description?: string;
-  defaultValue?: any;
+  id: string
+  type: string
+  label: string
+  placeholder?: string
+  required: boolean
+  options?: string[]
+  description?: string
+  defaultValue?: any
+  name?: string // optional internal key if you later version your schema
 }
 
 interface FormTemplate {
-  id?: string;
-  title: string;
-  description: string;
-  fields: FormField[];
-  status: 'draft' | 'published';
-  category: string;
+  id?: string
+  title: string
+  description: string
+  fields: FormField[]
+  status: 'draft' | 'published'
+  category: string
+}
+
+interface FormAssignment {
+  id?: string
+  templateId: string
+  applicationId: string
+  recipientEmail?: string
+  status: 'pending' | 'in_progress' | 'submitted'
+  deliveryMethod: 'in_app' | 'email'
+  linkToken?: string
+  createdAt: string
+  templateSnapshot?: FormTemplate // optional snapshot at send time
+  draftAnswers?: Record<string, any>
 }
 
 interface UserIdentity {
-  id?: string;
-  name?: string;
-  email?: string;
-  role?: string;
-  avatar?: string;
+  id?: string
+  name?: string
+  email?: string
+  applicationId?: string // make sure your identity exposes this linkage
 }
 
-export const FormSubmission: React.FC = () => {
-  const [form] = Form.useForm();
-  const { formId } = useParams<{ formId: string }>();
-  const navigate = useNavigate();
-  const { data: user } = useGetIdentity<UserIdentity>();
-  
-  const [formTemplate, setFormTemplate] = useState<FormTemplate | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [fileUploads, setFileUploads] = useState<Record<string, any>>({});
-  const [current, setCurrent] = useState(0);
-  const [submitted, setSubmitted] = useState(false);
-  const [formFieldsByStep, setFormFieldsByStep] = useState<FormField[][]>([]);
-  const [submissionId, setSubmissionId] = useState<string | null>(null);
-  
-  // Fetch form template
+const isHeading = (f: FormField) => f.type === 'heading'
+
+// ---------- Component ----------
+export default function FormSubmission () {
+  const [form] = Form.useForm()
+  const { message } = App.useApp()
+  const { id } = useParams<{ id?: string }>()
+  const [searchParams] = useSearchParams() // for email deep links token
+  const navigate = useNavigate()
+  const { data: user } = useGetIdentity<UserIdentity>()
+
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
+  const [fileUploads, setFileUploads] = useState<Record<string, any>>({})
+  const [submitted, setSubmitted] = useState(false)
+  const [submissionId, setSubmissionId] = useState<string | null>(null)
+
+  const [template, setTemplate] = useState<FormTemplate | null>(null)
+  const [assignment, setAssignment] = useState<FormAssignment | null>(null)
+
+  // ---------- Load (assignment-first, fallback to formId) ----------
+  const token = searchParams.get('token') || undefined
   useEffect(() => {
-    fetchFormTemplate();
-  }, [formId]);
+    const boot = async () => {
+      try {
+        setLoading(true)
 
-  // Organize fields into steps
-  useEffect(() => {
-    if (formTemplate) {
-      organizeFieldsIntoSteps();
-    }
-  }, [formTemplate]);
-
-  const fetchFormTemplate = async () => {
-    if (!formId) {
-      message.error('No form ID provided');
-      navigate('/forms');
-      return;
-    }
-    
-    try {
-      setLoading(true);
-      const docRef = doc(db, 'formTemplates', formId);
-      const docSnap = await getDoc(docRef);
-      
-      if (docSnap.exists()) {
-        const data = docSnap.data() as FormTemplate;
-        if (data.status !== 'published') {
-          message.error('This form is not available for submission');
-          navigate('/forms');
-          return;
+        if (!id) {
+          throw new Error('No form reference provided.')
         }
-        
-        setFormTemplate({
-          ...data,
-          id: formId
-        });
-      } else {
-        message.error('Form not found');
-        navigate('/forms');
-      }
-    } catch (error) {
-      console.error('Error fetching form template:', error);
-      message.error('Failed to load form');
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  // Group form fields by headings to create steps
-  const organizeFieldsIntoSteps = () => {
-    if (!formTemplate) return;
-    
-    const steps: FormField[][] = [];
-    let currentStep: FormField[] = [];
-    
-    formTemplate.fields.forEach((field, index) => {
-      // Start a new step if this is a heading (except for the first field)
-      if (field.type === 'heading' && index > 0) {
-        // Save the current step if it's not empty
-        if (currentStep.length > 0) {
-          steps.push([...currentStep]);
-          currentStep = [];
+        // Try to load as an ASSIGNMENT first
+        const asRef = doc(db, 'formAssignments', id)
+        const asSnap = await getDoc(asRef)
+
+        if (asSnap.exists()) {
+          const asData = { id: asSnap.id, ...(asSnap.data() as FormAssignment) }
+          setAssignment(asData)
+
+          // Optional: access check if your user object has applicationId
+          if (
+            user?.applicationId &&
+            user.applicationId !== asData.applicationId
+          ) {
+            throw new Error('You do not have access to this assignment.')
+          }
+
+          // If this was an email delivery, verify token
+          const token = searchParams.get('token')
+          if (
+            asData.deliveryMethod === 'email' &&
+            asData.linkToken &&
+            token !== asData.linkToken
+          ) {
+            throw new Error('This email link is invalid or has expired.')
+          }
+
+          // Resolve the template (snapshot if present)
+          if (asData.templateSnapshot) {
+            setTemplate({
+              ...asData.templateSnapshot,
+              id: asData.templateSnapshot.id || asData.templateId
+            })
+          } else {
+            const tSnap = await getDoc(
+              doc(db, 'formTemplates', asData.templateId)
+            )
+            if (!tSnap.exists()) throw new Error('Form template not found')
+            setTemplate({ id: tSnap.id, ...(tSnap.data() as FormTemplate) })
+          }
+
+          // Prefill draft answers
+          if (asData.draftAnswers) {
+            form.setFieldsValue(asData.draftAnswers)
+          }
+        } else {
+          // Not an assignment — treat id as TEMPLATE id
+          const tSnap = await getDoc(doc(db, 'formTemplates', id))
+          if (!tSnap.exists()) throw new Error('Form not found')
+          const tData = { id: tSnap.id, ...(tSnap.data() as FormTemplate) }
+          if (tData.status !== 'published') {
+            throw new Error('This form is not available for submission.')
+          }
+          setTemplate(tData)
         }
+      } catch (e: any) {
+        console.error(e)
+        message.error(e.message || 'Failed to load survey.')
+        navigate('/incubatee')
+      } finally {
+        setLoading(false)
       }
-      
-      // Add field to the current step
-      currentStep.push(field);
-      
-      // If this is the last field, add the current step
-      if (index === formTemplate.fields.length - 1 && currentStep.length > 0) {
-        steps.push([...currentStep]);
-      }
-    });
-    
-    // If no headings or only one section, put all fields in one step
-    if (steps.length === 0 && currentStep.length > 0) {
-      steps.push(currentStep);
     }
-    
-    setFormFieldsByStep(steps);
-  };
 
-  const handleFileUpload = async (fieldId: string, file: File): Promise<string> => {
-    try {
-      const storageRef = ref(storage, `form_uploads/${formId}/${fieldId}/${file.name}`);
-      const snapshot = await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(snapshot.ref);
-      return downloadURL;
-    } catch (error) {
-      console.error('Error uploading file:', error);
-      throw new Error('Failed to upload file');
-    }
-  };
+    boot()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, user?.applicationId, token])
 
-  const handleSubmit = async () => {
-    try {
-      setSubmitting(true);
-      
-      // Validate form
-      await form.validateFields();
-      
-      // Get form values
-      const values = form.getFieldsValue();
-      
-      // Process any file uploads
-      const processedValues: Record<string, any> = { ...values };
-      
-      for (const [fieldId, fileList] of Object.entries(fileUploads)) {
-        if (fileList && fileList.fileList && fileList.fileList.length > 0) {
-          const file = fileList.fileList[0].originFileObj;
-          const downloadURL = await handleFileUpload(fieldId, file);
-          processedValues[fieldId] = downloadURL;
-        }
-      }
-      
-      // Create submission document
-      const submissionData = {
-        formId: formId,
-        formTitle: formTemplate?.title,
-        submittedBy: {
-          id: user?.id,
-          name: user?.name,
-          email: user?.email
-        },
-        submittedAt: new Date().toISOString(),
-        responses: processedValues,
-        status: 'pending'
-      };
-      
-      // Save to Firestore
-      const docRef = await addDoc(collection(db, 'formResponses'), submissionData);
-      
-      // Save submission ID
-      setSubmissionId(docRef.id);
-      
-      // Show success message
-      message.success('Form submitted successfully');
-      
-      // Reset form
-      form.resetFields();
-      setFileUploads({});
-      setSubmitted(true);
-    } catch (error) {
-      console.error('Error submitting form:', error);
-      message.error('Failed to submit form');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  // ---------- Helpers ----------
+  const fieldRules = (f: FormField) => {
+    const rules: any[] = []
+    if (f.required && !isHeading(f))
+      rules.push({ required: true, message: `${f.label} is required` })
+    if (f.type === 'email')
+      rules.push({ type: 'email', message: 'Please enter a valid email' })
+    return rules
+  }
+
+  const normalizeValue = (val: any) => {
+    if (dayjs.isDayjs(val)) return (val as Dayjs).toISOString()
+    return val
+  }
 
   const handleFileChange = (fieldId: string, info: any) => {
-    setFileUploads({
-      ...fileUploads,
-      [fieldId]: info
-    });
-  };
+    setFileUploads(prev => ({ ...prev, [fieldId]: info }))
+  }
 
-  const renderField = (field: FormField) => {
-    const formItemProps = {
-      label: field.label,
-      name: field.id,
-      key: field.id,
-      required: field.required,
-      help: field.description,
-      tooltip: field.description,
-    };
-  
-    switch (field.type) {
+  const uploadOne = async (fieldId: string, file: File) => {
+    const key = assignment?.id || template?.id || 'form'
+    const storageRef = ref(
+      storage,
+      `form_uploads/${key}/${fieldId}/${file.name}`
+    )
+    const snap = await uploadBytes(storageRef, file)
+    return await getDownloadURL(snap.ref)
+  }
+
+  const collectValues = async (): Promise<Record<string, any>> => {
+    const raw = form.getFieldsValue(true)
+    const out: Record<string, any> = {}
+
+    for (const [k, v] of Object.entries(raw)) {
+      out[k] = normalizeValue(v)
+    }
+
+    // process file uploads
+    for (const [fieldId, info] of Object.entries(fileUploads)) {
+      if (info?.fileList?.length) {
+        const file = info.fileList[0].originFileObj as File
+        if (file) {
+          const url = await uploadOne(fieldId, file)
+          out[fieldId] = url
+        }
+      }
+    }
+
+    return out
+  }
+
+  // ---------- Draft (assignment only) ----------
+  const saveDraft = async () => {
+    if (!assignment?.id) return
+
+    try {
+      setSavingDraft(true)
+      const draft = await collectValues()
+      await updateDoc(doc(db, 'formAssignments', assignment.id), {
+        draftAnswers: draft,
+        status: 'in_progress',
+        updatedAt: new Date().toISOString()
+      })
+      message.success('Progress saved')
+    } catch (e) {
+      console.error(e)
+      message.error('Failed to save draft')
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
+  // ---------- Submit ----------
+  const handleSubmit = async () => {
+    try {
+      setSubmitting(true)
+
+      const answers = await collectValues()
+
+      // write response
+      const responseRef = await addDoc(collection(db, 'formResponses'), {
+        assignmentId: assignment?.id || null,
+        templateId: assignment?.templateId || template?.id || null,
+        formTitle: template?.title,
+        submittedBy: {
+          id: user?.id || null,
+          name: user?.name || null,
+          email: user?.email || null
+        },
+        answers,
+        submittedAt: new Date().toISOString(),
+        status: 'submitted'
+      })
+
+      // update assignment (if any)
+      if (assignment?.id) {
+        await updateDoc(doc(db, 'formAssignments', assignment.id), {
+          status: 'submitted',
+          responseId: responseRef.id,
+          submittedAt: new Date().toISOString()
+        })
+      }
+
+      setSubmissionId(responseRef.id)
+      setSubmitted(true)
+      form.resetFields()
+      setFileUploads({})
+    } catch (e: any) {
+      console.error(e)
+      message.error(e.message || 'Failed to submit form')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // ---------- Render controls ----------
+  const renderField = (f: FormField) => {
+    // headings render as section dividers (no Form.Item)
+    if (isHeading(f)) {
+      return (
+        <div key={f.id} style={{ margin: '24px 0' }}>
+          <Title level={4} style={{ marginBottom: 4 }}>
+            {f.label}
+          </Title>
+          {f.description ? (
+            <Paragraph type='secondary' style={{ marginBottom: 0 }}>
+              {f.description}
+            </Paragraph>
+          ) : null}
+          <Divider style={{ margin: '12px 0 0' }} />
+        </div>
+      )
+    }
+
+    const itemProps = {
+      label: f.label,
+      name: f.id,
+      key: f.id,
+      tooltip: f.description,
+      rules: fieldRules(f)
+    } as const
+
+    switch (f.type) {
       case 'text':
         return (
-          <Form.Item {...formItemProps}>
-            <Input 
-              placeholder={field.placeholder} 
-            />
+          <Form.Item {...itemProps}>
+            <Input placeholder={f.placeholder} />
           </Form.Item>
-        );
+        )
       case 'textarea':
         return (
-          <Form.Item {...formItemProps}>
-            <TextArea 
-              placeholder={field.placeholder} 
-              rows={4} 
-            />
+          <Form.Item {...itemProps}>
+            <TextArea rows={4} placeholder={f.placeholder} />
           </Form.Item>
-        );
+        )
       case 'number':
         return (
-          <Form.Item {...formItemProps}>
-            <Input 
-              type="number" 
-              placeholder={field.placeholder} 
-            />
+          <Form.Item {...itemProps}>
+            <Input type='number' placeholder={f.placeholder} />
           </Form.Item>
-        );
+        )
       case 'email':
         return (
-          <Form.Item 
-            {...formItemProps}
-            rules={[
-              { 
-                type: 'email', 
-                message: 'Please enter a valid email address' 
-              }
-            ]}
-          >
-            <Input 
-              type="email" 
-              placeholder={field.placeholder} 
-            />
+          <Form.Item {...itemProps}>
+            <Input type='email' placeholder={f.placeholder} />
           </Form.Item>
-        );
+        )
       case 'select':
         return (
-          <Form.Item {...formItemProps}>
-            <Select placeholder={field.placeholder}>
-              {field.options?.map((option, idx) => (
-                <Option key={idx} value={option}>{option}</Option>
+          <Form.Item {...itemProps}>
+            <Select placeholder={f.placeholder}>
+              {(f.options || []).map((opt, i) => (
+                <Option key={i} value={opt}>
+                  {opt}
+                </Option>
               ))}
             </Select>
           </Form.Item>
-        );
+        )
       case 'checkbox':
         return (
-          <Form.Item {...formItemProps} valuePropName="checked">
-            <Checkbox.Group>
-              {field.options?.map((option, idx) => (
-                <div key={idx} style={{ marginBottom: 8 }}>
-                  <Checkbox value={option}>{option}</Checkbox>
-                </div>
-              ))}
+          <Form.Item {...itemProps} valuePropName='value'>
+            <Checkbox.Group style={{ width: '100%' }}>
+              <Space direction='vertical'>
+                {(f.options || []).map((opt, i) => (
+                  <Checkbox key={i} value={opt}>
+                    {opt}
+                  </Checkbox>
+                ))}
+              </Space>
             </Checkbox.Group>
           </Form.Item>
-        );
+        )
       case 'radio':
         return (
-          <Form.Item {...formItemProps}>
+          <Form.Item {...itemProps}>
             <Radio.Group>
-              {field.options?.map((option, idx) => (
-                <div key={idx} style={{ marginBottom: 8 }}>
-                  <Radio value={option}>{option}</Radio>
-                </div>
-              ))}
+              <Space direction='vertical'>
+                {(f.options || []).map((opt, i) => (
+                  <Radio key={i} value={opt}>
+                    {opt}
+                  </Radio>
+                ))}
+              </Space>
             </Radio.Group>
           </Form.Item>
-        );
+        )
       case 'date':
         return (
-          <Form.Item {...formItemProps}>
+          <Form.Item {...itemProps}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-        );
+        )
       case 'file':
         return (
-          <Form.Item {...formItemProps}>
-            <Upload 
-              listType="text" 
+          <Form.Item
+            {...itemProps}
+            valuePropName='fileList'
+            getValueFromEvent={e => e?.fileList}
+          >
+            <Upload
+              listType='text'
               maxCount={1}
-              onChange={(info) => handleFileChange(field.id, info)}
-              beforeUpload={() => false} // Prevent auto upload
+              beforeUpload={() => false} // keep file in memory; we upload on submit
+              onChange={info => handleFileChange(f.id, info)}
             >
               <Button icon={<UploadOutlined />}>Upload File</Button>
             </Upload>
           </Form.Item>
-        );
-      case 'heading':
+        )
+      case 'rating':
         return (
-          <div style={{ margin: '24px 0' }}>
-            <Title level={4}>{field.label}</Title>
-            {field.description && (
-              <Paragraph type="secondary">{field.description}</Paragraph>
-            )}
-            <Divider />
-          </div>
-        );
+          <Form.Item {...itemProps}>
+            <Rate />
+          </Form.Item>
+        )
       default:
-        return null;
+        return null
     }
-  };
+  }
 
-  const next = () => {
-    // Validate current step fields before moving to next
-    form
-      .validateFields(formFieldsByStep[current].map(field => field.id))
-      .then(() => {
-        setCurrent(current + 1);
-        window.scrollTo(0, 0);
-      })
-      .catch(errorInfo => {
-        console.log('Validation failed:', errorInfo);
-      });
-  };
-
-  const prev = () => {
-    setCurrent(current - 1);
-    window.scrollTo(0, 0);
-  };
-
-  const renderStepContent = () => {
-    if (formFieldsByStep.length === 0 || !formFieldsByStep[current]) {
-      return <div>No fields available</div>;
-    }
-    
-    return (
-      <div>
-        {formFieldsByStep[current].map((field) => renderField(field))}
-      </div>
-    );
-  };
-
-  const steps = formFieldsByStep.map((stepFields, index) => {
-    // Find the first heading in each step to use as the title
-    const heading = stepFields.find(field => field.type === 'heading');
-    return {
-      title: heading?.label || `Step ${index + 1}`
-    };
-  });
-
+  // ---------- UI ----------
   if (loading) {
     return (
-      <Card style={{ textAlign: 'center', padding: 48 }}>
-        <Space direction="vertical" align="center">
+      <Card style={{ textAlign: 'center', padding: 48, minHeight: '100vh' }}>
+        <Space direction='vertical' align='center'>
           <LoadingOutlined style={{ fontSize: 32 }} />
-          <Text>Loading form...</Text>
+          <Text>Loading form…</Text>
         </Space>
       </Card>
-    );
+    )
   }
 
   if (submitted) {
     return (
-      <Card>
+      <Card style={{ minHeight: '100vh' }}>
         <Result
-          status="success"
-          title="Form Submitted Successfully!"
+          status='success'
+          title='Form Submitted Successfully!'
           subTitle={
             <div>
-              <p>Your submission has been received and is now being processed.</p>
-              <p>Submission ID: {submissionId}</p>
+              <p>Your submission has been received.</p>
+              {submissionId ? <p>Submission ID: {submissionId}</p> : null}
             </div>
           }
           extra={[
-            <Button 
-              type="primary" 
-              key="dashboard" 
-              onClick={() => navigate('/dashboard')}
+            <Button
+              type='primary'
+              key='dashboard'
+              onClick={() => navigate('/incubatee')}
             >
               Back to Dashboard
-            </Button>,
-            <Button 
-              key="another" 
-              onClick={() => {
-                setSubmitted(false);
-                setCurrent(0);
-              }}
-            >
-              Submit Another Response
-            </Button>,
+            </Button>
           ]}
         />
       </Card>
-    );
+    )
   }
 
-  if (!formTemplate) {
+  if (!template) {
     return (
       <Card>
-        <Alert 
-          type="error" 
-          message="Error" 
-          description="Could not load the requested form. It may have been removed or you don't have permission to access it." 
-          showIcon 
+        <Alert
+          type='error'
+          message='Error'
+          description='Could not load the requested form.'
+          showIcon
         />
       </Card>
-    );
+    )
   }
 
   return (
-    <Card>
+    <Card style={{ minHeight: '100vh' }}>
       <div style={{ marginBottom: 24 }}>
-        <Title level={2}>{formTemplate.title}</Title>
-        <Paragraph>{formTemplate.description}</Paragraph>
+        <Title level={2} style={{ marginBottom: 8 }}>
+          {template.title}
+        </Title>
+        <Paragraph>{template.description}</Paragraph>
       </div>
-      
-      <Steps current={current} style={{ marginBottom: 32 }}>
-        {steps.map(item => (
-          <Step key={item.title} title={item.title} />
-        ))}
-      </Steps>
-      
-      <Form
-        form={form}
-        layout="vertical"
-        requiredMark={true}
-      >
-        {renderStepContent()}
-        
+
+      <Form form={form} layout='vertical' requiredMark>
+        {/* 👇 render all fields */}
+        {template.fields?.length ? (
+          template.fields.map(renderField)
+        ) : (
+          <Text type='secondary'>No fields available</Text>
+        )}
+
         <Divider />
-        
-        <Form.Item>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            {current > 0 && (
-              <Button onClick={prev}>
-                Previous
+
+        <div
+          style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}
+        >
+          <Space>
+            {assignment?.id && (
+              <Button
+                icon={<SaveOutlined />}
+                onClick={saveDraft}
+                loading={savingDraft}
+              >
+                Save progress
               </Button>
             )}
-            <div style={{ marginLeft: 'auto' }}>
-              {current < steps.length - 1 && (
-                <Button type="primary" onClick={next}>
-                  Next
-                </Button>
-              )}
-              {current === steps.length - 1 && (
-                <Button 
-                  type="primary" 
-                  onClick={handleSubmit} 
-                  loading={submitting}
-                  icon={<SendOutlined />}
-                >
-                  Submit
-                </Button>
-              )}
-            </div>
-          </div>
-        </Form.Item>
+          </Space>
+          <Space>
+            <Button
+              type='primary'
+              onClick={handleSubmit}
+              loading={submitting}
+              icon={<SendOutlined />}
+            >
+              Submit
+            </Button>
+          </Space>
+        </div>
       </Form>
     </Card>
-  );
-};
-
-export default FormSubmission; 
+  )
+}
