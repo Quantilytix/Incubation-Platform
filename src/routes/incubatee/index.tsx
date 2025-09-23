@@ -13,9 +13,9 @@ import {
   Badge,
   Select,
   Spin,
-  Alert,
+  Tag,
   Rate,
-  Tooltip
+  Table
 } from 'antd'
 import {
   BellOutlined,
@@ -41,7 +41,7 @@ import {
 import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { db, auth } from '@/firebase'
 import dayjs from 'dayjs'
-import { v4 as uuidv4 } from 'uuid'
+import { useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
 import { motion } from 'framer-motion'
 
@@ -104,6 +104,17 @@ interface AssignedIntervention {
   }
 }
 
+type AssignedSurveyRow = {
+  id: string
+  templateId: string
+  title: string
+  status: 'pending' | 'in_progress' | 'submitted'
+  deliveryMethod: 'in_app' | 'email'
+  linkToken?: string
+  createdAt?: any
+  updatedAt?: any
+}
+
 export const IncubateeDashboard: React.FC = () => {
   const [revenueData, setRevenueData] = useState<number[]>([])
   const [avgRevenueData, setAvgRevenueData] = useState<number[]>([])
@@ -126,9 +137,12 @@ export const IncubateeDashboard: React.FC = () => {
   const [participantId, setParticipantId] = useState<string>('')
   const [filterType, setFilterType] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [expandedChart, setExpandedChart] = useState<
-    'revenue' | 'avgRevenue' | null
-  >(null)
+  const navigate = useNavigate()
+  const [assignedSurveys, setAssignedSurveys] = useState<AssignedSurveyRow[]>(
+    []
+  )
+  const [loadingSurveys, setLoadingSurveys] = useState(false)
+
   const [confirmModalVisible, setConfirmModalVisible] = useState(false)
   const [selectedIntervention, setSelectedIntervention] =
     useState<AssignedIntervention | null>(null)
@@ -315,6 +329,66 @@ export const IncubateeDashboard: React.FC = () => {
           }))
         )
 
+        // ----- Assigned Surveys (formAssignments) -----
+        try {
+          setLoadingSurveys(true)
+
+          if (!applicationSnap.empty) {
+            const applicationId = applicationSnap.docs[0].id
+
+            const asSnap = await getDocs(
+              query(
+                collection(db, 'formAssignments'),
+                where('applicationId', '==', applicationId)
+              )
+            )
+
+            const rows: AssignedSurveyRow[] = await Promise.all(
+              asSnap.docs.map(async d => {
+                const a = d.data() as any
+                // resolve title (use snapshot if you later store it; otherwise fetch template)
+                let title = a.templateTitle as string | undefined
+                if (!title && a.templateId) {
+                  const tSnap = await getDoc(
+                    doc(db, 'formTemplates', a.templateId)
+                  )
+                  title = tSnap.exists()
+                    ? (tSnap.data() as any).title
+                    : 'Untitled Form'
+                }
+                return {
+                  id: d.id,
+                  templateId: a.templateId,
+                  title: title || 'Untitled Form',
+                  status: (a.status ||
+                    'pending') as AssignedSurveyRow['status'],
+                  deliveryMethod: (a.deliveryMethod ||
+                    'in_app') as AssignedSurveyRow['deliveryMethod'],
+                  linkToken: a.linkToken,
+                  createdAt: a.createdAt,
+                  updatedAt: a.updatedAt
+                }
+              })
+            )
+
+            // Sort: newest updated first
+            rows.sort(
+              (a, b) =>
+                new Date(b.updatedAt || b.createdAt || 0).getTime() -
+                new Date(a.updatedAt || a.createdAt || 0).getTime()
+            )
+
+            setAssignedSurveys(rows)
+          } else {
+            setAssignedSurveys([])
+          }
+        } catch (e) {
+          console.error(e)
+          // non-blocking
+        } finally {
+          setLoadingSurveys(false)
+        }
+
         setLoading(false)
       })
     }
@@ -332,6 +406,15 @@ export const IncubateeDashboard: React.FC = () => {
         : 'TBD'
     }
     return 'TBD'
+  }
+
+  const formatDateShort = (val: any): string => {
+    if (!val) return '-'
+    if (val?.seconds) return dayjs(val.seconds * 1000).format('YYYY-MM-DD')
+    if (typeof val === 'string' || val instanceof Date) {
+      return dayjs(val).isValid() ? dayjs(val).format('YYYY-MM-DD') : '-'
+    }
+    return '-'
   }
 
   const getQuarter = date => {
@@ -656,6 +739,66 @@ export const IncubateeDashboard: React.FC = () => {
     return `R ${value}`
   }
 
+  const openSurvey = (row: AssignedSurveyRow) => {
+    const q = row.linkToken ? `?token=${row.linkToken}` : ''
+    navigate(`/incubatee/surveys/${row.id}${q}`)
+  }
+
+  const surveyColumns = [
+    {
+      title: 'Form',
+      dataIndex: 'title',
+      key: 'title'
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      render: (s: AssignedSurveyRow['status']) => {
+        const color =
+          s === 'submitted' ? 'green' : s === 'in_progress' ? 'blue' : 'orange'
+        const label = s.replace('_', ' ')
+        return (
+          <Tag color={color}>
+            {label.charAt(0).toUpperCase() + label.slice(1)}
+          </Tag>
+        )
+      }
+    },
+    {
+      title: 'Delivery',
+      dataIndex: 'deliveryMethod',
+      key: 'deliveryMethod',
+      render: (m: AssignedSurveyRow['deliveryMethod']) => (
+        <Tag>{m === 'in_app' ? 'In-app' : 'Email link'}</Tag>
+      )
+    },
+    {
+      title: 'Updated',
+      dataIndex: 'updatedAt',
+      key: 'updatedAt',
+      render: (v: any, r: AssignedSurveyRow) =>
+        formatDateShort(v || r.createdAt)
+    },
+    {
+      title: 'Action',
+      key: 'action',
+      render: (_: any, row: AssignedSurveyRow) => {
+        const label =
+          row.status === 'submitted'
+            ? 'View'
+            : row.status === 'in_progress'
+            ? 'Continue'
+            : 'Start'
+        return (
+          <Button type='link' onClick={() => openSurvey(row)}>
+            {label}
+          </Button>
+        )
+      }
+    }
+  ]
+
   return (
     <Spin spinning={loading} tip='Loading...'>
       <div style={{ padding: '12px', minHeight: '100vh' }}>
@@ -854,6 +997,36 @@ export const IncubateeDashboard: React.FC = () => {
                       />
                     </List.Item>
                   )}
+                />
+              </Card>
+            </motion.div>
+          </Col>
+
+          <Col xs={24}>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <Card
+                hoverable
+                title='My Surveys'
+                style={{
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                  transition: 'all 0.3s ease',
+                  borderRadius: 8,
+                  border: '1px solid #d6e4ff'
+                }}
+              >
+                <Table
+                  rowKey='id'
+                  loading={loadingSurveys}
+                  dataSource={assignedSurveys}
+                  columns={surveyColumns as any}
+                  pagination={{ pageSize: 8 }}
+                  locale={{
+                    emptyText: 'No surveys assigned yet.'
+                  }}
                 />
               </Card>
             </motion.div>
