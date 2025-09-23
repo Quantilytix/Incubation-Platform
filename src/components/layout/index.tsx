@@ -35,7 +35,8 @@ import {
   BookOutlined,
   DatabaseOutlined,
   OneToOneOutlined,
-  LogoutOutlined
+  LogoutOutlined,
+  EyeOutlined
 } from '@ant-design/icons'
 import { getStorage } from 'firebase/storage'
 import { CompanyLogo } from '../CompanyLogo'
@@ -396,6 +397,12 @@ export const CustomLayout: React.FC = () => {
         label: 'My Dashboard',
         icon: <DashboardOutlined />
       },
+      //   {
+      //     key: 'surveys',
+      //     to: '/incubatee/surveys',
+      //     label: 'Surveys',
+      //     icon: <FormOutlined />
+      //   },
       {
         key: 'diagnostic',
         to: '/incubatee/diagnostic',
@@ -434,6 +441,25 @@ export const CustomLayout: React.FC = () => {
         to: '/operations/diagnostics',
         label: 'Growth Plan',
         icon: <SolutionOutlined />
+      },
+      {
+        key: 'surveys',
+        label: 'Surveys',
+        icon: <FormOutlined />,
+        children: [
+          {
+            key: 'surveys-builder',
+            to: '/operations/surveys',
+            label: 'Builder',
+            icon: <SolutionOutlined />
+          },
+          {
+            key: 'surveys-viewer',
+            to: '/operations/surveys/view',
+            label: 'Viewer',
+            icon: <EyeOutlined />
+          }
+        ]
       },
       {
         key: 'impact',
