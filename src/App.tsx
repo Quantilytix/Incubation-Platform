@@ -139,6 +139,11 @@ import { TasksManager } from './routes/operations/tasks'
 import DiagnosticsDashboard from './routes/operations/diagnostics'
 import ConsultantPerformance from './routes/operations/consultants/perfomance'
 import IncubateePerformancePage from './routes/operations/participants/[id]/perfomance'
+import FormBuilder from './components/forms/builder'
+import FormResponseViewer from './components/form-response-viewer/FormResponseViewer'
+import TemplatesPage from './components/forms'
+import FormBuilderPage from './components/forms/builder/[id]'
+import FormSubmission from './components/form-submission/FormSubmission'
 
 const queryClient = new QueryClient()
 
@@ -226,6 +231,10 @@ const App = () => {
                           element={<MonthlyPerformanceForm />}
                         />
                         <Route
+                          path='surveys/:id'
+                          element={<FormSubmission />}
+                        />
+                        <Route
                           path='financials'
                           element={<FinancialReportsInterface />}
                         />
@@ -302,6 +311,19 @@ const App = () => {
                         <Route
                           path='diagnostics'
                           element={<DiagnosticsDashboard />}
+                        />
+                        <Route path='surveys' element={<TemplatesPage />} />
+                        <Route
+                          path='surveys/builder'
+                          element={<FormBuilderPage />}
+                        />
+                        <Route
+                          path='surveys/builder/:id'
+                          element={<FormBuilder />}
+                        />
+                        <Route
+                          path='surveys/view'
+                          element={<FormResponseViewer />}
                         />
                         <Route
                           path='participants'
