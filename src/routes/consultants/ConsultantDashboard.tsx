@@ -1184,6 +1184,10 @@ export const ConsultantDashboard: React.FC = () => {
           >
             <List
               dataSource={membersList}
+              pagination={{
+                pageSize: 5,
+                size: 'medium'
+              }}
               renderItem={m => (
                 <List.Item>
                   <List.Item.Meta
@@ -1195,8 +1199,7 @@ export const ConsultantDashboard: React.FC = () => {
                     }
                     description={
                       <span>
-                        {m.sector || 'Unknown'} · {m.stage || 'N/A'} ·{' '}
-                        {m.location || 'N/A'}
+                        {m.sector || 'Unknown'} · {m.location || 'N/A'}
                       </span>
                     }
                   />
