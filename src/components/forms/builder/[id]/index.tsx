@@ -19,6 +19,7 @@ import {
   DatePicker,
   Upload,
   Rate,
+  Tag,
   Spin
 } from 'antd'
 import {
@@ -1023,3 +1024,4 @@ export default function FormBuilderPage () {
     </div>
   )
 }
+
