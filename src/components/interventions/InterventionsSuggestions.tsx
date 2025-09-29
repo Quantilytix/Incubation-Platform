@@ -78,6 +78,7 @@ type SuggestionRow = {
   type: InterventionType
   participants: PersonMini[]
   targetDate: Dayjs
+  implementationDate?: Dayjs
   suggestedCoordinatorId?: string
   coordinatorOptions: CoordinatorLite[]
   // recurrence
@@ -86,6 +87,12 @@ type SuggestionRow = {
   subtitle?: string | null
   // bookkeeping
   batchIndex?: number
+}
+
+type SavedDateInfo = {
+  docId: string
+  targetDate?: Dayjs
+  implementationDate?: Dayjs
 }
 
 const ciEq = (a?: string, b?: string) =>
@@ -97,6 +104,8 @@ const ciEq = (a?: string, b?: string) =>
     .toLowerCase()
 
 const normalizeId = (v: any) => (v == null ? '' : String(v))
+const keyPair = (interventionId: string, participantId: string) =>
+  `${String(interventionId)}|${String(participantId)}`
 
 // next Tuesday utility (group default)
 const nextTuesday = (from: Dayjs = dayjs()) => {
@@ -125,7 +134,7 @@ function splitIntoBatches<T> (arr: T[], size: number): T[][] {
 /** Rank coordinators by dept match + expertise hits + rating */
 function rankCoordinators (
   coordinators: CoordinatorLite[],
-  areaOfSupport: string, // you can keep this param for call sites, even if unused
+  areaOfSupport: string, // kept for call sites if needed later
   title: string
 ) {
   const titleWords = (title || '').toLowerCase().split(/\W+/).filter(Boolean)
@@ -237,76 +246,75 @@ async function loadRecurringMetaMap (interventionIds: string[]) {
     }
   }
 
-  // (keep your debug logs if you like)
-  console.group('[recurring-meta] loaded')
-  console.log('Requested IDs:', uniq)
-  console.log('Resolved keys:', Array.from(out.keys()))
-  console.table(
-    Array.from(out.entries()).map(([k, v]) => ({
-      key: k,
-      isRecurring: v.isRecurring,
-      frequency: v.frequency ?? ''
-    }))
-  )
-  console.groupEnd()
-
-  const unfound = uniq.filter(id => !out.has(id))
-  if (unfound.length) {
-    console.warn('[recurring-meta] Unresolved IDs:', unfound)
-  }
-
   return out
 }
 
-/** Firestore write: one indicative calendar entry per participant */
-async function createIndicativeEntries ({
-  user,
-  rows
-}: {
-  user: UserLite
-  rows: SuggestionRow[]
-}) {
-  const created: string[] = []
-  for (const row of rows) {
-    const targetTs = Timestamp.fromDate(row.targetDate.toDate())
-    const implTs = targetTs // implementationDate mirrors targetDate
-    const coordinatorId = row.suggestedCoordinatorId || ''
-    const coordinator = row.coordinatorOptions.find(c => c.id === coordinatorId)
-    const coordinatorName = coordinator?.name || user.name || 'Operations'
-
-    for (const p of row.participants) {
-      const newId = `ic_${p.id}_${
-        row.interventionId
-      }_${row.targetDate.valueOf()}`
-      await setDoc(doc(db, 'indicativeCalender', newId), {
-        id: newId,
-        participantId: p.id,
-        beneficiaryName: p.name,
-
-        interventionId: row.interventionId,
-        interventionTitle: row.interventionTitle,
-        type: row.type,
-
-        targetDate: targetTs,
-        implementationDate: implTs, // 👈 saved
-        isRecurring: !!row.isRecurring, // 👈 saved (for downstream use)
-        frequency: row.frequency ?? null,
-        subtitle: row.isRecurring ? row.subtitle || null : null, // 👈 saved if recurring
-
-        coordinatorId: coordinatorId || (user.email ?? 'ops'),
-        coordinatorName,
-
-        areaOfSupport: row.areaOfSupport,
-        companyCode: user.companyCode ?? null,
-
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        status: 'planned'
+async function loadSavedDatesMap (
+  participants: Participant[],
+  clusters: Array<{ interventionId: string; participants: PersonMini[] }>
+) {
+  const out = new Map<string, SavedDateInfo>()
+  for (const p of participants) {
+    const ivIds = clusters
+      .filter(c => c.participants.some(x => x.id === p.id))
+      .map(c => c.interventionId)
+    for (let i = 0; i < ivIds.length; i += 10) {
+      const batch = ivIds.slice(i, i + 10)
+      if (!batch.length) continue
+      const snap = await getDocs(
+        query(
+          collection(db, 'indicativeCalender'),
+          where('participantId', '==', p.id),
+          where('interventionId', 'in', batch)
+        )
+      )
+      snap.forEach(d => {
+        const data = d.data() as any
+        const k = keyPair(
+          String(data.interventionId),
+          String(data.participantId)
+        )
+        out.set(k, {
+          docId: d.id,
+          targetDate: data?.targetDate?.toDate
+            ? dayjs(data.targetDate.toDate())
+            : undefined,
+          implementationDate: data?.implementationDate?.toDate
+            ? dayjs(data.implementationDate.toDate())
+            : undefined
+        })
       })
-      created.push(newId)
     }
   }
-  return created
+  return out
+}
+
+function pickGroupDateFromSaved (
+  savedDatesMap: Map<string, SavedDateInfo>,
+  interventionId: string,
+  people: PersonMini[]
+): { target?: Dayjs; implementation?: Dayjs } {
+  const pairs = people
+    .map(p => savedDatesMap.get(keyPair(interventionId, p.id)))
+    .filter(Boolean) as SavedDateInfo[]
+
+  if (!pairs.length) return {}
+
+  const tally = new Map<string, { t: Dayjs; impl?: Dayjs; count: number }>()
+  for (const s of pairs) {
+    const td = s.targetDate
+    if (!td) continue
+    const k = td.format('YYYY-MM-DD')
+    const cur = tally.get(k)
+    if (cur) {
+      cur.count += 1
+    } else {
+      tally.set(k, { t: td, impl: s.implementationDate, count: 1 })
+    }
+  }
+  if (!tally.size) return {}
+  const best = [...tally.values()].sort((a, b) => b.count - a.count)[0]
+  return { target: best.t, implementation: best.impl }
 }
 
 /** ---------- Component ---------- */
@@ -365,6 +373,9 @@ export default function InterventionSuggestions ({
   const [recurringMap, setRecurringMap] = useState<
     Map<string, { isRecurring: boolean; frequency?: string | null }>
   >(new Map())
+  const [savedDatesMap, setSavedDatesMap] = useState<
+    Map<string, SavedDateInfo>
+  >(new Map())
   const [metaReady, setMetaReady] = useState(false)
 
   useEffect(() => {
@@ -381,10 +392,19 @@ export default function InterventionSuggestions ({
         if (!alive) return
         setCompulsoryMap(comp)
         setRecurringMap(rec)
+
+        // load saved dates after we know which clusters exist
+        const dedupClusters = Array.from(
+          new Map(clusters.map(c => [c.interventionId, c])).values()
+        )
+        const saved = await loadSavedDatesMap(participants, dedupClusters)
+        if (!alive) return
+        setSavedDatesMap(saved)
       } catch (e) {
         if (!alive) return
         setCompulsoryMap(new Map())
         setRecurringMap(new Map())
+        setSavedDatesMap(new Map())
       } finally {
         if (alive) setMetaReady(true)
       }
@@ -393,9 +413,9 @@ export default function InterventionSuggestions ({
     return () => {
       alive = false
     }
-  }, [clusters])
+  }, [clusters, participants])
 
-  // 3) Suggested rows (force single group if compulsory)
+  // 3) Suggested rows (respect saved dates; force single group if compulsory)
   const suggestedRows = useMemo<SuggestionRow[]>(() => {
     if (!metaReady) return []
     const out: SuggestionRow[] = []
@@ -415,19 +435,14 @@ export default function InterventionSuggestions ({
       const isRecurring = !!recMeta?.isRecurring
       const frequency = recMeta?.frequency ?? null
 
-      console.debug('[suggest] cluster', {
-        interventionId,
-        title: cluster.title,
-        participants: cluster.participants.length,
-        isCompulsory,
-        isRecurring,
-        frequency,
-        hasMeta: !!recMeta
-      })
-
       if (isCompulsory) {
         // ✅ one grouped session with everyone
-        const date = nextTuesday(dayjs())
+        const preferred = pickGroupDateFromSaved(
+          savedDatesMap,
+          interventionId,
+          cluster.participants
+        )
+        const date = preferred.target || nextTuesday(dayjs())
         out.push({
           key: `${interventionId}__all_${demand}`,
           interventionId,
@@ -436,6 +451,7 @@ export default function InterventionSuggestions ({
           type: 'grouped',
           participants: cluster.participants,
           targetDate: date,
+          implementationDate: preferred.implementation || date,
           suggestedCoordinatorId: defaultCoordinator,
           coordinatorOptions: ranked,
           isRecurring,
@@ -456,7 +472,12 @@ export default function InterventionSuggestions ({
         const size = Math.ceil(demand / groups)
         const batches = splitIntoBatches(cluster.participants, size)
         batches.forEach((batch, idx) => {
-          const date = nextTuesday(dayjs().add(idx, 'week'))
+          const preferred = pickGroupDateFromSaved(
+            savedDatesMap,
+            interventionId,
+            batch
+          )
+          const date = preferred.target || nextTuesday(dayjs().add(idx, 'week'))
           out.push({
             key: `${interventionId}__soft_${idx}`,
             interventionId,
@@ -465,6 +486,7 @@ export default function InterventionSuggestions ({
             type: 'grouped',
             participants: batch,
             targetDate: date,
+            implementationDate: preferred.implementation || date,
             suggestedCoordinatorId: defaultCoordinator,
             coordinatorOptions: ranked,
             isRecurring,
@@ -475,15 +497,18 @@ export default function InterventionSuggestions ({
           })
         })
       } else {
-        const date = nextNonTuesdayWeekday(dayjs())
+        const only = cluster.participants[0]
+        const saved = savedDatesMap.get(keyPair(interventionId, only.id))
+        const date = saved?.targetDate || nextNonTuesdayWeekday(dayjs())
         out.push({
-          key: `${interventionId}__single_${cluster.participants[0].id}`,
+          key: `${interventionId}__single_${only.id}`,
           interventionId,
           interventionTitle: cluster.title,
           areaOfSupport: cluster.areaOfSupport,
           type: 'singular',
-          participants: cluster.participants,
+          participants: [only],
           targetDate: date,
+          implementationDate: saved?.implementationDate || date,
           suggestedCoordinatorId: defaultCoordinator,
           coordinatorOptions: ranked,
           isRecurring,
@@ -502,6 +527,7 @@ export default function InterventionSuggestions ({
     coordinators,
     compulsoryMap,
     recurringMap,
+    savedDatesMap,
     maxGroupSize
   ])
 
@@ -549,6 +575,7 @@ export default function InterventionSuggestions ({
       const singles: SuggestionRow[] = removed.map(p => {
         while (isWeekend(cursor)) cursor = cursor.add(1, 'day')
 
+        const sd = savedDatesMap.get(keyPair(reviewRow.interventionId, p.id))
         const single: SuggestionRow = {
           key: `${reviewRow.interventionId}__reassigned_${
             p.id
@@ -558,7 +585,9 @@ export default function InterventionSuggestions ({
           areaOfSupport: reviewRow.areaOfSupport,
           type: 'singular',
           participants: [p],
-          targetDate: cursor,
+          targetDate: sd?.targetDate || cursor,
+          implementationDate:
+            sd?.implementationDate || sd?.targetDate || cursor,
           suggestedCoordinatorId: reviewRow.suggestedCoordinatorId,
           coordinatorOptions: reviewRow.coordinatorOptions,
           isRecurring: reviewRow.isRecurring,
@@ -576,6 +605,77 @@ export default function InterventionSuggestions ({
 
     setReviewOpen(false)
     setReviewRow(null)
+  }
+
+  // ---------- Writes ----------
+  async function createIndicativeEntries ({
+    user,
+    rows,
+    savedDatesMap
+  }: {
+    user: UserLite
+    rows: SuggestionRow[]
+    savedDatesMap: Map<string, SavedDateInfo>
+  }) {
+    const created: string[] = []
+
+    for (const row of rows) {
+      const targetTs = Timestamp.fromDate(row.targetDate.toDate())
+      const implTs = Timestamp.fromDate(
+        (row.implementationDate || row.targetDate).toDate()
+      )
+
+      const coordinatorId = row.suggestedCoordinatorId || ''
+      const coordinator = row.coordinatorOptions.find(
+        c => c.id === coordinatorId
+      )
+      const coordinatorName = coordinator?.name || user.name || 'Operations'
+
+      for (const p of row.participants) {
+        const saved = savedDatesMap.get(keyPair(row.interventionId, p.id))
+
+        // Stable id for NON-recurring; date-based id for recurring (multi-session)
+        const newId = row.isRecurring
+          ? `ic_${p.id}_${row.interventionId}_${row.targetDate.valueOf()}`
+          : `ic_${p.id}_${row.interventionId}`
+
+        const docIdToUse =
+          saved?.docId && !row.isRecurring ? saved.docId : newId
+
+        await setDoc(
+          doc(db, 'indicativeCalender', docIdToUse),
+          {
+            id: docIdToUse,
+            participantId: p.id,
+            beneficiaryName: p.name,
+
+            interventionId: row.interventionId,
+            interventionTitle: row.interventionTitle,
+            type: row.type,
+
+            targetDate: targetTs,
+            implementationDate: implTs,
+            isRecurring: !!row.isRecurring,
+            frequency: row.frequency ?? null,
+            subtitle: row.isRecurring ? row.subtitle || null : null,
+
+            coordinatorId: coordinatorId || (user.email ?? 'ops'),
+            coordinatorName,
+
+            areaOfSupport: row.areaOfSupport,
+            companyCode: user.companyCode ?? null,
+
+            updatedAt: Timestamp.now(),
+            createdAt: saved?.docId ? undefined : Timestamp.now(),
+            status: 'planned'
+          },
+          { merge: true }
+        )
+
+        created.push(docIdToUse)
+      }
+    }
+    return created
   }
 
   // ---------- Columns ----------
@@ -625,7 +725,7 @@ export default function InterventionSuggestions ({
             d &&
             setRow(r.key, {
               targetDate: d,
-              // keep subtitle aligned for recurring rows when date changes
+              implementationDate: r.implementationDate ?? d, // mirror if unset
               subtitle: r.isRecurring
                 ? r.subtitle || `Session - ${d.format('YYYY-MM-DD')}`
                 : r.subtitle ?? null
@@ -633,6 +733,19 @@ export default function InterventionSuggestions ({
           }
           disabledDate={d => !!d && d < dayjs().startOf('day')}
           style={{ width: 160 }}
+          suffixIcon={<CalendarOutlined />}
+        />
+      )
+    },
+    {
+      title: 'Implementation Date',
+      key: 'implementationDate',
+      render: (_: unknown, r: SuggestionRow) => (
+        <DatePicker
+          value={r.implementationDate || r.targetDate}
+          onChange={d => d && setRow(r.key, { implementationDate: d })}
+          disabledDate={d => !!d && d < dayjs().startOf('day')}
+          style={{ width: 180 }}
           suffixIcon={<CalendarOutlined />}
         />
       )
@@ -684,12 +797,15 @@ export default function InterventionSuggestions ({
             type='primary'
             icon={<CheckCircleOutlined />}
             onClick={async () => {
-              // if recurring, enforce subtitle presence
               if (r.isRecurring && !r.subtitle) {
                 message.warning('Please add a Subtitle for recurring sessions.')
                 return
               }
-              const created = await createIndicativeEntries({ user, rows: [r] })
+              const created = await createIndicativeEntries({
+                user,
+                rows: [r],
+                savedDatesMap
+              })
               if (created.length)
                 message.success('Saved to indicative calendar')
               else message.info('No new entries saved')
@@ -718,7 +834,6 @@ export default function InterventionSuggestions ({
             <Button
               type='primary'
               onClick={async () => {
-                // enforce subtitle for any recurring rows
                 const missing = rows.filter(r => r.isRecurring && !r.subtitle)
                 if (missing.length) {
                   message.warning(
@@ -726,7 +841,11 @@ export default function InterventionSuggestions ({
                   )
                   return
                 }
-                const created = await createIndicativeEntries({ user, rows })
+                const created = await createIndicativeEntries({
+                  user,
+                  rows,
+                  savedDatesMap
+                })
                 if (created.length) {
                   message.success(
                     `Saved ${created.length} items to indicative calendar`
@@ -744,9 +863,10 @@ export default function InterventionSuggestions ({
         <Space direction='vertical' style={{ width: '100%' }}>
           <Text type='secondary'>
             • Groups default to Tuesdays (future weeks). Singles default to the
-            earliest non-Tuesday weekday. • Use <b>Review</b> to remove
-            participants; removed participants are auto-reassigned as singles on
-            consecutive weekdays.
+            earliest non-Tuesday weekday. • Existing saved dates are reused so
+            we never regress to auto-generated dates. • Use <b>Review</b> to
+            remove participants; removed participants are auto-reassigned as
+            singles on consecutive weekdays.
           </Text>
           <Divider style={{ margin: '8px 0' }} />
           <Table<SuggestionRow>
@@ -773,6 +893,7 @@ export default function InterventionSuggestions ({
               {reviewRow.interventionTitle}
             </Title>
             <Text type='secondary'>Area: {reviewRow.areaOfSupport}</Text>
+
             {reviewRow.isRecurring && (
               <>
                 <Divider />
@@ -790,6 +911,22 @@ export default function InterventionSuggestions ({
                 />
               </>
             )}
+
+            <Divider />
+            <Text strong>Implementation Date</Text>
+            <DatePicker
+              value={reviewRow.implementationDate || reviewRow.targetDate}
+              onChange={d =>
+                d &&
+                setReviewRow(prev =>
+                  prev ? { ...prev, implementationDate: d } : prev
+                )
+              }
+              disabledDate={d => !!d && d < dayjs().startOf('day')}
+              style={{ width: 200, marginTop: 6 }}
+              suffixIcon={<CalendarOutlined />}
+            />
+
             <Divider />
             <Text strong>Keep in this session:</Text>
             <List
@@ -799,6 +936,7 @@ export default function InterventionSuggestions ({
                 <List.Item
                   actions={[
                     <Button
+                      key='rm'
                       size='small'
                       danger
                       onClick={() => removeFromReview(p.id)}
