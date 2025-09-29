@@ -13,7 +13,8 @@ import {
   Divider,
   Modal,
   List,
-  Input
+  Input,
+  Grid
 } from 'antd'
 import {
   CalendarOutlined,
@@ -269,7 +270,10 @@ async function loadSavedDatesMap (
       )
       snap.forEach(d => {
         const data = d.data() as any
-        const k = keyPair(String(data.interventionId), String(data.participantId))
+        const k = keyPair(
+          String(data.interventionId),
+          String(data.participantId)
+        )
         out.set(k, {
           docId: d.id,
           targetDate: data?.targetDate?.toDate
@@ -360,6 +364,9 @@ export default function InterventionSuggestions ({
   coordinators: CoordinatorLite[]
   maxGroupSize?: number
 }) {
+  const screens = Grid.useBreakpoint()
+  const isMobile = !screens.md
+
   // 1) Clusters per interventionId
   const clusters = useMemo(() => {
     const map = new Map<
@@ -677,12 +684,12 @@ export default function InterventionSuggestions ({
         const saved = savedDatesMap.get(keyPair(row.interventionId, p.id))
 
         // Stable id for NON-recurring; date-based id for recurring (multi-session)
-        const newId =
-          row.isRecurring
-            ? `ic_${p.id}_${row.interventionId}_${row.targetDate.valueOf()}`
-            : `ic_${p.id}_${row.interventionId}`
+        const newId = row.isRecurring
+          ? `ic_${p.id}_${row.interventionId}_${row.targetDate.valueOf()}`
+          : `ic_${p.id}_${row.interventionId}`
 
-        const docIdToUse = saved?.docId && !row.isRecurring ? saved.docId : newId
+        const docIdToUse =
+          saved?.docId && !row.isRecurring ? saved.docId : newId
 
         await setDoc(
           doc(db, 'indicativeCalender', docIdToUse),
@@ -707,7 +714,7 @@ export default function InterventionSuggestions ({
             areaOfSupport: row.areaOfSupport,
             companyCode: user.companyCode ?? null,
 
-            status: 'planned', // keep simple; adjust if you want to retain saved.status
+            status: 'planned',
 
             updatedAt: Timestamp.now(),
             createdAt: saved?.docId ? undefined : Timestamp.now()
@@ -721,25 +728,40 @@ export default function InterventionSuggestions ({
     return created
   }
 
+  // helpers for actions
+  const rowHasExisting = useCallback(
+    (r: SuggestionRow) =>
+      r.participants.some(p =>
+        savedDatesMap.has(keyPair(r.interventionId, p.id))
+      ),
+    [savedDatesMap]
+  )
+
   // ---------- Columns ----------
   const columns: ColumnsType<SuggestionRow> = [
     {
       title: 'Area of Support',
       dataIndex: 'areaOfSupport',
       key: 'areaOfSupport',
-      render: (v: string) => <Tag color='blue'>{v || '—'}</Tag>
+      render: (v: string) => <Tag color='blue'>{v || '—'}</Tag>,
+      width: 160,
+      ellipsis: true
     },
     {
       title: 'Intervention',
       dataIndex: 'interventionTitle',
-      key: 'interventionTitle'
+      key: 'interventionTitle',
+      ellipsis: true,
+      width: 220
     },
     {
       title: 'Type',
       dataIndex: 'type',
       key: 'type',
       render: (t: InterventionType) =>
-        t === 'grouped' ? <Tag color='purple'>Group</Tag> : <Tag>Single</Tag>
+        t === 'grouped' ? <Tag color='purple'>Group</Tag> : <Tag>Single</Tag>,
+      width: 110,
+      responsive: ['sm']
     },
     {
       title: 'Participants',
@@ -756,7 +778,8 @@ export default function InterventionSuggestions ({
         >
           <Tag icon={<UserOutlined />}>{r.participants.length}</Tag>
         </Tooltip>
-      )
+      ),
+      width: 130
     },
     {
       title: 'Target Date',
@@ -775,10 +798,11 @@ export default function InterventionSuggestions ({
             })
           }
           disabledDate={d => !!d && d < dayjs().startOf('day')}
-          style={{ width: 160 }}
+          style={{ width: isMobile ? 140 : 160 }}
           suffixIcon={<CalendarOutlined />}
         />
-      )
+      ),
+      width: 180
     },
     {
       title: 'Implementation Date',
@@ -788,10 +812,11 @@ export default function InterventionSuggestions ({
           value={r.implementationDate || r.targetDate}
           onChange={d => d && setRow(r.key, { implementationDate: d })}
           disabledDate={d => !!d && d < dayjs().startOf('day')}
-          style={{ width: 180 }}
+          style={{ width: isMobile ? 150 : 180 }}
           suffixIcon={<CalendarOutlined />}
         />
-      )
+      ),
+      width: 200
     },
     {
       title: 'Coordinator',
@@ -800,7 +825,7 @@ export default function InterventionSuggestions ({
         <Select
           value={r.suggestedCoordinatorId}
           onChange={v => setRow(r.key, { suggestedCoordinatorId: v })}
-          style={{ width: 260 }}
+          style={{ width: isMobile ? 200 : 260 }}
           placeholder='Select coordinator'
           options={(r.coordinatorOptions || []).map(c => ({
             label: `${c.name}${
@@ -812,7 +837,8 @@ export default function InterventionSuggestions ({
           optionFilterProp='label'
           allowClear
         />
-      )
+      ),
+      width: 280
     },
     {
       title: 'Subtitle',
@@ -824,103 +850,129 @@ export default function InterventionSuggestions ({
             onChange={e => setRow(r.key, { subtitle: e.target.value })}
             placeholder='e.g., Week 1 — Intro to Bookkeeping'
             maxLength={120}
-            style={{ width: 260 }}
+            style={{ width: isMobile ? 220 : 260 }}
           />
         ) : (
           <Text type='secondary'>—</Text>
-        )
+        ),
+      width: 300
     },
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: unknown, r: SuggestionRow) => (
-        <Space>
-          <Button onClick={() => openReview(r)}>Review</Button>
-          <Button
-            type='primary'
-            icon={<CheckCircleOutlined />}
-            onClick={async () => {
-              if (r.isRecurring && !r.subtitle) {
-                message.warning('Please add a Subtitle for recurring sessions.')
-                return
-              }
-              const created = await createIndicativeEntries({
-                user,
-                rows: [r],
-                savedDatesMap
-              })
-              if (created.length)
-                message.success('Saved to indicative calendar')
-              else message.info('No new entries saved')
-            }}
-          >
-            Approve
-          </Button>
-        </Space>
-      )
-    }
-  ]
-
-  return (
-    <>
-      <Card
-        title='Suggested Interventions (lenient grouping & scheduling)'
-        bordered
-        style={{
-          boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-          borderRadius: 8,
-          border: '1px solid #d6e4ff'
-        }}
-        extra={
-          <Space>
-            <Button onClick={() => setRows(suggestedRows)}>Reset</Button>
+      fixed: isMobile ? undefined : 'right',
+      render: (_: unknown, r: SuggestionRow) => {
+        const exists = rowHasExisting(r)
+        return (
+          <Space direction={isMobile ? 'vertical' : 'horizontal'} wrap>
+            <Button
+              onClick={() => openReview(r)}
+              style={{ width: isMobile ? '100%' : undefined }}
+            >
+              Review
+            </Button>
             <Button
               type='primary'
+              icon={<CheckCircleOutlined />}
               onClick={async () => {
-                const missing = rows.filter(r => r.isRecurring && !r.subtitle)
-                if (missing.length) {
+                if (r.isRecurring && !r.subtitle) {
                   message.warning(
-                    'Please add a Subtitle for all recurring rows before approving.'
+                    'Please add a Subtitle for recurring sessions.'
                   )
                   return
                 }
                 const created = await createIndicativeEntries({
                   user,
-                  rows,
+                  rows: [r],
                   savedDatesMap
                 })
                 if (created.length) {
                   message.success(
-                    `Saved ${created.length} items to indicative calendar`
+                    exists
+                      ? 'Updated indicative calendar'
+                      : 'Saved to indicative calendar'
                   )
                 } else {
-                  message.info('No new entries saved')
+                  message.info('No changes')
                 }
               }}
+              style={{ width: isMobile ? '100%' : undefined }}
             >
-              Approve All
+              {exists ? 'Update' : 'Approve'}
             </Button>
           </Space>
-        }
+        )
+      },
+      width: 180
+    }
+  ]
+
+  return (
+    <Card
+      style={{
+        boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+        borderRadius: 8,
+        border: '1px solid #d6e4ff'
+      }}
+      bodyStyle={{ padding: isMobile ? 12 : 20 }}
+      extra={
+        <Space wrap>
+          <Button onClick={() => setRows(suggestedRows)}>Reset</Button>
+          <Button
+            type='primary'
+            onClick={async () => {
+              const missing = rows.filter(r => r.isRecurring && !r.subtitle)
+              if (missing.length) {
+                message.warning(
+                  'Please add a Subtitle for all recurring rows before saving.'
+                )
+                return
+              }
+              const anyExisting = rows.some(r => rowHasExisting(r))
+              const created = await createIndicativeEntries({
+                user,
+                rows,
+                savedDatesMap
+              })
+              if (created.length) {
+                message.success(
+                  anyExisting
+                    ? `Updated ${created.length} item(s)`
+                    : `Saved ${created.length} item(s)`
+                )
+              } else {
+                message.info('No changes')
+              }
+            }}
+          >
+            Save All
+          </Button>
+        </Space>
+      }
+    >
+      <Space
+        direction='vertical'
+        style={{ width: '100%' }}
+        size={isMobile ? 8 : 12}
       >
-        <Space direction='vertical' style={{ width: '100%' }}>
-          <Text type='secondary'>
-            • Groups default to Tuesdays (future weeks). Singles default to the
-            earliest non-Tuesday weekday. • Existing saved details (dates,
-            subtitle, recurrence, coordinator) are reused when available. • Use{' '}
-            <b>Review</b> to remove participants; removed participants are
-            auto-reassigned as singles on consecutive weekdays.
-          </Text>
-          <Divider style={{ margin: '8px 0' }} />
+        <Divider style={{ margin: isMobile ? '4px 0' : '8px 0' }} />
+        <div style={{ width: '100%', overflowX: 'auto' }}>
           <Table<SuggestionRow>
             rowKey='key'
             columns={columns}
             dataSource={rows}
             loading={!metaReady}
-            pagination={{ pageSize: 8 }}
+            size={isMobile ? 'small' : 'middle'}
+            pagination={{
+              pageSize: isMobile ? 6 : 8,
+              showSizeChanger: !isMobile,
+              responsive: true
+            }}
+            scroll={{ x: 1100 }} // enables horizontal scroll when cramped
+            sticky
           />
-        </Space>
-      </Card>
+        </div>
+      </Space>
 
       {/* Review Modal */}
       <Modal
@@ -948,7 +1000,7 @@ export default function InterventionSuggestions ({
                 )
               }
               disabledDate={d => !!d && d < dayjs().startOf('day')}
-              style={{ width: 200, marginTop: 6 }}
+              style={{ width: 220, marginTop: 6 }}
               suffixIcon={<CalendarOutlined />}
             />
 
@@ -994,13 +1046,9 @@ export default function InterventionSuggestions ({
               locale={{ emptyText: 'No participants' }}
             />
             <Divider />
-            <Text type='secondary'>
-              Removed participants will be scheduled as single sessions on
-              consecutive weekdays (skipping weekends).
-            </Text>
           </>
         )}
       </Modal>
-    </>
+    </Card>
   )
 }
