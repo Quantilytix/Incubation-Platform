@@ -93,15 +93,13 @@ type SavedDateInfo = {
   docId: string
   targetDate?: Dayjs
   implementationDate?: Dayjs
+  subtitle?: string | null
+  isRecurring?: boolean
+  frequency?: string | null
+  coordinatorId?: string
+  coordinatorName?: string
+  status?: string
 }
-
-const ciEq = (a?: string, b?: string) =>
-  String(a || '')
-    .trim()
-    .toLowerCase() ===
-  String(b || '')
-    .trim()
-    .toLowerCase()
 
 const normalizeId = (v: any) => (v == null ? '' : String(v))
 const keyPair = (interventionId: string, participantId: string) =>
@@ -131,10 +129,10 @@ function splitIntoBatches<T> (arr: T[], size: number): T[][] {
   return out
 }
 
-/** Rank coordinators by dept match + expertise hits + rating */
+/** Rank coordinators by title keyword hits + rating */
 function rankCoordinators (
   coordinators: CoordinatorLite[],
-  areaOfSupport: string, // kept for call sites if needed later
+  _areaOfSupport: string,
   title: string
 ) {
   const titleWords = (title || '').toLowerCase().split(/\W+/).filter(Boolean)
@@ -249,6 +247,7 @@ async function loadRecurringMetaMap (interventionIds: string[]) {
   return out
 }
 
+/** Pull saved rows from indicativeCalender for each (participantId, interventionId) */
 async function loadSavedDatesMap (
   participants: Participant[],
   clusters: Array<{ interventionId: string; participants: PersonMini[] }>
@@ -270,10 +269,7 @@ async function loadSavedDatesMap (
       )
       snap.forEach(d => {
         const data = d.data() as any
-        const k = keyPair(
-          String(data.interventionId),
-          String(data.participantId)
-        )
+        const k = keyPair(String(data.interventionId), String(data.participantId))
         out.set(k, {
           docId: d.id,
           targetDate: data?.targetDate?.toDate
@@ -281,7 +277,13 @@ async function loadSavedDatesMap (
             : undefined,
           implementationDate: data?.implementationDate?.toDate
             ? dayjs(data.implementationDate.toDate())
-            : undefined
+            : undefined,
+          subtitle: data?.subtitle ?? null,
+          isRecurring: ynToBool(data?.isRecurring),
+          frequency: data?.frequency ?? null,
+          coordinatorId: data?.coordinatorId,
+          coordinatorName: data?.coordinatorName,
+          status: data?.status
         })
       })
     }
@@ -289,32 +291,61 @@ async function loadSavedDatesMap (
   return out
 }
 
-function pickGroupDateFromSaved (
+/** Pick the most common (mode) of a list by string key */
+function pickMode<T> (
+  items: T[],
+  keyFn: (t: T) => string | undefined | null
+): T | undefined {
+  const counts = new Map<string, { item: T; n: number }>()
+  for (const it of items) {
+    const k = keyFn(it)
+    if (!k) continue
+    const cur = counts.get(k)
+    if (cur) cur.n += 1
+    else counts.set(k, { item: it, n: 1 })
+  }
+  const arr = [...counts.values()].sort((a, b) => b.n - a.n)
+  return arr[0]?.item
+}
+
+/** Aggregate saved fields for a mini-cohort (batch or whole group) */
+function aggregateSavedForCohort (
   savedDatesMap: Map<string, SavedDateInfo>,
   interventionId: string,
   people: PersonMini[]
-): { target?: Dayjs; implementation?: Dayjs } {
-  const pairs = people
+) {
+  const saved = people
     .map(p => savedDatesMap.get(keyPair(interventionId, p.id)))
     .filter(Boolean) as SavedDateInfo[]
 
-  if (!pairs.length) return {}
+  if (!saved.length) return {}
 
-  const tally = new Map<string, { t: Dayjs; impl?: Dayjs; count: number }>()
-  for (const s of pairs) {
-    const td = s.targetDate
-    if (!td) continue
-    const k = td.format('YYYY-MM-DD')
-    const cur = tally.get(k)
-    if (cur) {
-      cur.count += 1
-    } else {
-      tally.set(k, { t: td, impl: s.implementationDate, count: 1 })
-    }
+  // Dates: mode by YYYY-MM-DD
+  const tdMode = pickMode(saved, s => s.targetDate?.format('YYYY-MM-DD') || '')
+  const idMode = pickMode(
+    saved,
+    s => s.implementationDate?.format('YYYY-MM-DD') || ''
+  )
+
+  // Subtitle, frequency, coordinator, status — choose most common non-empty
+  const subtitleMode = pickMode(saved, s => (s.subtitle || '').trim() || '')
+  const freqMode = pickMode(saved, s => (s.frequency || '').trim() || '')
+  const recurMode = pickMode(saved, s => String(!!s.isRecurring))
+  const coordMode = pickMode(saved, s => (s.coordinatorId || '').trim() || '')
+  const statusMode = pickMode(saved, s => (s.status || '').trim() || '')
+
+  return {
+    targetDate: tdMode?.targetDate,
+    implementationDate: idMode?.implementationDate,
+    subtitle: subtitleMode?.subtitle,
+    frequency: freqMode?.frequency,
+    isRecurring: recurMode ? recurMode.isRecurring : undefined,
+    coordinatorId: coordMode?.coordinatorId,
+    coordinatorName: coordMode?.coordinatorName,
+    status: statusMode?.status
+  } as Partial<SuggestionRow> & {
+    coordinatorName?: string
   }
-  if (!tally.size) return {}
-  const best = [...tally.values()].sort((a, b) => b.count - a.count)[0]
-  return { target: best.t, implementation: best.impl }
 }
 
 /** ---------- Component ---------- */
@@ -393,7 +424,7 @@ export default function InterventionSuggestions ({
         setCompulsoryMap(comp)
         setRecurringMap(rec)
 
-        // load saved dates after we know which clusters exist
+        // load saved dates/details after we know which clusters exist
         const dedupClusters = Array.from(
           new Map(clusters.map(c => [c.interventionId, c])).values()
         )
@@ -415,7 +446,7 @@ export default function InterventionSuggestions ({
     }
   }, [clusters, participants])
 
-  // 3) Suggested rows (respect saved dates; force single group if compulsory)
+  // 3) Suggested rows (respect saved dates/details; force single group if compulsory)
   const suggestedRows = useMemo<SuggestionRow[]>(() => {
     if (!metaReady) return []
     const out: SuggestionRow[] = []
@@ -432,17 +463,18 @@ export default function InterventionSuggestions ({
       const isCompulsory = compulsoryMap.get(interventionId) === true
 
       const recMeta = recurringMap.get(interventionId)
-      const isRecurring = !!recMeta?.isRecurring
-      const frequency = recMeta?.frequency ?? null
+      const sysIsRecurring = !!recMeta?.isRecurring
+      const sysFrequency = recMeta?.frequency ?? null
 
       if (isCompulsory) {
-        // ✅ one grouped session with everyone
-        const preferred = pickGroupDateFromSaved(
+        // ✅ one grouped session with everyone — reuse saved aggregate where possible
+        const agg = aggregateSavedForCohort(
           savedDatesMap,
           interventionId,
           cluster.participants
         )
-        const date = preferred.target || nextTuesday(dayjs())
+        const date = agg.targetDate || nextTuesday(dayjs())
+
         out.push({
           key: `${interventionId}__all_${demand}`,
           interventionId,
@@ -451,19 +483,20 @@ export default function InterventionSuggestions ({
           type: 'grouped',
           participants: cluster.participants,
           targetDate: date,
-          implementationDate: preferred.implementation || date,
-          suggestedCoordinatorId: defaultCoordinator,
+          implementationDate: agg.implementationDate || date,
+          suggestedCoordinatorId: agg.coordinatorId || defaultCoordinator,
           coordinatorOptions: ranked,
-          isRecurring,
-          frequency,
-          subtitle: isRecurring
-            ? `Session - ${date.format('YYYY-MM-DD')}`
-            : null
+          isRecurring:
+            agg.isRecurring !== undefined ? agg.isRecurring : sysIsRecurring,
+          frequency: agg.frequency ?? sysFrequency,
+          subtitle:
+            agg.subtitle ??
+            (sysIsRecurring ? `Session - ${date.format('YYYY-MM-DD')}` : null)
         })
-        return // move to next cluster
+        return
       }
 
-      // non-compulsory logic (lenient grouping as you had)
+      // non-compulsory logic (lenient grouping)
       if (demand >= 2) {
         const groups = Math.min(
           3,
@@ -472,12 +505,12 @@ export default function InterventionSuggestions ({
         const size = Math.ceil(demand / groups)
         const batches = splitIntoBatches(cluster.participants, size)
         batches.forEach((batch, idx) => {
-          const preferred = pickGroupDateFromSaved(
+          const agg = aggregateSavedForCohort(
             savedDatesMap,
             interventionId,
             batch
           )
-          const date = preferred.target || nextTuesday(dayjs().add(idx, 'week'))
+          const date = agg.targetDate || nextTuesday(dayjs().add(idx, 'week'))
           out.push({
             key: `${interventionId}__soft_${idx}`,
             interventionId,
@@ -486,14 +519,15 @@ export default function InterventionSuggestions ({
             type: 'grouped',
             participants: batch,
             targetDate: date,
-            implementationDate: preferred.implementation || date,
-            suggestedCoordinatorId: defaultCoordinator,
+            implementationDate: agg.implementationDate || date,
+            suggestedCoordinatorId: agg.coordinatorId || defaultCoordinator,
             coordinatorOptions: ranked,
-            isRecurring,
-            frequency,
-            subtitle: isRecurring
-              ? `Session - ${date.format('YYYY-MM-DD')}`
-              : null
+            isRecurring:
+              agg.isRecurring !== undefined ? agg.isRecurring : sysIsRecurring,
+            frequency: agg.frequency ?? sysFrequency,
+            subtitle:
+              agg.subtitle ??
+              (sysIsRecurring ? `Session - ${date.format('YYYY-MM-DD')}` : null)
           })
         })
       } else {
@@ -509,13 +543,16 @@ export default function InterventionSuggestions ({
           participants: [only],
           targetDate: date,
           implementationDate: saved?.implementationDate || date,
-          suggestedCoordinatorId: defaultCoordinator,
+          suggestedCoordinatorId: saved?.coordinatorId || defaultCoordinator,
           coordinatorOptions: ranked,
-          isRecurring,
-          frequency,
-          subtitle: isRecurring
-            ? `Session - ${date.format('YYYY-MM-DD')}`
-            : null
+          isRecurring:
+            saved?.isRecurring !== undefined
+              ? saved.isRecurring
+              : sysIsRecurring,
+          frequency: saved?.frequency ?? sysFrequency,
+          subtitle:
+            saved?.subtitle ??
+            (sysIsRecurring ? `Session - ${date.format('YYYY-MM-DD')}` : null)
         })
       }
     })
@@ -588,13 +625,19 @@ export default function InterventionSuggestions ({
           targetDate: sd?.targetDate || cursor,
           implementationDate:
             sd?.implementationDate || sd?.targetDate || cursor,
-          suggestedCoordinatorId: reviewRow.suggestedCoordinatorId,
+          suggestedCoordinatorId:
+            sd?.coordinatorId || reviewRow.suggestedCoordinatorId,
           coordinatorOptions: reviewRow.coordinatorOptions,
-          isRecurring: reviewRow.isRecurring,
-          frequency: reviewRow.frequency,
-          subtitle: reviewRow.isRecurring
-            ? `Session - ${cursor.format('YYYY-MM-DD')}`
-            : null
+          isRecurring:
+            sd?.isRecurring !== undefined
+              ? sd.isRecurring
+              : reviewRow.isRecurring,
+          frequency: sd?.frequency ?? reviewRow.frequency,
+          subtitle:
+            sd?.subtitle ||
+            (reviewRow.isRecurring
+              ? `Session - ${cursor.format('YYYY-MM-DD')}`
+              : null)
         }
         cursor = nextNonTuesdayWeekday(cursor)
         return single
@@ -626,21 +669,20 @@ export default function InterventionSuggestions ({
       )
 
       const coordinatorId = row.suggestedCoordinatorId || ''
-      const coordinator = row.coordinatorOptions.find(
-        c => c.id === coordinatorId
-      )
+      const coordinator =
+        row.coordinatorOptions.find(c => c.id === coordinatorId) || null
       const coordinatorName = coordinator?.name || user.name || 'Operations'
 
       for (const p of row.participants) {
         const saved = savedDatesMap.get(keyPair(row.interventionId, p.id))
 
         // Stable id for NON-recurring; date-based id for recurring (multi-session)
-        const newId = row.isRecurring
-          ? `ic_${p.id}_${row.interventionId}_${row.targetDate.valueOf()}`
-          : `ic_${p.id}_${row.interventionId}`
+        const newId =
+          row.isRecurring
+            ? `ic_${p.id}_${row.interventionId}_${row.targetDate.valueOf()}`
+            : `ic_${p.id}_${row.interventionId}`
 
-        const docIdToUse =
-          saved?.docId && !row.isRecurring ? saved.docId : newId
+        const docIdToUse = saved?.docId && !row.isRecurring ? saved.docId : newId
 
         await setDoc(
           doc(db, 'indicativeCalender', docIdToUse),
@@ -665,9 +707,10 @@ export default function InterventionSuggestions ({
             areaOfSupport: row.areaOfSupport,
             companyCode: user.companyCode ?? null,
 
+            status: 'planned', // keep simple; adjust if you want to retain saved.status
+
             updatedAt: Timestamp.now(),
-            createdAt: saved?.docId ? undefined : Timestamp.now(),
-            status: 'planned'
+            createdAt: saved?.docId ? undefined : Timestamp.now()
           },
           { merge: true }
         )
@@ -863,10 +906,10 @@ export default function InterventionSuggestions ({
         <Space direction='vertical' style={{ width: '100%' }}>
           <Text type='secondary'>
             • Groups default to Tuesdays (future weeks). Singles default to the
-            earliest non-Tuesday weekday. • Existing saved dates are reused so
-            we never regress to auto-generated dates. • Use <b>Review</b> to
-            remove participants; removed participants are auto-reassigned as
-            singles on consecutive weekdays.
+            earliest non-Tuesday weekday. • Existing saved details (dates,
+            subtitle, recurrence, coordinator) are reused when available. • Use{' '}
+            <b>Review</b> to remove participants; removed participants are
+            auto-reassigned as singles on consecutive weekdays.
           </Text>
           <Divider style={{ margin: '8px 0' }} />
           <Table<SuggestionRow>
@@ -894,6 +937,21 @@ export default function InterventionSuggestions ({
             </Title>
             <Text type='secondary'>Area: {reviewRow.areaOfSupport}</Text>
 
+            <Divider />
+            <Text strong>Implementation Date</Text>
+            <DatePicker
+              value={reviewRow.implementationDate || reviewRow.targetDate}
+              onChange={d =>
+                d &&
+                setReviewRow(prev =>
+                  prev ? { ...prev, implementationDate: d } : prev
+                )
+              }
+              disabledDate={d => !!d && d < dayjs().startOf('day')}
+              style={{ width: 200, marginTop: 6 }}
+              suffixIcon={<CalendarOutlined />}
+            />
+
             {reviewRow.isRecurring && (
               <>
                 <Divider />
@@ -911,21 +969,6 @@ export default function InterventionSuggestions ({
                 />
               </>
             )}
-
-            <Divider />
-            <Text strong>Implementation Date</Text>
-            <DatePicker
-              value={reviewRow.implementationDate || reviewRow.targetDate}
-              onChange={d =>
-                d &&
-                setReviewRow(prev =>
-                  prev ? { ...prev, implementationDate: d } : prev
-                )
-              }
-              disabledDate={d => !!d && d < dayjs().startOf('day')}
-              style={{ width: 200, marginTop: 6 }}
-              suffixIcon={<CalendarOutlined />}
-            />
 
             <Divider />
             <Text strong>Keep in this session:</Text>
