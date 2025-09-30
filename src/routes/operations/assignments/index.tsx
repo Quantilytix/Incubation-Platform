@@ -1215,22 +1215,11 @@ export const ConsultantAssignments: React.FC = () => {
         </TabPane>
 
         {/* SUGGESTIONS */}
-        <TabPane tab='Suggestions' key='suggestions'>
+        <TabPane tab='Calendar' key='calendar'>
           <InterventionSuggestions
             user={user}
             participants={participants}
             coordinators={coordinatorsForSuggest}
-            departments={
-              user?.departmentName
-                ? [
-                    {
-                      id: user.departmentId || 'dept',
-                      name: user.departmentName,
-                      isMain: (user as any).isMainDepartment || false
-                    }
-                  ]
-                : []
-            }
           />
         </TabPane>
 
@@ -1635,6 +1624,7 @@ export const ConsultantAssignments: React.FC = () => {
                 batch.set(aRef, {
                   id: aRef.id,
                   groupId,
+                  companyCode: user?.companyCode,
                   type: values.type,
                   participantId: p.id,
                   beneficiaryName: p.beneficiaryName,
@@ -1643,11 +1633,11 @@ export const ConsultantAssignments: React.FC = () => {
                   interventionId: intv.id,
                   interventionTitle: intv.title,
                   subtitle: meta.isRecurring ? values.subtitle || null : null, // 👈 NEW
-                  isRecurring: !!meta.isRecurring, // 👈 optional
+                  isRecurring: !!meta.isRecurring,
                   targetType: values.targetType,
                   targetValue: values.targetValue ?? null,
                   targetMetric: values.targetMetric ?? null,
-                  implementationDate: implTs, // 👈 NEW
+                  implementationDate: implTs,
                   dueDate: dueTs,
                   status: 'assigned',
                   consultantStatus: 'pending',
