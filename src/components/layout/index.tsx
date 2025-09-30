@@ -255,6 +255,12 @@ export const CustomLayout: React.FC = () => {
         icon: <FormOutlined />
       },
       {
+        key: 'indicative',
+        to: '/projectadmin/indicative',
+        label: 'Indicative Calendar',
+        icon: <CalendarOutlined />
+      },
+      {
         key: 'programs',
         to: '/programs',
         label: 'Programs Onboarding',
