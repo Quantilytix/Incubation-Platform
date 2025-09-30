@@ -781,8 +781,22 @@ export default function InterventionSuggestions ({
       ),
       width: 130
     },
+     {
+      title: 'Implementation Date',
+      key: 'implementationDate',
+      render: (_: unknown, r: SuggestionRow) => (
+        <DatePicker
+          value={r.implementationDate || r.targetDate}
+          onChange={d => d && setRow(r.key, { implementationDate: d })}
+          disabledDate={d => !!d && d < dayjs().startOf('day')}
+          style={{ width: isMobile ? 150 : 180 }}
+          suffixIcon={<CalendarOutlined />}
+        />
+      ),
+      width: 200
+    },
     {
-      title: 'Target Date',
+      title: 'Due Date',
       key: 'targetDate',
       render: (_: unknown, r: SuggestionRow) => (
         <DatePicker
@@ -803,20 +817,6 @@ export default function InterventionSuggestions ({
         />
       ),
       width: 180
-    },
-    {
-      title: 'Implementation Date',
-      key: 'implementationDate',
-      render: (_: unknown, r: SuggestionRow) => (
-        <DatePicker
-          value={r.implementationDate || r.targetDate}
-          onChange={d => d && setRow(r.key, { implementationDate: d })}
-          disabledDate={d => !!d && d < dayjs().startOf('day')}
-          style={{ width: isMobile ? 150 : 180 }}
-          suffixIcon={<CalendarOutlined />}
-        />
-      ),
-      width: 200
     },
     {
       title: 'Coordinator',
@@ -1052,3 +1052,4 @@ export default function InterventionSuggestions ({
     </Card>
   )
 }
+
