@@ -73,7 +73,7 @@ export const ProjectAdminDashboard: React.FC = () => {
         // 🔄 Interventions
         const interventionsSnap = await getDocs(
           query(
-            collection(db, 'interventionsDatabase'),
+            collection(db, 'assignedInterventions'),
             where('companyCode', '==', code)
           )
         )
