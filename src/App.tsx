@@ -144,6 +144,7 @@ import FormResponseViewer from './components/form-response-viewer/FormResponseVi
 import TemplatesPage from './components/forms'
 import FormBuilderPage from './components/forms/builder/[id]'
 import FormSubmission from './components/form-submission/FormSubmission'
+import IndicativeCalendar from './components/calendar/IndicativeCalendar'
 
 const queryClient = new QueryClient()
 
@@ -193,6 +194,10 @@ const App = () => {
                       <Route path='projectadmin'>
                         <Route index element={<ProjectAdminDashboard />} />
                         <Route path='impact' element={<ImpactAnalysisForm />} />
+                        <Route
+                          path='indicative'
+                          element={<IndicativeCalendar />}
+                        />
                         <Route
                           path='monitoring'
                           element={<MonitoringEvaluationSection />}
