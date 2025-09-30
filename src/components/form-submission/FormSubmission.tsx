@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Card,
   Form,
@@ -23,7 +23,14 @@ import {
   LoadingOutlined,
   SaveOutlined
 } from '@ant-design/icons'
-import { doc, getDoc, collection, addDoc, updateDoc } from 'firebase/firestore'
+import {
+  doc,
+  getDoc,
+  collection,
+  updateDoc,
+  runTransaction,
+  serverTimestamp
+} from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '@/firebase'
 import { useGetIdentity } from '@refinedev/core'
@@ -44,7 +51,7 @@ interface FormField {
   options?: string[]
   description?: string
   defaultValue?: any
-  name?: string // optional internal key if you later version your schema
+  name?: string
 }
 
 interface FormTemplate {
@@ -65,7 +72,7 @@ interface FormAssignment {
   deliveryMethod: 'in_app' | 'email'
   linkToken?: string
   createdAt: string
-  templateSnapshot?: FormTemplate // optional snapshot at send time
+  templateSnapshot?: FormTemplate
   draftAnswers?: Record<string, any>
 }
 
@@ -73,17 +80,27 @@ interface UserIdentity {
   id?: string
   name?: string
   email?: string
-  applicationId?: string // make sure your identity exposes this linkage
+  applicationId?: string
 }
 
 const isHeading = (f: FormField) => f.type === 'heading'
+
+// Deterministic response id => guarantees one response per assignment OR per (template,user)
+const responseIdFor = (args: {
+  assignmentId?: string | null
+  templateId?: string | null
+  userId?: string | null
+}) => {
+  if (args.assignmentId) return `as:${args.assignmentId}`
+  return `tpl:${args.templateId || 'unknown'}:user:${args.userId || 'anon'}`
+}
 
 // ---------- Component ----------
 export default function FormSubmission () {
   const [form] = Form.useForm()
   const { message } = App.useApp()
   const { id } = useParams<{ id?: string }>()
-  const [searchParams] = useSearchParams() // for email deep links token
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { data: user } = useGetIdentity<UserIdentity>()
 
@@ -96,6 +113,9 @@ export default function FormSubmission () {
 
   const [template, setTemplate] = useState<FormTemplate | null>(null)
   const [assignment, setAssignment] = useState<FormAssignment | null>(null)
+
+  // simple session lock key to avoid super-quick double-submits in same tab
+  const lockKey = id ? `form-submit-lock:${id}` : null
 
   // ---------- Load (assignment-first, fallback to formId) ----------
   const token = searchParams.get('token') || undefined
@@ -116,7 +136,7 @@ export default function FormSubmission () {
           const asData = { id: asSnap.id, ...(asSnap.data() as FormAssignment) }
           setAssignment(asData)
 
-          // Optional: access check if your user object has applicationId
+          // Optional: access check
           if (
             user?.applicationId &&
             user.applicationId !== asData.applicationId
@@ -125,16 +145,16 @@ export default function FormSubmission () {
           }
 
           // If this was an email delivery, verify token
-          const token = searchParams.get('token')
+          const emailToken = searchParams.get('token')
           if (
             asData.deliveryMethod === 'email' &&
             asData.linkToken &&
-            token !== asData.linkToken
+            emailToken !== asData.linkToken
           ) {
             throw new Error('This email link is invalid or has expired.')
           }
 
-          // Resolve the template (snapshot if present)
+          // Resolve template (snapshot if present)
           if (asData.templateSnapshot) {
             setTemplate({
               ...asData.templateSnapshot,
@@ -247,52 +267,92 @@ export default function FormSubmission () {
     }
   }
 
-  // ---------- Submit ----------
+  // ---------- Submit (idempotent via transaction) ----------
   const handleSubmit = async () => {
     try {
+      // session lock to stop ultra-fast double clicks in same tab
+      if (lockKey && sessionStorage.getItem(lockKey)) {
+        message.warning('Submission already in progress…')
+        return
+      }
+      if (lockKey) sessionStorage.setItem(lockKey, '1')
+
       setSubmitting(true)
 
       const answers = await collectValues()
 
-      // write response
-      const responseRef = await addDoc(collection(db, 'formResponses'), {
-        assignmentId: assignment?.id || null,
-        templateId: assignment?.templateId || template?.id || null,
-        formTitle: template?.title,
-        submittedBy: {
-          id: user?.id || null,
-          name: user?.name || null,
-          email: user?.email || null
-        },
-        answers,
-        submittedAt: new Date().toISOString(),
-        status: 'submitted'
+      const assignmentId = assignment?.id || null
+      const templateId = assignment?.templateId || template?.id || null
+      const respId = responseIdFor({
+        assignmentId,
+        templateId,
+        userId: user?.id || null
       })
 
-      // update assignment (if any)
-      if (assignment?.id) {
-        await updateDoc(doc(db, 'formAssignments', assignment.id), {
-          status: 'submitted',
-          responseId: responseRef.id,
-          submittedAt: new Date().toISOString()
-        })
-      }
+      const respRef = doc(db, 'formResponses', respId)
+      const asRef = assignmentId
+        ? doc(db, 'formAssignments', assignmentId)
+        : null
 
-      setSubmissionId(responseRef.id)
+      await runTransaction(db, async tx => {
+        if (asRef) {
+          const asSnap = await tx.get(asRef)
+          if (!asSnap.exists()) throw new Error('Assignment not found.')
+          const as = asSnap.data() as FormAssignment
+          if (as.status === 'submitted' || (as as any).responseId) {
+            throw new Error('This form was already submitted.')
+          }
+        }
+
+        const respSnap = await tx.get(respRef)
+        if (respSnap.exists()) {
+          throw new Error(
+            'Duplicate submission detected (response already exists).'
+          )
+        }
+
+        tx.set(respRef, {
+          assignmentId,
+          templateId,
+          formTitle: template?.title || '',
+          submittedBy: {
+            id: user?.id || null,
+            name: user?.name || null,
+            email: user?.email || null
+          },
+          answers,
+          submittedAt: serverTimestamp(),
+          status: 'submitted'
+        })
+
+        if (asRef) {
+          tx.update(asRef, {
+            status: 'submitted',
+            responseId: respId,
+            submittedAt: serverTimestamp()
+          })
+        }
+      })
+
+      setSubmissionId(respId)
       setSubmitted(true)
       form.resetFields()
       setFileUploads({})
     } catch (e: any) {
       console.error(e)
-      message.error(e.message || 'Failed to submit form')
+      const msg =
+        e?.message?.includes('already') || e?.message?.includes('Duplicate')
+          ? 'This form has already been submitted.'
+          : e.message || 'Failed to submit form'
+      message.error(msg)
     } finally {
       setSubmitting(false)
+      if (lockKey) sessionStorage.removeItem(lockKey)
     }
   }
 
   // ---------- Render controls ----------
   const renderField = (f: FormField) => {
-    // headings render as section dividers (no Form.Item)
     if (isHeading(f)) {
       return (
         <div key={f.id} style={{ margin: '24px 0' }}>
@@ -398,7 +458,7 @@ export default function FormSubmission () {
             <Upload
               listType='text'
               maxCount={1}
-              beforeUpload={() => false} // keep file in memory; we upload on submit
+              beforeUpload={() => false}
               onChange={info => handleFileChange(f.id, info)}
             >
               <Button icon={<UploadOutlined />}>Upload File</Button>
@@ -477,7 +537,6 @@ export default function FormSubmission () {
       </div>
 
       <Form form={form} layout='vertical' requiredMark>
-        {/* 👇 render all fields */}
         {template.fields?.length ? (
           template.fields.map(renderField)
         ) : (
@@ -495,6 +554,7 @@ export default function FormSubmission () {
                 icon={<SaveOutlined />}
                 onClick={saveDraft}
                 loading={savingDraft}
+                disabled={submitting}
               >
                 Save progress
               </Button>
@@ -505,6 +565,7 @@ export default function FormSubmission () {
               type='primary'
               onClick={handleSubmit}
               loading={submitting}
+              disabled={submitting}
               icon={<SendOutlined />}
             >
               Submit
