@@ -18,6 +18,7 @@ import {
   Rate
 } from 'antd'
 import {
+  ArrowLeftOutlined,
   UploadOutlined,
   SendOutlined,
   LoadingOutlined,
@@ -113,6 +114,27 @@ export default function FormSubmission () {
 
   const [template, setTemplate] = useState<FormTemplate | null>(null)
   const [assignment, setAssignment] = useState<FormAssignment | null>(null)
+
+  const [backingOut, setBackingOut] = useState(false)
+
+  const handleBackToDashboard = async () => {
+    try {
+      setBackingOut(true)
+      // Save draft only if this is an assignment-based submission
+      if (assignment?.id) {
+        await saveDraft()
+      }
+    } catch (e) {
+      // We still allow navigation so user isn't trapped; they already saw a toast from saveDraft
+      console.error(
+        'Back to dashboard: draft save failed (continuing to navigate).',
+        e
+      )
+    } finally {
+      setBackingOut(false)
+      navigate('/incubatee')
+    }
+  }
 
   // simple session lock key to avoid super-quick double-submits in same tab
   const lockKey = id ? `form-submit-lock:${id}` : null
@@ -529,6 +551,23 @@ export default function FormSubmission () {
 
   return (
     <Card style={{ minHeight: '100vh' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 16
+        }}
+      >
+        <Button
+          icon={<ArrowLeftOutlined />}
+          onClick={handleBackToDashboard}
+          loading={backingOut || savingDraft}
+          disabled={submitting}
+        >
+          Back to Dashboard (Save Draft)
+        </Button>
+      </div>
       <div style={{ marginBottom: 24 }}>
         <Title level={2} style={{ marginBottom: 8 }}>
           {template.title}
