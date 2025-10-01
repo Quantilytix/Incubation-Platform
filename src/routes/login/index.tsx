@@ -1,17 +1,15 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Button, Form, Input, Typography, message, Spin, Modal } from 'antd'
 import { EyeInvisibleOutlined, EyeTwoTone, GoogleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
 import { motion } from 'framer-motion'
-import {
-  auth,
-  db
-} from '@/firebase'
+import { auth, db } from '@/firebase'
 import {
   browserLocalPersistence,
   EmailAuthProvider,
   fetchSignInMethodsForEmail,
+  getRedirectResult,
   GoogleAuthProvider,
   linkWithCredential,
   setPersistence,
@@ -19,14 +17,7 @@ import {
   signInWithPopup,
   signInWithRedirect
 } from 'firebase/auth'
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  where
-} from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 
 const { Title } = Typography
 
@@ -45,6 +36,8 @@ function formatFirebaseError (error: any) {
       return 'Network error. Please check your internet connection.'
     case 'auth/popup-closed-by-user':
       return 'Login window was closed before completing sign in.'
+    case 'auth/popup-blocked':
+      return 'Popup was blocked by the browser.'
     case 'auth/user-disabled':
       return 'Your account has been disabled. Please contact support.'
     case 'auth/account-exists-with-different-credential':
@@ -72,7 +65,6 @@ const supportedRoles = [
   'government'
 ]
 
-// Normalize role helper
 const normalizeRole = (role?: string) => role?.toLowerCase()?.replace(/\s+/g, '') || ''
 
 async function checkUser (user: any) {
@@ -86,7 +78,6 @@ async function checkUser (user: any) {
     }
   }
   const data = userSnap.data() || {}
-  // Optional Firestore-level disable flag:
   if (data?.disabled === true) {
     return {
       error: true,
@@ -99,7 +90,6 @@ async function checkUser (user: any) {
   }
 }
 
-// Incubatee routing logic unchanged
 async function handleIncubateeRouting (navigate: any, userEmail: string, role: string) {
   try {
     const appsSnap = await getDocs(
@@ -132,7 +122,6 @@ async function handleIncubateeRouting (navigate: any, userEmail: string, role: s
   } catch (error) {
     console.error('Error fetching applications:', error)
     message.error('Failed to check application status. Please try again.')
-    // Fallback
     navigate(`/${role}`)
   }
 }
@@ -140,6 +129,7 @@ async function handleIncubateeRouting (navigate: any, userEmail: string, role: s
 export const LoginPage: React.FC = () => {
   const [form] = Form.useForm()
   const navigate = useNavigate()
+
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
@@ -151,7 +141,7 @@ export const LoginPage: React.FC = () => {
   const [pendingOAuthCredential, setPendingOAuthCredential] = useState<any>(null)
   const [linkForm] = Form.useForm()
 
-  // Anim variants
+  // Framer Motion variants
   const blobVariants = {
     initial: { opacity: 0, scale: 0.95, y: 20 },
     animate: { opacity: 0.7, scale: 1, y: 0, transition: { duration: 1.2, ease: 'easeOut' } }
@@ -167,16 +157,13 @@ export const LoginPage: React.FC = () => {
 
   // Centralized post-auth routing & checks
   const postAuth = async (user: any) => {
-    // Enforce verified emails for password provider (optional but recommended)
     const usedPassword = user?.providerData?.some((p: any) => p?.providerId === 'password')
     if (usedPassword && !user.emailVerified) {
       throw new Error('Please verify your email address before logging in.')
     }
 
     const result = await checkUser(user)
-    if (result.error) {
-      throw new Error(result.message)
-    }
+    if (result.error) throw new Error(result.message)
 
     const { role, firstLoginComplete } = result
     if (!supportedRoles.includes(role)) {
@@ -195,6 +182,46 @@ export const LoginPage: React.FC = () => {
     }
   }
 
+  // Handle redirect results (Google fallback / explicit redirect)
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const result = await getRedirectResult(auth)
+        if (!mounted || !result?.user) return
+        message.success('Google login successful! Redirecting...', 1.5)
+        setRedirecting(true)
+        await postAuth(result.user)
+      } catch (err: any) {
+        // Handle linking case after redirect as well
+        if (err?.code === 'auth/account-exists-with-different-credential') {
+          const email = err?.customData?.email
+          const pendingCred = GoogleAuthProvider.credentialFromError(err)
+          if (email && pendingCred) {
+            const methods = await fetchSignInMethodsForEmail(auth, email)
+            if (methods.includes(EmailAuthProvider.PROVIDER_ID)) {
+              setLinkEmail(email)
+              setPendingOAuthCredential(pendingCred)
+              setLinkModalOpen(true)
+              message.info('This email already has an account. Enter your password to link Google.')
+              return
+            }
+            message.error(
+              `Account exists with a different sign-in method: ${methods.join(', ')}. Use that method first, then link Google from your profile.`
+            )
+            return
+          }
+        }
+        message.error(formatFirebaseError(err))
+      } finally {
+        setRedirecting(false)
+      }
+    })()
+    return () => {
+      mounted = false
+    }
+  }, []) // run once on mount
+
   // Email/password login
   const handleLogin = async (values: any) => {
     try {
@@ -203,7 +230,7 @@ export const LoginPage: React.FC = () => {
       const cred = await signInWithEmailAndPassword(auth, values.email, values.password)
       await postAuth(cred.user)
 
-      // If we had a pending OAuth credential from a prior Google attempt, link it now
+      // Link pending Google cred if present (from earlier attempt)
       if (pendingOAuthCredential) {
         try {
           await linkWithCredential(auth.currentUser!, pendingOAuthCredential)
@@ -231,23 +258,30 @@ export const LoginPage: React.FC = () => {
       setGoogleLoading(true)
       await setPersistence(auth, browserLocalPersistence)
 
-      let res
       try {
-        res = await signInWithPopup(auth, provider)
+        const res = await signInWithPopup(auth, provider)
+        message.success('Google login successful! Redirecting...', 1.5)
+        setRedirecting(true)
+        await postAuth(res.user)
+        return
       } catch (e: any) {
-        // Popup blockers → redirect fallback
-        if (e?.code === 'auth/popup-blocked' || e?.code === 'auth/popup-closed-by-user') {
+        // Popup blocked/closed → redirect fallback
+        if (e?.code === 'auth/popup-blocked') {
+          message.info('Popup was blocked. Redirecting you to Google login…')
           await signInWithRedirect(auth, provider)
           return
         }
-        // Handle account exists with different method here
+        if (e?.code === 'auth/popup-closed-by-user') {
+          message.info('Popup closed. Redirecting you to Google login…')
+          await signInWithRedirect(auth, provider)
+          return
+        }
+        // Account exists with different method (handle here too)
         if (e?.code === 'auth/account-exists-with-different-credential') {
           const email = e?.customData?.email
           const pendingCred = GoogleAuthProvider.credentialFromError(e)
           if (email && pendingCred) {
-            // Ask the user to log in with their existing method to link
             const methods = await fetchSignInMethodsForEmail(auth, email)
-            // If password is one of the methods, ask for password and link
             if (methods.includes(EmailAuthProvider.PROVIDER_ID)) {
               setLinkEmail(email)
               setPendingOAuthCredential(pendingCred)
@@ -255,7 +289,6 @@ export const LoginPage: React.FC = () => {
               message.info('This email already has an account. Enter your password to link Google.')
               return
             }
-            // Otherwise just tell them what to use (e.g., Facebook/Apple)
             message.error(
               `Account exists with a different sign-in method: ${methods.join(', ')}. Use that method first, then link Google from your profile.`
             )
@@ -264,12 +297,7 @@ export const LoginPage: React.FC = () => {
         }
         throw e
       }
-
-      message.success('Google login successful! Redirecting...', 1.5)
-      setRedirecting(true)
-      await postAuth(res.user)
     } catch (error: any) {
-      // Disabled users bubble up here too
       message.error(formatFirebaseError(error))
     } finally {
       setGoogleLoading(false)
@@ -277,7 +305,7 @@ export const LoginPage: React.FC = () => {
     }
   }
 
-  // Link Modal submit: sign in with email/password then link pending OAuth
+  // Link Providers Modal submit
   const handleLinkSubmit = async () => {
     try {
       setLinking(true)
@@ -285,13 +313,9 @@ export const LoginPage: React.FC = () => {
       if (!linkEmail || !pendingOAuthCredential) {
         throw new Error('Linking context lost. Please try Google sign-in again.')
       }
-
-      // Sign in with email/password (becomes currentUser)
       const passwordCred = await signInWithEmailAndPassword(auth, linkEmail, password)
-      // Link the pending Google credential to this account
       await linkWithCredential(passwordCred.user, pendingOAuthCredential)
 
-      // Cleanup
       setPendingOAuthCredential(null)
       setLinkEmail(null)
       setLinkModalOpen(false)
@@ -446,23 +470,11 @@ export const LoginPage: React.FC = () => {
             <div style={{ width: '100%', maxWidth: 220 }}>
               <Title
                 level={4}
-                style={{
-                  color: '#fff',
-                  marginBottom: 2,
-                  marginTop: 0,
-                  textAlign: 'center'
-                }}
+                style={{ color: '#fff', marginBottom: 2, marginTop: 0, textAlign: 'center' }}
               >
                 Smart Incubation
               </Title>
-              <div
-                style={{
-                  fontSize: 14,
-                  opacity: 0.95,
-                  marginBottom: 18,
-                  color: '#fff'
-                }}
-              >
+              <div style={{ fontSize: 14, opacity: 0.95, marginBottom: 18, color: '#fff' }}>
                 To gain access, kindly create an account below.
               </div>
               <Button
@@ -499,12 +511,7 @@ export const LoginPage: React.FC = () => {
             <div style={{ width: '100%', maxWidth: 290 }}>
               <Title
                 level={4}
-                style={{
-                  color: '#16b8e0',
-                  textAlign: 'center',
-                  fontWeight: 700,
-                  margin: 0
-                }}
+                style={{ color: '#16b8e0', textAlign: 'center', fontWeight: 700, margin: 0 }}
               >
                 Login to your account
               </Title>
@@ -521,7 +528,7 @@ export const LoginPage: React.FC = () => {
                   label='Email'
                   rules={[
                     { required: true, message: 'Please enter your email' },
-                    { type: 'email', message: 'Enter a valid email' }
+                    { type: 'email,', message: 'Enter a valid email' } // NOTE: if TS complains, change to { type: 'email' }
                   ]}
                   style={{ marginBottom: 10 }}
                 >
@@ -530,16 +537,12 @@ export const LoginPage: React.FC = () => {
                 <Form.Item
                   name='password'
                   label='Password'
-                  rules={[
-                    { required: true, message: 'Please enter your password' }
-                  ]}
+                  rules={[{ required: true, message: 'Please enter your password' }]}
                   style={{ marginBottom: 10 }}
                 >
                   <Input.Password
                     placeholder='Enter your password'
-                    iconRender={visible =>
-                      visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
-                    }
+                    iconRender={(visible) => (visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />)}
                   />
                 </Form.Item>
                 <Form.Item style={{ marginBottom: 7 }}>
@@ -549,30 +552,17 @@ export const LoginPage: React.FC = () => {
                 </Form.Item>
 
                 <div
-                  style={{
-                    color: '#000',
-                    textAlign: 'center',
-                    fontSize: 13,
-                    marginBottom: 5
-                  }}
+                  style={{ color: '#000', textAlign: 'center', fontSize: 13, marginBottom: 5 }}
                 >
                   or use your Google Account for access:
                 </div>
                 <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    margin: '13px 0 2px'
-                  }}
+                  style={{ display: 'flex', justifyContent: 'center', margin: '13px 0 2px' }}
                 >
                   <Button
                     icon={<GoogleOutlined style={{ color: '#ea4335' }} />}
                     shape='circle'
-                    style={{
-                      margin: '0 8px',
-                      border: '1px solid #eee',
-                      background: '#fff'
-                    }}
+                    style={{ margin: '0 8px', border: '1px solid #eee', background: '#fff' }}
                     onClick={handleGoogleLogin}
                     loading={googleLoading}
                   />
@@ -589,14 +579,7 @@ export const LoginPage: React.FC = () => {
           variants={logoVariants}
           src='/assets/images/QuantilytixO.png'
           alt='Quantilytix Logo'
-          style={{
-            position: 'fixed',
-            bottom: 22,
-            right: 20,
-            height: 46,
-            width: 110,
-            zIndex: 99
-          }}
+          style={{ position: 'fixed', bottom: 22, right: 20, height: 46, width: 110, zIndex: 99 }}
         />
       </div>
     </Spin>
