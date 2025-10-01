@@ -9,7 +9,6 @@ import {
   Modal,
   Descriptions,
   Divider,
-  message as antdMessage,
   Select,
   Row,
   Col,
@@ -25,7 +24,14 @@ import {
   SortAscendingOutlined,
   SortDescendingOutlined
 } from '@ant-design/icons'
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  orderBy,
+  documentId
+} from 'firebase/firestore'
 import { db } from '@/firebase'
 import { CSVLink } from 'react-csv'
 
@@ -63,15 +69,57 @@ interface FormResponse {
   formId?: string
   responses?: AnswersMap
 
+  // if present on response or within answers/responses map
+  applicationId?: string
+
   formTitle: string
   submittedBy: { id?: string; name?: string; email?: string }
-  submittedAt: string
+  submittedAt: any
   status?: string
   notes?: string
+
+  // derived/enriched
+  beneficiaryName?: string
 }
 
 interface Props {
   formId?: string // optional: preselect a form
+}
+
+/* ---------------- Utilities ---------------- */
+
+function chunkArray<T>(arr: T[], size = 10): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+const toDateSafe = (v: any): Date | null => {
+  if (!v) return null
+  if (typeof v?.toDate === 'function') {
+    try {
+      return v.toDate()
+    } catch {}
+  }
+  if (typeof v?.seconds === 'number') {
+    const ms = v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6)
+    return new Date(ms)
+  }
+  if (v instanceof Date) return v
+  if (typeof v === 'number') {
+    const ms = v < 10_000_000_000 ? v * 1000 : v
+    return new Date(ms)
+  }
+  if (typeof v === 'string') {
+    const d = new Date(v)
+    return isNaN(d.getTime()) ? null : d
+  }
+  return null
+}
+
+const formatDateTime = (v: any) => {
+  const d = toDateSafe(v)
+  return d ? d.toLocaleString() : '-'
 }
 
 const FormResponseViewer: React.FC<Props> = ({ formId }) => {
@@ -123,7 +171,81 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     })()
   }, [message])
 
-  // --- Load responses (handles templateId + legacy formId) ---
+  // --- Resolve beneficiaries for a batch of responses ---
+  const resolveBeneficiaries = async (rows: FormResponse[]) => {
+    if (!rows.length) return rows
+
+    // Collect candidate applicationIds (from top-level or answers/responses map)
+    const appIds = Array.from(
+      new Set(
+        rows
+          .map(r => {
+            const ans = (r.answers ?? r.responses ?? {}) as AnswersMap
+            return r.applicationId || ans['applicationId']
+          })
+          .filter(Boolean) as string[]
+      )
+    )
+
+    // Collect emails for fallback
+    const emails = Array.from(
+      new Set(
+        rows
+          .map(r => r.submittedBy?.email?.toLowerCase().trim())
+          .filter(Boolean) as string[]
+      )
+    )
+
+    const byId = new Map<string, any>()
+    const byEmail = new Map<string, any>()
+
+    // 1) Fetch applications by documentId in chunks of 10
+    if (appIds.length) {
+      for (const group of chunkArray(appIds, 10)) {
+        const snap = await getDocs(
+          query(collection(db, 'applications'), where(documentId(), 'in', group))
+        )
+        snap.docs.forEach(d => byId.set(d.id, d.data()))
+      }
+    }
+
+    // 2) Fetch applications by email in chunks of 10 (fallback)
+    // NOTE: Ensure your applications have an 'email' field. If it's different (e.g., 'ownerEmail'),
+    // change the field name below.
+    if (emails.length) {
+      for (const group of chunkArray(emails, 10)) {
+        const snap = await getDocs(
+          query(collection(db, 'applications'), where('email', 'in', group))
+        )
+        snap.docs.forEach(d => {
+          const data = d.data() as any
+          const key = String(data?.email || '').toLowerCase().trim()
+          if (key) byEmail.set(key, data)
+        })
+      }
+    }
+
+    // 3) Attach beneficiaryName
+    return rows.map(r => {
+      const ans = (r.answers ?? r.responses ?? {}) as AnswersMap
+      const idFromRow = r.applicationId || ans['applicationId']
+      let name: string | undefined
+
+      if (idFromRow && byId.has(idFromRow)) {
+        const app = byId.get(idFromRow)
+        name = app?.beneficiaryName || app?.companyName || app?.businessName
+      }
+
+      if (!name && r.submittedBy?.email) {
+        const app = byEmail.get(r.submittedBy.email.toLowerCase().trim())
+        name = app?.beneficiaryName || app?.companyName || app?.businessName
+      }
+
+      return { ...r, beneficiaryName: name || '-' }
+    })
+  }
+
+  // --- Load responses (handles templateId + legacy formId) and enrich with beneficiaryName ---
   useEffect(() => {
     ;(async () => {
       try {
@@ -162,7 +284,9 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
           rows = Array.from(merged.values())
         }
 
-        setResponses(rows)
+        // 🔹 Enrich with beneficiaryName
+        const enriched = await resolveBeneficiaries(rows)
+        setResponses(enriched)
       } catch (e) {
         console.error(e)
         message.error('Failed to load form responses')
@@ -180,7 +304,12 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
       const who = `${r.submittedBy?.name || ''} ${
         r.submittedBy?.email || ''
       }`.toLowerCase()
-      return r.formTitle.toLowerCase().includes(s) || who.includes(s)
+      const bene = (r.beneficiaryName || '').toLowerCase()
+      return (
+        r.formTitle.toLowerCase().includes(s) ||
+        who.includes(s) ||
+        bene.includes(s)
+      )
     })
   }, [responses, searchText])
 
@@ -202,6 +331,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     // 1) Standard headers (friendly names)
     const baseHeaders: { label: string; key: string }[] = [
       { label: 'Form', key: 'formTitle' },
+      { label: 'Beneficiary', key: 'beneficiaryName' }, // NEW
       { label: 'Submitter Name', key: 'submitter_name' },
       { label: 'Submitter Email', key: 'submitter_email' },
       { label: 'Submitted At', key: 'submittedAt' },
@@ -219,15 +349,14 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
         }))
     } else {
       // No template? fall back to whatever keys exist in answers
-      // Gather union of keys across filtered responses
       const answerKeys = new Set<string>()
       filtered.forEach(r => {
         const answers = (r.answers ?? r.responses ?? {}) as AnswersMap
         Object.keys(answers).forEach(k => answerKeys.add(k))
       })
       fieldHeaders = Array.from(answerKeys).map(k => ({
-        label: k, // friendly label = raw key (best we can do here)
-        key: `answer__${k}` // stable export key
+        label: k,
+        key: `answer__${k}`
       }))
     }
 
@@ -235,9 +364,9 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     const data = filtered.map(r => {
       const answers = (r.answers ?? r.responses ?? {}) as AnswersMap
 
-      // base row (NO id)
       const row: Record<string, any> = {
         formTitle: r.formTitle,
+        beneficiaryName: r.beneficiaryName || '', // NEW
         submitter_name: r.submittedBy?.name || '',
         submitter_email: r.submittedBy?.email || '',
         submittedAt: formatDateTime(r.submittedAt),
@@ -245,7 +374,6 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
       }
 
       if (template) {
-        // write each field value to field__<id>
         template.fields.forEach(f => {
           if (f.type === 'heading') return
           const v = answers[f.id]
@@ -256,7 +384,6 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
             : v ?? ''
         })
       } else {
-        // fallback: dump all answer keys as answer__<key>
         Object.entries(answers).forEach(([k, v]) => {
           row[`answer__${k}`] = Array.isArray(v)
             ? v.join(', ')
@@ -273,49 +400,14 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     setCsvData(data)
   }, [filtered, templates, selectedTemplate])
 
-  // put this above your columns
-  const toDateSafe = (v: any): Date | null => {
-    if (!v) return null
-
-    // Firestore Timestamp (has toDate)
-    if (typeof v?.toDate === 'function') {
-      try {
-        return v.toDate()
-      } catch {}
-    }
-
-    // Firestore { seconds, nanoseconds }
-    if (typeof v?.seconds === 'number') {
-      const ms = v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6)
-      return new Date(ms)
-    }
-
-    // JS Date
-    if (v instanceof Date) return v
-
-    // Numeric epoch (assume ms; if it's seconds, convert)
-    if (typeof v === 'number') {
-      const ms = v < 10_000_000_000 ? v * 1000 : v // seconds vs ms
-      return new Date(ms)
-    }
-
-    // ISO string or anything Date can parse
-    if (typeof v === 'string') {
-      const d = new Date(v)
-      return isNaN(d.getTime()) ? null : d
-    }
-
-    return null
-  }
-
-  const formatDateTime = (v: any) => {
-    const d = toDateSafe(v)
-    return d ? d.toLocaleString() : '-'
-  }
-
   // --- Table columns ---
   const columns = [
     { title: 'Form', dataIndex: 'formTitle', key: 'formTitle' },
+    {
+      title: 'Beneficiary',
+      dataIndex: 'beneficiaryName',
+      key: 'beneficiaryName'
+    },
     {
       title: 'Submitted By',
       dataIndex: 'submittedBy',
@@ -377,7 +469,6 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
       : String(v ?? '')
 
     if (!ansFilter) return str
-    // hide if value doesn't match filter
     return str.toLowerCase().includes(ansFilter.toLowerCase()) ? str : null
   }
 
@@ -418,6 +509,9 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
           <Descriptions title='Submission' bordered column={1} size='small'>
             <Descriptions.Item label='Form'>
               {selectedResponse.formTitle}
+            </Descriptions.Item>
+            <Descriptions.Item label='Beneficiary'>
+              {selectedResponse.beneficiaryName || '-'}
             </Descriptions.Item>
             <Descriptions.Item label='Submitted By'>
               {selectedResponse.submittedBy?.name || '-'} (
@@ -543,7 +637,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
           </Col>
           <Col xs={24} sm={12} md={14}>
             <Search
-              placeholder='Search by form or submitter'
+              placeholder='Search by form, submitter, or beneficiary'
               onSearch={setSearchText}
               onChange={e => setSearchText(e.target.value)}
               style={{ width: '100%' }}
@@ -556,7 +650,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
 
         <Table
           dataSource={filtered}
-          columns={columns}
+          columns={columns as any}
           rowKey='id'
           loading={loading}
           pagination={{ pageSize: 10 }}
