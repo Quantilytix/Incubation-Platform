@@ -13,7 +13,8 @@ import {
   Radio,
   DatePicker,
   Upload,
-  Rate
+  Rate,
+  Alert
 } from 'antd'
 import {
   PlusOutlined,
@@ -22,16 +23,23 @@ import {
   SendOutlined,
   FileTextOutlined,
   CheckCircleOutlined,
-  FormOutlined,
   PaperClipOutlined
 } from '@ant-design/icons'
-import { collection, getDocs, addDoc, query, where } from 'firebase/firestore'
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  doc,
+  runTransaction
+} from 'firebase/firestore'
 import { db } from '@/firebase'
-import { DashboardHeaderCard, MotionCard } from '../shared/Header'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { useNavigate } from 'react-router-dom'
+import { DashboardHeaderCard, MotionCard } from '@/components/shared/Header'
 
 const { Title, Text } = Typography
+const { Option } = Select
 
 // --- Models kept minimal for this page ---
 interface FormField {
@@ -54,6 +62,87 @@ interface FormTemplate {
   createdAt: string
   updatedAt: string
   createdBy?: string
+}
+
+// helpers
+const sanitizeName = (s: string) =>
+  (s || 'field')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+const pruneUndefinedDeep = (val: any): any => {
+  if (Array.isArray(val)) return val.map(pruneUndefinedDeep)
+  if (val && typeof val === 'object') {
+    return Object.fromEntries(
+      Object.entries(val)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, pruneUndefinedDeep(v)])
+    )
+  }
+  return val
+}
+const generateToken = () =>
+  Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+const makeAssignmentId = (templateId: string, applicationId: string) =>
+  `${templateId}__${applicationId}`
+
+const FieldPreview: React.FC<{ field: FormField }> = ({ field }) => {
+  switch (field.type) {
+    case 'text':
+      return <Input placeholder={field.placeholder} />
+    case 'textarea':
+      return <Input.TextArea rows={4} placeholder={field.placeholder} />
+    case 'number':
+      return <Input type='number' placeholder={field.placeholder} />
+    case 'email':
+      return <Input type='email' placeholder={field.placeholder} />
+    case 'select':
+      return (
+        <Select placeholder={field.placeholder} style={{ width: '100%' }}>
+          {(field.options || []).map((o, i) => (
+            <Option key={i} value={o}>
+              {o}
+            </Option>
+          ))}
+        </Select>
+      )
+    case 'checkbox':
+      return (
+        <Checkbox.Group
+          options={(field.options || []).map(o => ({ label: o, value: o }))}
+        />
+      )
+    case 'radio':
+      return (
+        <Radio.Group>
+          {(field.options || []).map((o, i) => (
+            <Radio key={i} value={o}>
+              {o}
+            </Radio>
+          ))}
+        </Radio.Group>
+      )
+    case 'date':
+      return <DatePicker style={{ width: '100%' }} />
+    case 'file':
+      return (
+        <Upload>
+          <Button icon={<PaperClipOutlined />}>Upload File</Button>
+        </Upload>
+      )
+    case 'rating':
+      return <Rate />
+    case 'heading':
+      return (
+        <Title level={4} style={{ margin: 0 }}>
+          {field.label || 'Section'}
+        </Title>
+      )
+    default:
+      return null
+  }
 }
 
 export default function TemplatesPage () {
@@ -84,25 +173,16 @@ export default function TemplatesPage () {
   >([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [selectAll, setSelectAll] = useState(false)
-  const [deliveryMethod, setDeliveryMethod] = useState<'in_app' | 'email'>(
-    'in_app'
-  )
   const [sending, setSending] = useState(false)
 
-  // utils
-  const pruneUndefinedDeep = (val: any): any => {
-    if (Array.isArray(val)) return val.map(pruneUndefinedDeep)
-    if (val && typeof val === 'object') {
-      return Object.fromEntries(
-        Object.entries(val)
-          .filter(([, v]) => v !== undefined)
-          .map(([k, v]) => [k, pruneUndefinedDeep(v)])
-      )
-    }
-    return val
-  }
-  const generateToken = () =>
-    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+  // "already sent" bookkeeping
+  const [alreadyAssignedIds, setAlreadyAssignedIds] = useState<Set<string>>(
+    new Set()
+  )
+  const [alreadyAssignedEmails, setAlreadyAssignedEmails] = useState<
+    Set<string>
+  >(new Set())
+  const [allAlreadyAssigned, setAllAlreadyAssigned] = useState(false)
 
   // data load
   const fetchTemplates = async () => {
@@ -120,7 +200,7 @@ export default function TemplatesPage () {
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       )
 
-      // metrics
+      // metrics (simple, global)
       const total = templates.length
       const drafts = templates.filter(t => t.status === 'draft').length
       const published = templates.filter(t => t.status === 'published').length
@@ -139,42 +219,89 @@ export default function TemplatesPage () {
 
   useEffect(() => {
     fetchTemplates()
-  }, [])
+  }, []) // eslint-disable-line
 
   // actions
   const goToNew = () => navigate('/operations/surveys/builder')
   const goToEdit = (id: string) => navigate(`/operations/surveys/builder/${id}`)
 
+  // OPEN SEND MODAL
   const openSendModal = async (template: FormTemplate) => {
     setSendTemplate(template)
     setSendOpen(true)
     try {
-      const q = query(
+      // Load accepted recipients for this company
+      const qApps = query(
         collection(db, 'applications'),
         where('applicationStatus', '==', 'accepted'),
         where('companyCode', '==', user.companyCode)
       )
-
-      const snap = await getDocs(q)
+      const appsSnap = await getDocs(qApps)
       const list: Array<{ id: string; name: string; email: string }> = []
-      snap.forEach(d => {
+      appsSnap.forEach(d => {
         const data = d.data() as any
         list.push({
           id: d.id,
-          name: data.beneficiaryName || 'Unnamed',
-          email: data.email || ''
+          name: data.beneficiaryName || data.fullName || 'Unnamed',
+          email: String(data.email || '').toLowerCase()
         })
       })
       setApplicants(list)
-      // default select all
-      setSelectedIds(list.map(a => a.id))
-      setSelectAll(true)
+
+      // Primary: assignments scoped by companyCode
+      const companyCode = user?.companyCode
+      let assDocs: Array<any> = []
+      if (companyCode) {
+        const qScoped = query(
+          collection(db, 'formAssignments'),
+          where('templateId', '==', template.id),
+          where('companyCode', '==', companyCode)
+        )
+        const scoped = await getDocs(qScoped)
+        assDocs = [...scoped.docs]
+      }
+
+      // Fallback: template-only query for legacy rows without companyCode
+      if (assDocs.length === 0 || !companyCode) {
+        const qLegacy = query(
+          collection(db, 'formAssignments'),
+          where('templateId', '==', template.id)
+        )
+        const legacy = await getDocs(qLegacy)
+        const had = new Set(assDocs.map(d => d.id))
+        legacy.docs.forEach(d => {
+          if (!had.has(d.id)) assDocs.push(d)
+        })
+      }
+
+      const takenIds = new Set<string>()
+      const takenEmails = new Set<string>()
+      assDocs.forEach(d => {
+        const a = d.data() as any
+        if (a.applicationId) takenIds.add(String(a.applicationId))
+        if (a.participantId) takenIds.add(String(a.participantId)) // legacy
+        if (a.recipientEmail)
+          takenEmails.add(String(a.recipientEmail).toLowerCase())
+      })
+
+      setAlreadyAssignedIds(takenIds)
+      setAlreadyAssignedEmails(takenEmails)
+
+      // Default select ONLY those who are eligible (not already sent by id or email)
+      const selectable = list
+        .filter(a => !takenIds.has(a.id) && !takenEmails.has(a.email))
+        .map(a => a.id)
+
+      setSelectedIds(selectable)
+      setSelectAll(selectable.length > 0 && selectable.length === list.length)
+      setAllAlreadyAssigned(selectable.length === 0 && list.length > 0)
     } catch (e) {
       console.error(e)
       message.error('Failed to load recipients')
     }
   }
 
+  // Transactional send with deterministic ID to prevent duplicates
   const sendAssignments = async () => {
     if (!sendTemplate) return
     if (selectedIds.length === 0)
@@ -185,25 +312,47 @@ export default function TemplatesPage () {
       const now = new Date().toISOString()
       const selected = applicants.filter(a => selectedIds.includes(a.id))
 
-      await Promise.all(
+      const results = await Promise.all(
         selected.map(async a => {
-          const linkToken = generateToken()
-          const payload = pruneUndefinedDeep({
-            templateId: sendTemplate.id,
-            applicationId: a.id,
-            recipientEmail: a.email,
-            status: 'pending',
-            deliveryMethod,
-            linkToken,
-            createdAt: now
-          })
-          await addDoc(collection(db, 'formAssignments'), payload as any)
-          // optional: trigger email via backend with:
-          // const link = `${window.location.origin}/portal/forms/${sendTemplate.id}?token=${linkToken}`
+          const assignmentId = makeAssignmentId(sendTemplate.id!, a.id)
+          const ref = doc(db, 'formAssignments', assignmentId)
+          try {
+            await runTransaction(db, async tx => {
+              const snap = await tx.get(ref)
+              if (snap.exists()) throw new Error('ALREADY_EXISTS')
+              const linkToken = generateToken()
+              const payload = pruneUndefinedDeep({
+                templateId: sendTemplate.id,
+                applicationId: a.id,
+                recipientEmail: a.email,
+                status: 'pending',
+                // 👇 forced in-app delivery
+                deliveryMethod: 'in_app',
+                linkToken,
+                createdAt: now,
+                createdBy: user?.email || '',
+                companyCode: user?.companyCode || ''
+              })
+              tx.set(ref, payload as any)
+            })
+            return { ok: true }
+          } catch (err: any) {
+            return {
+              ok: false,
+              reason: err?.message === 'ALREADY_EXISTS' ? 'already' : 'error'
+            }
+          }
         })
       )
 
-      message.success(`Sent to ${selected.length} recipient(s)`)
+      const ok = results.filter(r => r.ok).length
+      const dup = results.filter(r => r.reason === 'already').length
+      const fail = results.filter(r => r.reason === 'error').length
+
+      if (ok) message.success(`Sent to ${ok} recipient(s).`)
+      if (dup) message.info(`${dup} skipped (already sent).`)
+      if (fail) message.error(`${fail} failed.`)
+
       setSendOpen(false)
       setSendTemplate(null)
     } catch (e) {
@@ -214,78 +363,12 @@ export default function TemplatesPage () {
     }
   }
 
-  const sanitizeName = (s: string) =>
-    (s || 'field')
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9_]+/g, '_')
-      .replace(/^_+|_+$/g, '')
-
-  // minimal preview control renderer
-  const FieldPreview: React.FC<{ field: FormField }> = ({ field }) => {
-    switch (field.type) {
-      case 'text':
-        return <Input placeholder={field.placeholder} />
-      case 'textarea':
-        return <Input.TextArea rows={4} placeholder={field.placeholder} />
-      case 'number':
-        return <Input type='number' placeholder={field.placeholder} />
-      case 'email':
-        return <Input type='email' placeholder={field.placeholder} />
-      case 'select':
-        return (
-          <Select placeholder={field.placeholder} style={{ width: '100%' }}>
-            {(field.options || []).map((o, i) => (
-              <Option key={i} value={o}>
-                {o}
-              </Option>
-            ))}
-          </Select>
-        )
-      case 'checkbox':
-        return (
-          <Checkbox.Group
-            options={(field.options || []).map(o => ({ label: o, value: o }))}
-          />
-        )
-      case 'radio':
-        return (
-          <Radio.Group>
-            {(field.options || []).map((o, i) => (
-              <Radio key={i} value={o}>
-                {o}
-              </Radio>
-            ))}
-          </Radio.Group>
-        )
-      case 'date':
-        return <DatePicker style={{ width: '100%' }} />
-      case 'file':
-        return (
-          <Upload>
-            <Button icon={<PaperClipOutlined />}>Upload File</Button>
-          </Upload>
-        )
-      case 'rating':
-        return <Rate />
-      case 'heading':
-        return (
-          <Title level={4} style={{ margin: 0 }}>
-            {field.label || 'Section'}
-          </Title>
-        )
-      default:
-        return null
-    }
-  }
-
   return (
     <div style={{ minHeight: '100vh' }}>
       {/* Header */}
-
       <DashboardHeaderCard
         title='Form Templates'
-        subtitle='Build, preveiw and publish forms.'
+        subtitle='Build, preview and publish forms.'
         extraRight={
           <Button type='primary' icon={<PlusOutlined />} onClick={goToNew}>
             Create New Form
@@ -428,30 +511,29 @@ export default function TemplatesPage () {
         open={sendOpen}
         onCancel={() => setSendOpen(false)}
         onOk={sendAssignments}
-        okButtonProps={{ loading: sending }}
+        okButtonProps={{
+          loading: sending,
+          disabled: sending || selectedIds.length === 0
+        }}
         width={700}
       >
         <Space direction='vertical' style={{ width: '100%' }}>
+          {allAlreadyAssigned && (
+            <Alert
+              type='warning'
+              showIcon
+              message='All incubatees have already received this survey.'
+              description='No participants are selectable. Close this dialog or pick a different template/cohort.'
+            />
+          )}
+
           <MotionCard size='small' title='Delivery'>
-            <Space.Compact>
-              <Button
-                type={deliveryMethod === 'in_app' ? 'primary' : 'default'}
-                onClick={() => setDeliveryMethod('in_app')}
-              >
-                In-app
-              </Button>
-              <Button
-                type={deliveryMethod === 'email' ? 'primary' : 'default'}
-                onClick={() => setDeliveryMethod('email')}
-              >
-                Email link
-              </Button>
-            </Space.Compact>
-            <div style={{ marginTop: 8, color: 'rgba(0,0,0,.45)' }}>
-              {deliveryMethod === 'in_app'
-                ? 'Recipients will see the form in their portal.'
-                : 'Recipients get an email link to the portal form.'}
-            </div>
+            <Alert
+              type='info'
+              showIcon
+              message='Delivery method: In-app'
+              description='Recipients will see the form inside their portal.'
+            />
           </MotionCard>
 
           <MotionCard size='small' title='Recipients'>
@@ -464,10 +546,18 @@ export default function TemplatesPage () {
             >
               <Checkbox
                 checked={selectAll}
+                disabled={allAlreadyAssigned}
                 onChange={e => {
                   const checked = e.target.checked
                   setSelectAll(checked)
-                  setSelectedIds(checked ? applicants.map(a => a.id) : [])
+                  const available = applicants
+                    .filter(
+                      a =>
+                        !alreadyAssignedIds.has(a.id) &&
+                        !alreadyAssignedEmails.has(a.email)
+                    )
+                    .map(a => a.id)
+                  setSelectedIds(checked ? available : [])
                 }}
               >
                 Select all
@@ -487,33 +577,57 @@ export default function TemplatesPage () {
               {applicants.length === 0 ? (
                 <Text type='secondary'>No accepted applications found.</Text>
               ) : (
-                applicants.map(a => (
-                  <div
-                    key={a.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      padding: '6px 0'
-                    }}
-                  >
-                    <Checkbox
-                      checked={selectedIds.includes(a.id)}
-                      onChange={e => {
-                        const next = new Set(selectedIds)
-                        e.target.checked ? next.add(a.id) : next.delete(a.id)
-                        setSelectedIds([...next])
-                        setSelectAll(next.size === applicants.length)
+                applicants.map(a => {
+                  const disabled =
+                    alreadyAssignedIds.has(a.id) ||
+                    alreadyAssignedEmails.has(a.email)
+                  const checked = selectedIds.includes(a.id)
+                  return (
+                    <div
+                      key={a.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '6px 0',
+                        opacity: disabled ? 0.6 : 1
                       }}
-                    />
-                    <div>
+                    >
+                      <Checkbox
+                        disabled={disabled || allAlreadyAssigned}
+                        checked={checked}
+                        onChange={e => {
+                          const next = new Set(selectedIds)
+                          e.target.checked ? next.add(a.id) : next.delete(a.id)
+                          setSelectedIds([...next])
+                          const selectableCount = applicants.filter(
+                            x =>
+                              !alreadyAssignedIds.has(x.id) &&
+                              !alreadyAssignedEmails.has(x.email)
+                          ).length
+                          setSelectAll(
+                            next.size === selectableCount && selectableCount > 0
+                          )
+                        }}
+                      />
                       <div>
-                        <strong>{a.name}</strong>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8
+                          }}
+                        >
+                          <strong>{a.name}</strong>
+                          {disabled && <Tag color='gold'>Already sent</Tag>}
+                        </div>
+                        <div style={{ color: 'rgba(0,0,0,.45)' }}>
+                          {a.email}
+                        </div>
                       </div>
-                      <div style={{ color: 'rgba(0,0,0,.45)' }}>{a.email}</div>
                     </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </MotionCard>
