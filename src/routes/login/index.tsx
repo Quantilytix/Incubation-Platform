@@ -1,15 +1,23 @@
-import {
-  EyeInvisibleOutlined,
-  EyeTwoTone,
-  GoogleOutlined
-} from '@ant-design/icons'
-import { Button, Form, Input, Typography, message, Spin } from 'antd'
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
+import { Button, Form, Input, Typography, message, Spin, Modal } from 'antd'
+import { EyeInvisibleOutlined, EyeTwoTone, GoogleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
+import { Helmet } from 'react-helmet'
+import { motion } from 'framer-motion'
 import {
-  signInWithEmailAndPassword,
+  auth,
+  db
+} from '@/firebase'
+import {
+  browserLocalPersistence,
+  EmailAuthProvider,
+  fetchSignInMethodsForEmail,
   GoogleAuthProvider,
-  signInWithPopup
+  linkWithCredential,
+  setPersistence,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect
 } from 'firebase/auth'
 import {
   collection,
@@ -19,15 +27,11 @@ import {
   query,
   where
 } from 'firebase/firestore'
-import { auth, db } from '@/firebase'
-import { Helmet } from 'react-helmet'
-import { motion } from 'framer-motion'
 
 const { Title } = Typography
 
-function formatFirebaseError (error) {
-  if (!error || !error.code)
-    return error?.message || 'An unexpected error occurred.'
+function formatFirebaseError (error: any) {
+  if (!error || !error.code) return error?.message || 'An unexpected error occurred.'
   switch (error.code) {
     case 'auth/wrong-password':
       return 'The password you entered is incorrect.'
@@ -41,14 +45,95 @@ function formatFirebaseError (error) {
       return 'Network error. Please check your internet connection.'
     case 'auth/popup-closed-by-user':
       return 'Login window was closed before completing sign in.'
+    case 'auth/user-disabled':
+      return 'Your account has been disabled. Please contact support.'
+    case 'auth/account-exists-with-different-credential':
+      return 'This email already has an account with a different sign-in method.'
     default:
       if (typeof error.code === 'string') {
         return error.code
           .replace('auth/', '')
           .replace(/-/g, ' ')
-          .replace(/\b\w/g, l => l.toUpperCase())
+          .replace(/\b\w/g, (l: string) => l.toUpperCase())
       }
       return error.message || 'Login failed. Please try again.'
+  }
+}
+
+const supportedRoles = [
+  'admin',
+  'funder',
+  'consultant',
+  'incubatee',
+  'operations',
+  'director',
+  'projectadmin',
+  'investor',
+  'government'
+]
+
+// Normalize role helper
+const normalizeRole = (role?: string) => role?.toLowerCase()?.replace(/\s+/g, '') || ''
+
+async function checkUser (user: any) {
+  const userRef = doc(db, 'users', user.uid)
+  const userSnap = await getDoc(userRef)
+
+  if (!userSnap.exists()) {
+    return {
+      error: true,
+      message: '🚫 User not found in the system. Please contact the admin.'
+    }
+  }
+  const data = userSnap.data() || {}
+  // Optional Firestore-level disable flag:
+  if (data?.disabled === true) {
+    return {
+      error: true,
+      message: '🚫 Your account has been disabled in the system. Please contact support.'
+    }
+  }
+  return {
+    role: normalizeRole(data.role),
+    firstLoginComplete: !!data.firstLoginComplete
+  }
+}
+
+// Incubatee routing logic unchanged
+async function handleIncubateeRouting (navigate: any, userEmail: string, role: string) {
+  try {
+    const appsSnap = await getDocs(
+      query(collection(db, 'applications'), where('email', '==', userEmail))
+    )
+    const apps = appsSnap.docs.map(d => d.data() as any)
+
+    if (apps.length === 0) {
+      navigate('/incubatee/sme')
+      return
+    }
+
+    const pending = apps.find(
+      (app: any) =>
+        app.applicationStatus?.toLowerCase?.() === 'pending' || !app.applicationStatus
+    )
+    const accepted = apps.find(
+      (app: any) => app.applicationStatus?.toLowerCase?.() === 'accepted'
+    )
+
+    if (pending) {
+      navigate('/incubatee/tracker')
+      return
+    }
+    if (accepted) {
+      navigate(`/${role}`)
+      return
+    }
+    navigate('/incubatee/sme')
+  } catch (error) {
+    console.error('Error fetching applications:', error)
+    message.error('Failed to check application status. Please try again.')
+    // Fallback
+    navigate(`/${role}`)
   }
 }
 
@@ -59,179 +144,165 @@ export const LoginPage: React.FC = () => {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
 
-  // Framer Motion Variants
+  // Provider linking state
+  const [linkModalOpen, setLinkModalOpen] = useState(false)
+  const [linking, setLinking] = useState(false)
+  const [linkEmail, setLinkEmail] = useState<string | null>(null)
+  const [pendingOAuthCredential, setPendingOAuthCredential] = useState<any>(null)
+  const [linkForm] = Form.useForm()
+
+  // Anim variants
   const blobVariants = {
     initial: { opacity: 0, scale: 0.95, y: 20 },
-    animate: {
-      opacity: 0.7,
-      scale: 1,
-      y: 0,
-      transition: { duration: 1.2, ease: 'easeOut' }
-    }
+    animate: { opacity: 0.7, scale: 1, y: 0, transition: { duration: 1.2, ease: 'easeOut' } }
   }
   const cardVariants = {
     initial: { opacity: 0, scale: 0.94, y: 30 },
-    animate: {
-      opacity: 1,
-      scale: 1,
-      y: 0,
-      transition: { duration: 0.7, ease: 'easeOut' }
-    }
+    animate: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.7, ease: 'easeOut' } }
   }
   const logoVariants = {
     initial: { opacity: 0, scale: 0.7 },
-    animate: {
-      opacity: 1,
-      scale: 1,
-      transition: { duration: 1.2, delay: 0.5, ease: 'easeOut' }
-    }
+    animate: { opacity: 1, scale: 1, transition: { duration: 1.2, delay: 0.5, ease: 'easeOut' } }
   }
 
-  const supportedRoles = [
-    'admin',
-    'funder',
-    'consultant',
-    'incubatee',
-    'operations',
-    'director',
-    'projectadmin',
-    'investor',
-    'government'
-  ]
-
-async function checkUser (user) {
-    const userRef = doc(db, 'users', user.uid)
-    const userSnap = await getDoc(userRef)
-
-    if (!userSnap.exists()) {
-      return {
-        error: true,
-        message: '🚫 User not found in the system. Please contact the admin.'
-      }
+  // Centralized post-auth routing & checks
+  const postAuth = async (user: any) => {
+    // Enforce verified emails for password provider (optional but recommended)
+    const usedPassword = user?.providerData?.some((p: any) => p?.providerId === 'password')
+    if (usedPassword && !user.emailVerified) {
+      throw new Error('Please verify your email address before logging in.')
     }
-    const data = userSnap.data()
-    const normalizeRole = role => role?.toLowerCase()?.replace(/\s+/g, '') || ''
-    return {
-      role: normalizeRole(data.role),
-      firstLoginComplete: !!data.firstLoginComplete
+
+    const result = await checkUser(user)
+    if (result.error) {
+      throw new Error(result.message)
     }
-  }
 
-  // EXTRACTED DUPLICATED LOGIC INTO REUSABLE FUNCTION
-  const handleIncubateeRouting = async (userEmail, role) => {
-    try {
-      const appsSnap = await getDocs(
-        query(
-          collection(db, 'applications'),
-          where('email', '==', userEmail)
-        )
-      )
-      const apps = appsSnap.docs.map(doc => doc.data())
+    const { role, firstLoginComplete } = result
+    if (!supportedRoles.includes(role)) {
+      throw new Error(`🚫 The role "${role}" is not recognized.`)
+    }
 
-      if (apps.length === 0) {
-        navigate('/incubatee/sme')
-        return
-      }
-      
-      const pending = apps.find(
-        app =>
-          app.applicationStatus?.toLowerCase?.() === 'pending' ||
-          !app.applicationStatus
-      )
-      const accepted = apps.find(
-        app => app.applicationStatus?.toLowerCase?.() === 'accepted'
-      )
+    if (role === 'incubatee') {
+      await handleIncubateeRouting(navigate, user.email, role)
+      return
+    }
 
-      if (pending) {
-        navigate('/incubatee/tracker')
-        return
-      }
-      if (accepted) {
-        navigate(`/${role}`)
-        return
-      }
-      navigate('/incubatee/sme')
-    } catch (error) {
-      console.error('Error fetching applications:', error)
-      message.error('Failed to check application status. Please try again.')
-      // Fallback to role-based routing if application check fails
+    if (role === 'director' && !firstLoginComplete) {
+      navigate('/director/onboarding')
+    } else {
       navigate(`/${role}`)
     }
   }
 
-  const handleLogin = async values => {
+  // Email/password login
+  const handleLogin = async (values: any) => {
     try {
       setLoading(true)
-      const userCred = await signInWithEmailAndPassword(
-        auth,
-        values.email,
-        values.password
-      )
-      const user = userCred.user
+      await setPersistence(auth, browserLocalPersistence)
+      const cred = await signInWithEmailAndPassword(auth, values.email, values.password)
+      await postAuth(cred.user)
 
-      const result = await checkUser(user)
-      if (result.error) {
-        message.error(result.message)
-        return
+      // If we had a pending OAuth credential from a prior Google attempt, link it now
+      if (pendingOAuthCredential) {
+        try {
+          await linkWithCredential(auth.currentUser!, pendingOAuthCredential)
+          message.success('Your Google account has been linked successfully.')
+          setPendingOAuthCredential(null)
+          setLinkEmail(null)
+        } catch (linkErr: any) {
+          console.error('Linking failed:', linkErr)
+          message.error(formatFirebaseError(linkErr))
+        }
       }
-
-      const { role, firstLoginComplete } = result
-
-      if (role === 'incubatee') {
-        await handleIncubateeRouting(user.email, role)
-        return
-      }
-      
-      if (role === 'director' && !firstLoginComplete) {
-        navigate('/director/onboarding')
-      } else {
-        navigate(`/${role}`)
-      }
-    } catch (error) {
-      console.error(error)
+    } catch (error: any) {
       message.error(formatFirebaseError(error))
     } finally {
       setLoading(false)
     }
   }
 
+  // Google OAuth
   const handleGoogleLogin = async () => {
+    const provider = new GoogleAuthProvider()
+    provider.setCustomParameters({ prompt: 'select_account' })
+
     try {
       setGoogleLoading(true)
-      const provider = new GoogleAuthProvider()
-      const result = await signInWithPopup(auth, provider)
-      const user = result.user
+      await setPersistence(auth, browserLocalPersistence)
 
-      const userData = await checkUser(user)
-      if (userData.error) {
-        message.error(userData.message)
-        return
+      let res
+      try {
+        res = await signInWithPopup(auth, provider)
+      } catch (e: any) {
+        // Popup blockers → redirect fallback
+        if (e?.code === 'auth/popup-blocked' || e?.code === 'auth/popup-closed-by-user') {
+          await signInWithRedirect(auth, provider)
+          return
+        }
+        // Handle account exists with different method here
+        if (e?.code === 'auth/account-exists-with-different-credential') {
+          const email = e?.customData?.email
+          const pendingCred = GoogleAuthProvider.credentialFromError(e)
+          if (email && pendingCred) {
+            // Ask the user to log in with their existing method to link
+            const methods = await fetchSignInMethodsForEmail(auth, email)
+            // If password is one of the methods, ask for password and link
+            if (methods.includes(EmailAuthProvider.PROVIDER_ID)) {
+              setLinkEmail(email)
+              setPendingOAuthCredential(pendingCred)
+              setLinkModalOpen(true)
+              message.info('This email already has an account. Enter your password to link Google.')
+              return
+            }
+            // Otherwise just tell them what to use (e.g., Facebook/Apple)
+            message.error(
+              `Account exists with a different sign-in method: ${methods.join(', ')}. Use that method first, then link Google from your profile.`
+            )
+            return
+          }
+        }
+        throw e
       }
 
-      const { role, firstLoginComplete } = userData
-      if (!supportedRoles.includes(role)) {
-        message.error(`🚫 The role "${role}" is not recognized.`)
-        return
-      }
-      message.success('✅ Google login successful! Redirecting...', 1.5)
+      message.success('Google login successful! Redirecting...', 1.5)
       setRedirecting(true)
-
-      if (role === 'incubatee') {
-        await handleIncubateeRouting(user.email, role)
-        return
-      }
-
-      if (role === 'director' && !firstLoginComplete) {
-        navigate('/director/onboarding')
-      } else {
-        navigate(`/${role}`)
-      }
-    } catch (error) {
-      console.error('Google login failed:', error)
+      await postAuth(res.user)
+    } catch (error: any) {
+      // Disabled users bubble up here too
       message.error(formatFirebaseError(error))
     } finally {
       setGoogleLoading(false)
-      setRedirecting(false) // Ensure redirecting state is reset
+      setRedirecting(false)
+    }
+  }
+
+  // Link Modal submit: sign in with email/password then link pending OAuth
+  const handleLinkSubmit = async () => {
+    try {
+      setLinking(true)
+      const { password } = await linkForm.validateFields()
+      if (!linkEmail || !pendingOAuthCredential) {
+        throw new Error('Linking context lost. Please try Google sign-in again.')
+      }
+
+      // Sign in with email/password (becomes currentUser)
+      const passwordCred = await signInWithEmailAndPassword(auth, linkEmail, password)
+      // Link the pending Google credential to this account
+      await linkWithCredential(passwordCred.user, pendingOAuthCredential)
+
+      // Cleanup
+      setPendingOAuthCredential(null)
+      setLinkEmail(null)
+      setLinkModalOpen(false)
+      linkForm.resetFields()
+
+      message.success('Accounts linked. Redirecting…')
+      await postAuth(passwordCred.user)
+    } catch (err: any) {
+      message.error(formatFirebaseError(err))
+    } finally {
+      setLinking(false)
     }
   }
 
@@ -244,12 +315,40 @@ async function checkUser (user) {
           content='Log in to your Smart Incubation account to access tailored tools and resources for entrepreneurs, consultants, and administrators.'
         />
       </Helmet>
+
+      {/* Link Providers Modal */}
+      <Modal
+        title='Link your Google account'
+        open={linkModalOpen}
+        onCancel={() => !linking && setLinkModalOpen(false)}
+        onOk={handleLinkSubmit}
+        okText='Link & Continue'
+        confirmLoading={linking}
+        destroyOnClose
+      >
+        <Typography.Paragraph>
+          We found an existing account for <b>{linkEmail}</b>. Enter your password to link your
+          Google sign-in to this account. Next time, you can use Google directly.
+        </Typography.Paragraph>
+        <Form form={linkForm} layout='vertical' preserve={false}>
+          <Form.Item
+            name='password'
+            label='Password'
+            rules={[{ required: true, message: 'Please enter your password' }]}
+          >
+            <Input.Password
+              placeholder='Enter your password'
+              iconRender={(visible) => (visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />)}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       <div
         style={{
           minHeight: '100vh',
           width: '100vw',
-          background:
-            'linear-gradient(120deg, #aecbfa 0%, #7fa7fa 60%, #cfbcfa 100%)',
+          background: 'linear-gradient(120deg, #aecbfa 0%, #7fa7fa 60%, #cfbcfa 100%)',
           overflow: 'hidden',
           position: 'relative',
           display: 'flex',
@@ -321,7 +420,7 @@ async function checkUser (user) {
           style={{
             width: 700,
             minWidth: 300,
-            minHeight: 310, // shorter height
+            minHeight: 310,
             display: 'flex',
             borderRadius: 16,
             background: '#fff',
@@ -444,15 +543,11 @@ async function checkUser (user) {
                   />
                 </Form.Item>
                 <Form.Item style={{ marginBottom: 7 }}>
-                  <Button
-                    type='primary'
-                    htmlType='submit'
-                    block
-                    loading={loading}
-                  >
+                  <Button type='primary' htmlType='submit' block loading={loading}>
                     LOGIN
                   </Button>
                 </Form.Item>
+
                 <div
                   style={{
                     color: '#000',
