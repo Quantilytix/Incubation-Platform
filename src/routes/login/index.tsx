@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Button, Form, Input, Typography, message, Spin, Modal, Alert } from 'antd'
 import { EyeInvisibleOutlined, EyeTwoTone, GoogleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
@@ -110,25 +110,22 @@ export const LoginPage: React.FC = () => {
   const [pendingOAuthCredential, setPendingOAuthCredential] = useState<any>(null)
   const [linkForm] = Form.useForm()
 
-  // Soft verify modal
+  // Soft verify modal (now PAUSES navigation)
   const [verifyModalOpen, setVerifyModalOpen] = useState(false)
   const [verifySending, setVerifySending] = useState(false)
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
+
+  // Store "what to do next" so we can run it after the user acts in the modal
+  const nextNavRef = useRef<null | (() => Promise<void>)>(null)
 
   // Framer Motion variants
   const blobVariants = { initial: { opacity: 0, scale: 0.95, y: 20 }, animate: { opacity: 0.7, scale: 1, y: 0, transition: { duration: 1.2, ease: 'easeOut' } } }
   const cardVariants = { initial: { opacity: 0, scale: 0.94, y: 30 }, animate: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.7, ease: 'easeOut' } } }
   const logoVariants = { initial: { opacity: 0, scale: 0.7 }, animate: { opacity: 1, scale: 1, transition: { duration: 1.2, delay: 0.5, ease: 'easeOut' } } }
 
-  // Centralized post-auth routing & checks (NO hard block on email verification)
+  // Centralized post-auth routing & checks
   const postAuth = async (user: any) => {
     const usedPassword = user?.providerData?.some((p: any) => p?.providerId === 'password')
-
-    // If email/password and not verified → show non-blocking modal (once)
-    if (usedPassword && !user.emailVerified) {
-      setUnverifiedEmail(user.email ?? null)
-      setVerifyModalOpen(true)
-    }
 
     const result = await checkUser(user)
     if (result.error) throw new Error(result.message)
@@ -138,15 +135,28 @@ export const LoginPage: React.FC = () => {
       throw new Error(`🚫 The role "${role}" is not recognized.`)
     }
 
-    if (role === 'incubatee') {
-      await handleIncubateeRouting(navigate, user.email, role)
+    // compute next navigation once
+    nextNavRef.current = async () => {
+      if (role === 'incubatee') {
+        await handleIncubateeRouting(navigate, user.email, role)
+        return
+      }
+      if (role === 'director' && !firstLoginComplete) {
+        navigate('/director/onboarding')
+      } else {
+        navigate(`/${role}`)
+      }
+    }
+
+    // If password user & unverified: SHOW modal and STOP navigation until user clicks Continue
+    if (usedPassword && !user.emailVerified) {
+      setUnverifiedEmail(user.email ?? null)
+      setVerifyModalOpen(true)
       return
     }
-    if (role === 'director' && !firstLoginComplete) {
-      navigate('/director/onboarding')
-    } else {
-      navigate(`/${role}`)
-    }
+
+    // otherwise navigate immediately
+    await nextNavRef.current?.()
   }
 
   // Handle redirect results (Google fallback / explicit redirect)
@@ -288,7 +298,7 @@ export const LoginPage: React.FC = () => {
     }
   }
 
-  // Send verification email for current user (from soft modal)
+  // Send verification email (from modal)
   const sendVerify = async () => {
     try {
       setVerifySending(true)
@@ -298,12 +308,17 @@ export const LoginPage: React.FC = () => {
       }
       await sendEmailVerification(auth.currentUser)
       message.success('Verification email sent.')
-      setVerifyModalOpen(false)
     } catch (err: any) {
       message.error(formatFirebaseError(err))
     } finally {
       setVerifySending(false)
     }
+  }
+
+  // Continue after modal
+  const continueAfterVerifyPrompt = async () => {
+    setVerifyModalOpen(false)
+    await nextNavRef.current?.()
   }
 
   return (
@@ -333,14 +348,18 @@ export const LoginPage: React.FC = () => {
         </Form>
       </Modal>
 
-      {/* Soft verification prompt (non-blocking) */}
+      {/* Verification prompt (PAUSES navigation) */}
       <Modal
         title='Verify your email'
         open={verifyModalOpen}
-        onCancel={() => !verifySending && setVerifyModalOpen(false)}
+        onCancel={() => setVerifyModalOpen(false)}
         footer={[
-          <Button key='later' onClick={() => setVerifyModalOpen(false)} disabled={verifySending}>Later</Button>,
-          <Button key='send' type='primary' loading={verifySending} onClick={sendVerify}>Send verification email</Button>,
+          <Button key='later' onClick={continueAfterVerifyPrompt}>
+            Continue
+          </Button>,
+          <Button key='send' type='primary' loading={verifySending} onClick={sendVerify}>
+            Send verification email
+          </Button>,
         ]}
       >
         <Alert
