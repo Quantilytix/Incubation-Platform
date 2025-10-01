@@ -18,6 +18,7 @@ import {
   Table
 } from 'antd'
 import {
+  ArrowRightOutlined,
   BellOutlined,
   CheckCircleOutlined,
   ExpandAltOutlined,
@@ -115,6 +116,18 @@ type AssignedSurveyRow = {
   updatedAt?: any
 }
 
+// Safely convert Firestore Timestamp | string | Date | undefined to Date
+const toDateSafe = (v: any): Date | null => {
+  if (!v) return null
+  if (v?.toDate) return v.toDate() // Firestore Timestamp
+  if (v?.seconds) return new Date(v.seconds * 1000) // {seconds,nanoseconds}
+  const d = new Date(v)
+  return isNaN(d.getTime()) ? null : d
+}
+
+// Normalize for sort
+const millis = (v: any): number => toDateSafe(v)?.getTime() ?? 0
+
 export const IncubateeDashboard: React.FC = () => {
   const [revenueData, setRevenueData] = useState<number[]>([])
   const [avgRevenueData, setAvgRevenueData] = useState<number[]>([])
@@ -192,6 +205,29 @@ export const IncubateeDashboard: React.FC = () => {
         const pid = participantDoc.id
         setParticipantId(pid)
 
+        // --- Find the participant’s application (try several keys) ---
+        let applicationId: string | null = null
+
+        // 2a) try by participantId
+        const applicationByPid = await getDocs(
+          query(
+            collection(db, 'applications'),
+            where('participantId', '==', pid)
+          )
+        )
+        if (!applicationByPid.empty) {
+          applicationId = applicationByPid.docs[0].id
+        } else {
+          // 2b) fall back to by email
+          const appByEmail = await getDocs(
+            query(
+              collection(db, 'applications'),
+              where('email', '==', user.email)
+            )
+          )
+          if (!appByEmail.empty) applicationId = appByEmail.docs[0].id
+        }
+
         // Revenue & Headcount
         const monthLabels = [
           'January',
@@ -207,26 +243,21 @@ export const IncubateeDashboard: React.FC = () => {
           'November',
           'December'
         ]
-
         const revMonthly = participant.revenueHistory?.monthly || {}
         const headMonthly = participant.headcountHistory?.monthly || {}
 
-        setRevenueData(
-          monthLabels.map(month => {
-            // Prefer revenueHistory.monthly[month], fallback to flat key
-            const monthly = revMonthly[month]
-            const flat = participant[`revenue_${month}`]
-            return typeof monthly === 'number'
-              ? monthly
-              : typeof flat === 'number'
-              ? flat
-              : 0
-          })
-        )
+        const revenueArray = monthLabels.map(month => {
+          const monthly = revMonthly[month]
+          const flat = participant[`revenue_${month}`]
+          return typeof monthly === 'number'
+            ? monthly
+            : typeof flat === 'number'
+            ? flat
+            : 0
+        })
 
-        setAvgRevenueData(prev =>
-          monthLabels.map((_, i) => revenueData[i] * 0.85)
-        )
+        setRevenueData(revenueArray)
+        setAvgRevenueData(revenueArray.map(v => Math.round(v * 0.85))) // ✅ from local, not state
 
         setPermHeadcount(
           monthLabels.map(month => {
@@ -255,24 +286,18 @@ export const IncubateeDashboard: React.FC = () => {
         setParticipation(participant.interventions?.participationRate || 0)
 
         // Compliance Docs
-        const applicationSnap = await getDocs(
-          query(
-            collection(db, 'applications'),
-            where('participantId', '==', pid)
-          )
-        )
-
         let complianceDocs: any[] = []
-
-        if (!applicationSnap.empty) {
-          const appData = applicationSnap.docs[0].data()
-          complianceDocs = appData.complianceDocuments || []
+        if (applicationId) {
+          const appRef = doc(db, 'applications', applicationId)
+          const appSnap = await getDoc(appRef)
+          if (appSnap.exists()) {
+            const appData = appSnap.data() as any
+            complianceDocs = appData.complianceDocuments || []
+          }
         }
-
         const invalidDocs = complianceDocs.filter(
-          (doc: any) => !['valid', 'approved'].includes(doc.status)
+          (d: any) => !['valid', 'approved'].includes(d.status)
         )
-
         setOutstandingDocs(invalidDocs.length)
 
         // Notifications
@@ -333,58 +358,91 @@ export const IncubateeDashboard: React.FC = () => {
         try {
           setLoadingSurveys(true)
 
-          if (!applicationSnap.empty) {
-            const applicationId = applicationSnap.docs[0].id
+          // Build queries that might exist in your DB shape:
+          const queries: Promise<any>[] = []
 
-            const asSnap = await getDocs(
-              query(
-                collection(db, 'formAssignments'),
-                where('applicationId', '==', applicationId)
+          if (applicationId) {
+            queries.push(
+              getDocs(
+                query(
+                  collection(db, 'formAssignments'),
+                  where('applicationId', '==', applicationId)
+                )
               )
             )
-
-            const rows: AssignedSurveyRow[] = await Promise.all(
-              asSnap.docs.map(async d => {
-                const a = d.data() as any
-                // resolve title (use snapshot if you later store it; otherwise fetch template)
-                let title = a.templateTitle as string | undefined
-                if (!title && a.templateId) {
-                  const tSnap = await getDoc(
-                    doc(db, 'formTemplates', a.templateId)
-                  )
-                  title = tSnap.exists()
-                    ? (tSnap.data() as any).title
-                    : 'Untitled Form'
-                }
-                return {
-                  id: d.id,
-                  templateId: a.templateId,
-                  title: title || 'Untitled Form',
-                  status: (a.status ||
-                    'pending') as AssignedSurveyRow['status'],
-                  deliveryMethod: (a.deliveryMethod ||
-                    'in_app') as AssignedSurveyRow['deliveryMethod'],
-                  linkToken: a.linkToken,
-                  createdAt: a.createdAt,
-                  updatedAt: a.updatedAt
-                }
-              })
-            )
-
-            // Sort: newest updated first
-            rows.sort(
-              (a, b) =>
-                new Date(b.updatedAt || b.createdAt || 0).getTime() -
-                new Date(a.updatedAt || a.createdAt || 0).getTime()
-            )
-
-            setAssignedSurveys(rows)
-          } else {
-            setAssignedSurveys([])
           }
+
+          // Always try participantId as well (many installs use this)
+          queries.push(
+            getDocs(
+              query(
+                collection(db, 'formAssignments'),
+                where('participantId', '==', pid)
+              )
+            )
+          )
+
+          // Optional: if some older rows stored email
+          queries.push(
+            getDocs(
+              query(
+                collection(db, 'formAssignments'),
+                where('email', '==', user.email)
+              )
+            )
+          )
+
+          const snaps = await Promise.all(queries)
+
+          // Merge & de-dup by doc id
+          const seen = new Set<string>()
+          const allDocs = snaps
+            .flatMap(s => s.docs)
+            .filter(d => {
+              if (seen.has(d.id)) return false
+              seen.add(d.id)
+              return true
+            })
+
+          const rows: AssignedSurveyRow[] = await Promise.all(
+            allDocs.map(async d => {
+              const a = d.data() as any
+
+              // Resolve a title (prefer denormalized title if present)
+              let title: string | undefined = a.templateTitle
+              if (!title && a.templateId) {
+                const tSnap = await getDoc(
+                  doc(db, 'formTemplates', a.templateId)
+                )
+                title = tSnap.exists() ? (tSnap.data() as any).title : undefined
+              }
+
+              return {
+                id: d.id,
+                templateId: a.templateId,
+                title: title || 'Untitled Form',
+                status: (a.status || 'pending') as AssignedSurveyRow['status'],
+                deliveryMethod: (a.deliveryMethod ||
+                  'in_app') as AssignedSurveyRow['deliveryMethod'],
+                linkToken: a.linkToken,
+                createdAt: a.createdAt,
+                updatedAt: a.updatedAt
+              }
+            })
+          )
+
+          // Sort: newest (by updatedAt or createdAt), with proper Timestamp handling
+          rows.sort(
+            (a, b) =>
+              millis(b.updatedAt || b.createdAt) -
+              millis(a.updatedAt || a.createdAt)
+          )
+
+          setAssignedSurveys(rows)
         } catch (e) {
-          console.error(e)
-          // non-blocking
+          console.error('[surveys] load error', e)
+          message.error('Could not load your surveys right now.')
+          setAssignedSurveys([])
         } finally {
           setLoadingSurveys(false)
         }
@@ -766,19 +824,13 @@ export const IncubateeDashboard: React.FC = () => {
       }
     },
     {
-      title: 'Delivery',
-      dataIndex: 'deliveryMethod',
-      key: 'deliveryMethod',
-      render: (m: AssignedSurveyRow['deliveryMethod']) => (
-        <Tag>{m === 'in_app' ? 'In-app' : 'Email link'}</Tag>
-      )
-    },
-    {
       title: 'Updated',
       dataIndex: 'updatedAt',
       key: 'updatedAt',
-      render: (v: any, r: AssignedSurveyRow) =>
-        formatDateShort(v || r.createdAt)
+      render: (_: any, r: AssignedSurveyRow) => {
+        const d = toDateSafe(r.updatedAt || r.createdAt)
+        return d ? dayjs(d).format('YYYY-MM-DD') : '-'
+      }
     },
     {
       title: 'Action',
@@ -791,7 +843,14 @@ export const IncubateeDashboard: React.FC = () => {
             ? 'Continue'
             : 'Start'
         return (
-          <Button type='link' onClick={() => openSurvey(row)}>
+          <Button
+            type='link'
+            variant='filled'
+            color='primary'
+            icon={<ArrowRightOutlined />}
+            iconPosition='end'
+            onClick={() => openSurvey(row)}
+          >
             {label}
           </Button>
         )
