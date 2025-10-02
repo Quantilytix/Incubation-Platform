@@ -578,6 +578,10 @@ export default function InterventionSuggestions ({
   // 4) Local editable rows
 const [rows, setRows] = useState<SuggestionRow[]>([])
 
+const rowDateValue = (r: SuggestionRow) =>
+    (r.implementationDate || r.targetDate).valueOf()
+
+
 // keep an always-sorted view for the table
 const sortedRows = useMemo(
   () => [...rows].sort((a, b) => rowDateValue(a) - rowDateValue(b)),
@@ -744,8 +748,6 @@ const sortedRows = useMemo(
     [savedDatesMap]
   )
 
-  const rowDateValue = (r: SuggestionRow) =>
-  (r.implementationDate || r.targetDate).valueOf()
 
 
   // ---------- Columns ----------
@@ -1068,5 +1070,3 @@ const sortedRows = useMemo(
     </Card>
   )
 }
-
-
