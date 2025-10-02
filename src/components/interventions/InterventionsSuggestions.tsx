@@ -576,7 +576,14 @@ export default function InterventionSuggestions ({
   ])
 
   // 4) Local editable rows
-  const [rows, setRows] = useState<SuggestionRow[]>([])
+const [rows, setRows] = useState<SuggestionRow[]>([])
+
+// keep an always-sorted view for the table
+const sortedRows = useMemo(
+  () => [...rows].sort((a, b) => rowDateValue(a) - rowDateValue(b)),
+  [rows]
+)
+
   useEffect(() => {
     if (metaReady) setRows(suggestedRows)
   }, [metaReady, suggestedRows])
@@ -737,6 +744,10 @@ export default function InterventionSuggestions ({
     [savedDatesMap]
   )
 
+  const rowDateValue = (r: SuggestionRow) =>
+  (r.implementationDate || r.targetDate).valueOf()
+
+
   // ---------- Columns ----------
   const columns: ColumnsType<SuggestionRow> = [
     {
@@ -784,6 +795,10 @@ export default function InterventionSuggestions ({
      {
       title: 'Implementation Date',
       key: 'implementationDate',
+        sorter: (a, b) =>
+    (a.implementationDate || a.targetDate).valueOf() -
+    (b.implementationDate || b.targetDate).valueOf(),
+  defaultSortOrder: 'ascend',
       render: (_: unknown, r: SuggestionRow) => (
         <DatePicker
           value={r.implementationDate || r.targetDate}
@@ -798,6 +813,7 @@ export default function InterventionSuggestions ({
     {
       title: 'Due Date',
       key: 'targetDate',
+       sorter: (a, b) => a.targetDate.valueOf() - b.targetDate.valueOf(),
       render: (_: unknown, r: SuggestionRow) => (
         <DatePicker
           value={r.targetDate}
@@ -960,7 +976,7 @@ export default function InterventionSuggestions ({
           <Table<SuggestionRow>
             rowKey='key'
             columns={columns}
-            dataSource={rows}
+            dataSource={sortedRows}
             loading={!metaReady}
             size={isMobile ? 'small' : 'middle'}
             pagination={{
@@ -1052,4 +1068,5 @@ export default function InterventionSuggestions ({
     </Card>
   )
 }
+
 
