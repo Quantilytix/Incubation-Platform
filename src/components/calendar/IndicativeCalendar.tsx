@@ -15,7 +15,8 @@ import {
   Spin,
   Tag,
   List,
-  message
+  message,
+  Segmented
 } from 'antd'
 import dayjs, { Dayjs } from 'dayjs'
 import {
@@ -110,6 +111,87 @@ function statusAggregate (statuses: Array<string | null | undefined>) {
   return 'processing'
 }
 
+/** Reusable aggregation (same logic your calendar uses) */
+function buildItemsByDate (entries: IndicativeEntry[]) {
+  const map = new Map<string, CalendarItem[]>()
+  const groupedIndex = new Map<string, GroupedCalendarItem>()
+
+  const push = (dayKey: string, item: CalendarItem) => {
+    const arr = map.get(dayKey) || []
+    arr.push(item)
+    map.set(dayKey, arr)
+  }
+
+  for (const r of entries) {
+    const d = r.implementationDate || r.targetDate
+    if (!d) continue
+    const dayKey = d.format('YYYY-MM-DD')
+
+    const base: BaseFields = {
+      interventionId: r.interventionId,
+      interventionTitle: r.interventionTitle,
+      areaOfSupport: r.areaOfSupport,
+      subtitle: r.subtitle ?? null,
+      coordinatorId: r.coordinatorId ?? null,
+      coordinatorName: r.coordinatorName ?? null,
+      isRecurring: r.isRecurring,
+      frequency: r.frequency,
+      status: r.status
+    }
+
+    if (r.type === 'grouped') {
+      const idKey = `${dayKey}|G|${r.interventionId}|${r.subtitle || ''}|${
+        r.coordinatorId || ''
+      }`
+      const existing = groupedIndex.get(idKey)
+      if (existing) {
+        existing.participants.push({
+          id: r.participantId,
+          name: r.beneficiaryName
+        })
+        existing.entries.push(r)
+        existing.base.status = statusAggregate(existing.entries.map(e => e.status))
+      } else {
+        const item: GroupedCalendarItem = {
+          kind: 'grouped',
+          idKey,
+          date: d,
+          base: { ...base, status: statusAggregate([r.status]) },
+          participants: [{ id: r.participantId, name: r.beneficiaryName }],
+          entries: [r]
+        }
+        groupedIndex.set(idKey, item)
+        push(dayKey, item)
+      }
+    } else {
+      const idKey = `${dayKey}|S|${r.id}`
+      const item: SingleCalendarItem = {
+        kind: 'single',
+        idKey,
+        date: d,
+        base,
+        participant: { id: r.participantId, name: r.beneficiaryName },
+        entry: r
+      }
+      push(dayKey, item)
+    }
+  }
+
+  for (const [k, arr] of map) {
+    arr.sort((a, b) => {
+      const da = a.date.valueOf()
+      const db = b.date.valueOf()
+      if (da !== db) return da - db
+      const la = (a as any).base?.interventionTitle || ''
+      const lb = (b as any).base?.interventionTitle || ''
+      return la.localeCompare(lb)
+    })
+    map.set(k, arr)
+  }
+
+  return map
+}
+
 export default function IndicativeCalendar () {
   const screens = Grid.useBreakpoint()
   const isMobile = !screens.md
@@ -130,6 +212,9 @@ export default function IndicativeCalendar () {
   const [entries, setEntries] = useState<IndicativeEntry[]>([])
   const [error, setError] = useState<string | null>(null)
   const [programName, setProgramName] = useState<string>('Program')
+
+  // NEW: export scope toggle
+  const [exportScope, setExportScope] = useState<'month' | 'all'>('month')
 
   // Modal state
   const [open, setOpen] = useState(false)
@@ -241,93 +326,10 @@ export default function IndicativeCalendar () {
   }, [loadMonth])
 
   /** Aggregate into calendar items (group grouped sessions) */
-  const itemsByDate = useMemo(() => {
-    const map = new Map<string, CalendarItem[]>()
+  const itemsByDate = useMemo(() => buildItemsByDate(entries), [entries])
 
-    const getDate = (r: IndicativeEntry) =>
-      r.implementationDate || r.targetDate || undefined
-
-    const push = (dayKey: string, item: CalendarItem) => {
-      const arr = map.get(dayKey) || []
-      arr.push(item)
-      map.set(dayKey, arr)
-    }
-
-    const groupedIndex = new Map<string, GroupedCalendarItem>()
-
-    for (const r of entries) {
-      const d = getDate(r)
-      if (!d) continue
-      const dayKey = d.format('YYYY-MM-DD')
-
-      const base: BaseFields = {
-        interventionId: r.interventionId,
-        interventionTitle: r.interventionTitle,
-        areaOfSupport: r.areaOfSupport,
-        subtitle: r.subtitle ?? null,
-        coordinatorId: r.coordinatorId ?? null,
-        coordinatorName: r.coordinatorName ?? null,
-        isRecurring: r.isRecurring,
-        frequency: r.frequency,
-        status: r.status
-      }
-
-      if (r.type === 'grouped') {
-        const idKey = `${dayKey}|G|${r.interventionId}|${r.subtitle || ''}|${
-          r.coordinatorId || ''
-        }`
-        const existing = groupedIndex.get(idKey)
-        if (existing) {
-          existing.participants.push({
-            id: r.participantId,
-            name: r.beneficiaryName
-          })
-          existing.entries.push(r)
-          existing.base.status = statusAggregate(
-            existing.entries.map(e => e.status)
-          )
-        } else {
-          const item: GroupedCalendarItem = {
-            kind: 'grouped',
-            idKey,
-            date: d,
-            base: { ...base, status: statusAggregate([r.status]) },
-            participants: [{ id: r.participantId, name: r.beneficiaryName }],
-            entries: [r]
-          }
-          groupedIndex.set(idKey, item)
-          push(dayKey, item)
-        }
-      } else {
-        const idKey = `${dayKey}|S|${r.id}`
-        const item: SingleCalendarItem = {
-          kind: 'single',
-          idKey,
-          date: d,
-          base,
-          participant: { id: r.participantId, name: r.beneficiaryName },
-          entry: r
-        }
-        push(dayKey, item)
-      }
-    }
-
-    for (const [k, arr] of map) {
-      arr.sort((a, b) => {
-        const da = a.date.valueOf()
-        const db = b.date.valueOf()
-        if (da !== db) return da - db
-        const la = (a as any).base?.interventionTitle || ''
-        const lb = (b as any).base?.interventionTitle || ''
-        return la.localeCompare(lb)
-      })
-      map.set(k, arr)
-    }
-    return map
-  }, [entries])
-
-  /** Flatten for export (Implementation view) */
-  const exportRows = useMemo(() => {
+  /** Flatten for export (Implementation view) — MONTH scope */
+  const exportRowsMonth = useMemo(() => {
     const rows: {
       interventionTitle: string
       areaOfSupport: string
@@ -355,6 +357,246 @@ export default function IndicativeCalendar () {
 
     return rows
   }, [itemsByDate])
+
+  // HTML escaper for fallback
+  function escapeHtml (s: string) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;')
+  }
+
+  /** Helper: fetch ALL entries (filtered by companyCode) and build export rows */
+  const buildExportAll = useCallback(async () => {
+    const snap = await getDocs(collection(db, 'indicativeCalender'))
+    const all: IndicativeEntry[] = []
+    snap.forEach(d => {
+      const data = d.data() as any
+      const row: IndicativeEntry = {
+        id: data?.id || d.id,
+        participantId: data?.participantId,
+        beneficiaryName: data?.beneficiaryName,
+        interventionId: data?.interventionId,
+        interventionTitle: data?.interventionTitle,
+        areaOfSupport: data?.areaOfSupport,
+        type: data?.type,
+        targetDate: tsToDayjs(data?.targetDate),
+        implementationDate: tsToDayjs(data?.implementationDate),
+        isRecurring: !!data?.isRecurring,
+        frequency: data?.frequency ?? null,
+        subtitle: data?.subtitle ?? null,
+        coordinatorId: data?.coordinatorId ?? null,
+        coordinatorName: data?.coordinatorName ?? null,
+        companyCode: data?.companyCode ?? null,
+        status: data?.status ?? null
+      }
+      if (!companyCode || row.companyCode === companyCode) {
+        all.push(row)
+      }
+    })
+
+    const itemsAll = buildItemsByDate(all)
+
+    // Build export rows + compute min/max dates for header
+    const rows: {
+      interventionTitle: string
+      areaOfSupport: string
+      participantsCount: number
+      implementationDate: string
+    }[] = []
+    let minDate: Dayjs | null = null
+    let maxDate: Dayjs | null = null
+
+    for (const arr of itemsAll.values()) {
+      for (const item of arr) {
+        rows.push({
+          interventionTitle: item.base.interventionTitle || 'Intervention',
+          areaOfSupport: item.base.areaOfSupport || '—',
+          participantsCount:
+            item.kind === 'grouped' ? item.participants.length : 1,
+          implementationDate: item.date.format('YYYY-MM-DD')
+        })
+        if (!minDate || item.date.isBefore(minDate)) minDate = item.date
+        if (!maxDate || item.date.isAfter(maxDate)) maxDate = item.date
+      }
+    }
+
+    rows.sort((a, b) => {
+      const d = a.implementationDate.localeCompare(b.implementationDate)
+      if (d !== 0) return d
+      return a.interventionTitle.localeCompare(b.interventionTitle)
+    })
+
+    return {
+      rows,
+      minDate: minDate?.format('YYYY-MM-DD') || '—',
+      maxDate: maxDate?.format('YYYY-MM-DD') || '—'
+    }
+  }, [companyCode])
+
+  /** Download PDF (scope-aware, landscape, auto-fit columns) */
+  const downloadPdf: React.MouseEventHandler<HTMLElement> = async e => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    setPdfLoading(true)
+    try {
+      // Decide scope
+      const dataForExport =
+        exportScope === 'month'
+          ? {
+              rows: exportRowsMonth,
+              minDate: panelMonth.startOf('month').format('YYYY-MM-DD'),
+              maxDate: panelMonth.endOf('month').format('YYYY-MM-DD')
+            }
+          : await buildExportAll()
+
+      if (!dataForExport.rows.length) {
+        message.info(
+          exportScope === 'month'
+            ? 'No items to export for this month.'
+            : 'No items to export.'
+        )
+        return
+      }
+
+      const titleLine = `${String(
+        programName || 'Program'
+      ).toUpperCase()} INDICATIVE CALENDAR`
+      const dateLine = `${dataForExport.minDate} - ${dataForExport.maxDate}`
+
+      // Try dynamic imports
+      const jsPDFMod: any = await import('jspdf').catch(() => null)
+      const autoTableMod: any = await import('jspdf-autotable').catch(
+        () => null
+      )
+      const jsPDFCtor = jsPDFMod?.jsPDF || jsPDFMod?.default || jsPDFMod
+      const autoTableFn = autoTableMod?.default || autoTableMod?.autoTable
+
+      if (jsPDFCtor && autoTableFn) {
+        const doc = new jsPDFCtor({
+          orientation: 'landscape',
+          unit: 'pt',
+          format: 'a4'
+        })
+        const marginX = 36
+
+        doc.setFontSize(18)
+        doc.text(titleLine, marginX, 40)
+        doc.setFontSize(11)
+        doc.text(dateLine, marginX, 60)
+
+        autoTableFn(doc, {
+          startY: 78,
+          head: [
+            [
+              'Intervention',
+              'Area Of Support',
+              'Number Of Participants',
+              'Implementation Date'
+            ]
+          ],
+          body: dataForExport.rows.map(r => [
+            r.interventionTitle,
+            r.areaOfSupport,
+            String(r.participantsCount),
+            r.implementationDate
+          ]),
+          styles: { fontSize: 10, cellPadding: 6, overflow: 'linebreak' },
+          headStyles: {
+            fillColor: [230, 242, 255],
+            textColor: 40,
+            fontStyle: 'bold'
+          },
+          columnStyles: {
+            2: { halign: 'right' as const }
+          },
+          tableWidth: 'auto',
+          theme: 'grid',
+          margin: { left: marginX, right: marginX }
+        })
+
+        const suffix =
+          exportScope === 'month'
+            ? panelMonth.format('YYYYMM')
+            : `${dataForExport.minDate.replace(/-/g, '')}-${dataForExport.maxDate.replace(
+                /-/g,
+                ''
+              )}`
+
+        const fname = `${(programName || 'program')
+          .toLowerCase()
+          .replace(/\s+/g, '-')}-indicative-${suffix}.pdf`
+        doc.save(fname)
+        return
+      }
+
+      // Fallback: print-friendly HTML
+      const html = `
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>${titleLine}</title>
+            <style>
+              body { font-family: Inter, Arial, sans-serif; padding: 24px; }
+              h1 { font-size: 18px; margin: 0 0 6px 0; font-weight: 700; letter-spacing: 0.3px; }
+              h2 { font-size: 12px; margin: 0 0 16px 0; color: #555; }
+              table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+              th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; word-wrap: break-word; }
+              th { background: #e6f2ff; text-align: left; }
+              th:nth-child(3), td:nth-child(3) { text-align: right; width: 16%; }
+              th:nth-child(4), td:nth-child(4) { width: 18%; }
+              @page { size: A4 landscape; margin: 16mm; }
+            </style>
+          </head>
+          <body>
+            <h1>${escapeHtml(titleLine)}</h1>
+            <h2>${escapeHtml(dateLine)}</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Intervention</th>
+                  <th>Area Of Support</th>
+                  <th>Number Of Participants</th>
+                  <th>Implementation Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${dataForExport.rows
+                  .map(
+                    r => `<tr>
+                      <td>${escapeHtml(r.interventionTitle)}</td>
+                      <td>${escapeHtml(r.areaOfSupport)}</td>
+                      <td>${r.participantsCount}</td>
+                      <td>${r.implementationDate}</td>
+                    </tr>`
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+            <script>window.onload = () => window.print();</script>
+          </body>
+        </html>
+      `
+      const w = window.open('about:blank', '_blank', 'noopener,noreferrer')
+      if (w && w.document) {
+        w.document.open()
+        w.document.write(html)
+        w.document.close()
+      } else {
+        message.warning(
+          'Popup blocked. Allow popups or install jsPDF for direct download.'
+        )
+      }
+    } catch (err) {
+      console.error(err)
+      message.error('Failed to generate PDF.')
+    } finally {
+      setPdfLoading(false)
+    }
+  }
 
   /** Date cell renderer */
   const dateCellRender = (value: Dayjs) => {
@@ -430,162 +672,6 @@ export default function IndicativeCalendar () {
   const startOfMonth = panelMonth.startOf('month')
   const endOfMonth = panelMonth.endOf('month')
 
-  // HTML escaper for fallback
-  function escapeHtml (s: string) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;')
-  }
-
-  /** Download PDF (landscape, auto-fit columns, spinner, no refresh) */
-  const downloadPdf: React.MouseEventHandler<HTMLElement> = async e => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!exportRows.length) {
-      message.info('No items to export for this month.')
-      return
-    }
-
-    setPdfLoading(true)
-    try {
-      const titleLine = `${String(
-        programName || 'Program'
-      ).toUpperCase()} INDICATIVE CALENDAR`
-      const dateLine = `${startOfMonth.format(
-        'YYYY-MM-DD'
-      )} - ${endOfMonth.format('YYYY-MM-DD')}`
-
-      // Try dynamic imports
-      const jsPDFMod: any = await import('jspdf').catch(() => null)
-      const autoTableMod: any = await import('jspdf-autotable').catch(
-        () => null
-      )
-
-      const jsPDFCtor = jsPDFMod?.jsPDF || jsPDFMod?.default || jsPDFMod
-      const autoTableFn = autoTableMod?.default || autoTableMod?.autoTable
-
-      if (jsPDFCtor && autoTableFn) {
-        // A4 landscape so the table doesn't get cut off
-        const doc = new jsPDFCtor({
-          orientation: 'landscape',
-          unit: 'pt',
-          format: 'a4'
-        })
-        const marginX = 36
-
-        doc.setFontSize(18)
-        doc.text(titleLine, marginX, 40)
-        doc.setFontSize(11)
-        doc.text(dateLine, marginX, 60)
-
-        autoTableFn(doc, {
-          startY: 78,
-          head: [
-            [
-              'Intervention',
-              'Area Of Support',
-              'Number Of Participants',
-              'Implementation Date'
-            ]
-          ],
-          body: exportRows.map(r => [
-            r.interventionTitle,
-            r.areaOfSupport,
-            String(r.participantsCount),
-            r.implementationDate
-          ]),
-          styles: { fontSize: 10, cellPadding: 6, overflow: 'linebreak' },
-          headStyles: {
-            fillColor: [230, 242, 255],
-            textColor: 40,
-            fontStyle: 'bold'
-          },
-          columnStyles: {
-            2: { halign: 'right' as const }
-          },
-          // Let autoTable compute widths to fit page
-          tableWidth: 'auto',
-          theme: 'grid',
-          margin: { left: marginX, right: marginX }
-        })
-
-        const fname = `${(programName || 'program')
-          .toLowerCase()
-          .replace(/\s+/g, '-')}-indicative-${startOfMonth.format(
-          'YYYYMM'
-        )}.pdf`
-        doc.save(fname)
-        return
-      }
-
-      // Fallback: print-friendly HTML (landscape)
-      const html = `
-        <html>
-          <head>
-            <meta charset="utf-8" />
-            <title>${titleLine}</title>
-            <style>
-              body { font-family: Inter, Arial, sans-serif; padding: 24px; }
-              h1 { font-size: 18px; margin: 0 0 6px 0; font-weight: 700; letter-spacing: 0.3px; }
-              h2 { font-size: 12px; margin: 0 0 16px 0; color: #555; }
-              table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
-              th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; word-wrap: break-word; }
-              th { background: #e6f2ff; text-align: left; }
-              th:nth-child(3), td:nth-child(3) { text-align: right; width: 16%; }
-              th:nth-child(4), td:nth-child(4) { width: 18%; }
-              @page { size: A4 landscape; margin: 16mm; }
-            </style>
-          </head>
-          <body>
-            <h1>${titleLine}</h1>
-            <h2>${dateLine}</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Intervention</th>
-                  <th>Area Of Support</th>
-                  <th>Number Of Participants</th>
-                  <th>Implementation Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${exportRows
-                  .map(
-                    r => `<tr>
-                      <td>${escapeHtml(r.interventionTitle)}</td>
-                      <td>${escapeHtml(r.areaOfSupport)}</td>
-                      <td>${r.participantsCount}</td>
-                      <td>${r.implementationDate}</td>
-                    </tr>`
-                  )
-                  .join('')}
-              </tbody>
-            </table>
-            <script>window.onload = () => window.print();</script>
-          </body>
-        </html>
-      `
-      const w = window.open('about:blank', '_blank', 'noopener,noreferrer')
-      if (w && w.document) {
-        w.document.open()
-        w.document.write(html)
-        w.document.close()
-      } else {
-        message.warning(
-          'Popup blocked. Allow popups or install jsPDF for direct download.'
-        )
-      }
-    } catch (err) {
-      console.error(err)
-      message.error('Failed to generate PDF.')
-    } finally {
-      setPdfLoading(false)
-    }
-  }
-
   return (
     <Card
       title={
@@ -597,6 +683,15 @@ export default function IndicativeCalendar () {
       }
       extra={
         <Space wrap>
+          {/* NEW: export scope toggle */}
+          <Segmented
+            options={[
+              { label: 'This Month', value: 'month' },
+              { label: 'All Dates', value: 'all' }
+            ]}
+            value={exportScope}
+            onChange={val => setExportScope(val as 'month' | 'all')}
+          />
           <Button
             icon={<FilePdfOutlined />}
             onClick={downloadPdf}
