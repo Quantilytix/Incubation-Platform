@@ -15,7 +15,8 @@ import {
   Col,
   Row,
   Divider,
-  Tooltip
+  Tooltip,
+  DatePicker
 } from 'antd'
 import {
   UploadOutlined,
@@ -26,7 +27,6 @@ import {
   EyeOutlined
 } from '@ant-design/icons'
 import { onAuthStateChanged, getAuth } from 'firebase/auth'
-// + Firestore & Storage
 import {
   getDoc,
   updateDoc,
@@ -42,7 +42,7 @@ import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
 import moment from 'moment'
 import { motion } from 'framer-motion'
-import dayjs from 'dayjs'
+import dayjs, { Dayjs } from 'dayjs'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -66,9 +66,21 @@ export const DocumentHub: React.FC = () => {
   const [validCount, setValidCount] = useState(0)
   const [missingDocsList, setMissingDocsList] = useState<string[]>([])
 
+  // Add New modal (type + file + dates)
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedType, setSelectedType] = useState('')
   const [uploadFile, setUploadFile] = useState<any>(null)
+  const [issueDateAdd, setIssueDateAdd] = useState<Dayjs | null>(null)
+  const [expiryDateAdd, setExpiryDateAdd] = useState<Dayjs | null>(null)
+
+  // Replace flow (row) → choose file, then dates
+  const [datesModalOpen, setDatesModalOpen] = useState(false)
+  const [pendingReplaceType, setPendingReplaceType] = useState<string>('')
+  const [pendingReplaceFile, setPendingReplaceFile] = useState<File | null>(
+    null
+  )
+  const [issueDateReplace, setIssueDateReplace] = useState<Dayjs | null>(null)
+  const [expiryDateReplace, setExpiryDateReplace] = useState<Dayjs | null>(null)
 
   const [appRef, setAppRef] = useState<DocumentReference | null>(null)
   const [participantId, setParticipantId] = useState<string | null>(null)
@@ -112,26 +124,25 @@ export const DocumentHub: React.FC = () => {
           return
         }
 
-        const appData = appSnap.docs[0].data()
+        const appDoc = appSnap.docs[0]
+        const appData = appDoc.data()
         const docsRaw = appData.complianceDocuments || []
         const docs = Array.isArray(docsRaw) ? docsRaw : Object.values(docsRaw)
 
-        // after appSnap = await getDocs(...)
-        const appDoc = appSnap.docs[0]
-        setAppRef(appDoc.ref);
-setParticipantId(participantId);
-await refresh(appDoc.ref);
+        setAppRef(appDoc.ref)
+        setParticipantId(participantId)
 
-
-        const presentTypes = docs.map((d: any) => d.type)
         const statusOf = (s: any) => (s || 'missing').toString().toLowerCase()
         const hasFileForType = (type: string) =>
-          docs.some(d => d.type === type && !!(d.url || d.link || d.fileUrl))
+          docs.some(
+            (d: any) => d.type === type && !!(d.url || d.link || d.fileUrl)
+          )
 
         const isExplicitMissing = (type: string) =>
-          docs.some(d => d.type === type && statusOf(d.status) === 'missing')
+          docs.some(
+            (d: any) => d.type === type && statusOf(d.status) === 'missing'
+          )
 
-        // Missing if no file OR explicitly marked missing
         const missingTypes = documentTypes.filter(
           dt => !hasFileForType(dt) || isExplicitMissing(dt)
         )
@@ -143,7 +154,8 @@ await refresh(appDoc.ref);
           valid = 0
         const normalizedDocs = docs.map((doc: any, index: number) => {
           const statusLower = (doc.status || 'missing').toString().toLowerCase()
-          const expiryDate = formatExpiryDate(doc.expiryDate)
+          const expiryDate = formatAnyDate(doc.expiryDate)
+          const issueDate = formatAnyDate(doc.issueDate)
           const isExpired =
             (expiryDate !== '—' && moment(expiryDate).isBefore(moment())) ||
             statusLower === 'expired'
@@ -155,6 +167,7 @@ await refresh(appDoc.ref);
             key: `${doc.type}-${index}`,
             type: doc.type,
             status: statusLower,
+            issue: issueDate,
             expiry: expiryDate,
             url: doc.url || doc.link || doc.fileUrl || null,
             fileName: doc.fileName || null
@@ -174,86 +187,31 @@ await refresh(appDoc.ref);
 
     return () => unsub()
   }, [])
-// put near the top
-const normalizeType = (t: string) => (t || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
-const refresh = async (app: DocumentReference) => {
-  const snap = await getDoc(app);
-  const data = snap.data() || {};
-  const docsArr: any[] = Array.isArray(data.complianceDocuments)
-    ? data.complianceDocuments
-    : Array.isArray(Object.values(data.complianceDocuments || {}))
-    ? Object.values(data.complianceDocuments || {})
-    : [];
+  const toTimestamp = (d?: Dayjs | null) =>
+    d && d.isValid() ? Timestamp.fromDate(d.toDate()) : undefined
 
-  // Build exactly one row per required type (no extra rows, ever)
-  const rows = documentTypes.map(type => {
-    const m = docsArr.find(d => normalizeType(d?.type) === normalizeType(type));
-    const expiry = m?.expiryDate ? formatExpiryDate(m.expiryDate) : '—';
-    const hasFile = !!(m?.url || m?.link || m?.fileUrl);
-
-    return {
-      key: type,               // fixed key per type
-      type,
-      status: hasFile ? (String(m?.status || 'pending').toLowerCase()) : 'missing',
-      expiry,
-      url: m?.url || m?.link || m?.fileUrl || null,
-      fileName: m?.fileName || null,
-    };
-  });
-
-  // KPI counts
-  const missing = rows.filter(r => r.status === 'missing').length;
-  const expired = rows.filter(r => r.status === 'expired').length;
-  const valid   = rows.filter(r => ['valid', 'approved'].includes(r.status)).length;
-
-  setComplianceDocs(rows);
-  setMissingDocsList(rows.filter(r => r.status === 'missing').map(r => r.type));
-  setMissingCount(missing);
-  setExpiredCount(expired);
-  setValidCount(valid);
-};
-
-  const formatExpiryDate = (expiry: any) => {
-    if (!expiry) return '—'
-
-    // Firestore Timestamp (with toDate())
-    if (expiry?.toDate && typeof expiry.toDate === 'function') {
-      return moment(expiry.toDate()).format('YYYY-MM-DD')
+  const formatAnyDate = (val: any) => {
+    if (!val) return '—'
+    if (val?.toDate && typeof val.toDate === 'function') {
+      return moment(val.toDate()).format('YYYY-MM-DD')
     }
-
-    // Firestore { seconds, nanoseconds } shape
-    if (typeof expiry === 'object' && typeof expiry?.seconds === 'number') {
-      const d = new Date(expiry.seconds * 1000)
+    if (typeof val === 'object' && typeof val?.seconds === 'number') {
+      const d = new Date(val.seconds * 1000)
       return isNaN(d.getTime()) ? '—' : moment(d).format('YYYY-MM-DD')
     }
-
-    // moment()
-    if (moment.isMoment(expiry)) {
-      return expiry.isValid() ? expiry.format('YYYY-MM-DD') : '—'
-    }
-
-    // dayjs()
-    if (typeof dayjs.isDayjs === 'function' && dayjs.isDayjs(expiry)) {
-      return expiry.isValid()
-        ? moment(expiry.toDate()).format('YYYY-MM-DD')
-        : '—'
-    }
-
-    // Native Date
-    if (expiry instanceof Date && !isNaN(expiry.getTime())) {
-      return moment(expiry).format('YYYY-MM-DD')
-    }
-
-    // Number (ms or seconds)
-    if (typeof expiry === 'number') {
-      const ms = expiry.toString().length === 10 ? expiry * 1000 : expiry
+    if (moment.isMoment(val))
+      return val.isValid() ? val.format('YYYY-MM-DD') : '—'
+    if (typeof dayjs.isDayjs === 'function' && dayjs.isDayjs(val))
+      return val.isValid() ? moment(val.toDate()).format('YYYY-MM-DD') : '—'
+    if (val instanceof Date && !isNaN(val.getTime()))
+      return moment(val).format('YYYY-MM-DD')
+    if (typeof val === 'number') {
+      const ms = val.toString().length === 10 ? val * 1000 : val
       return moment(ms).isValid() ? moment(ms).format('YYYY-MM-DD') : '—'
     }
-
-    // String (trim + strict parse across common formats & ISO)
-    if (typeof expiry === 'string') {
-      const s = expiry.trim()
+    if (typeof val === 'string') {
+      const s = val.trim()
       const m = moment(
         s,
         [
@@ -263,15 +221,12 @@ const refresh = async (app: DocumentReference) => {
           'DD/MM/YYYY',
           'MM/DD/YYYY'
         ],
-        true // strict
+        true
       )
       if (m.isValid()) return m.format('YYYY-MM-DD')
-
-      // last-resort parse
       const d = new Date(s)
       return isNaN(d.getTime()) ? '—' : moment(d).format('YYYY-MM-DD')
     }
-
     return '—'
   }
 
@@ -288,46 +243,55 @@ const refresh = async (app: DocumentReference) => {
     return <Tag color={colorMap[s] || 'default'}>{s.toUpperCase() || '—'}</Tag>
   }
 
-async function uploadComplianceDoc(type: string, file: File) {
-  if (!appRef || !participantId) {
-    message.error('Cannot upload: missing app reference.');
-    return;
+  // ⬇️ now accepts issue/expiry
+  async function uploadComplianceDoc (
+    type: string,
+    file: File,
+    issue?: Dayjs | null,
+    expiry?: Dayjs | null
+  ) {
+    if (!appRef || !participantId) {
+      message.error('Cannot upload: missing app reference.')
+      return null
+    }
+    const storage = getStorage()
+    const safeType = type.replace(/[^\w-]+/g, '_')
+    const path = `compliance/${participantId}/${safeType}/${Date.now()}_${
+      file.name
+    }`
+    const sref = ref(storage, path)
+    await uploadBytes(sref, file)
+    const url = await getDownloadURL(sref)
+
+    const snap = await getDoc(appRef)
+    const data = snap.data() || {}
+    const current = Array.isArray(data.complianceDocuments)
+      ? data.complianceDocuments
+      : Array.isArray(Object.values(data.complianceDocuments || {}))
+      ? Object.values(data.complianceDocuments || {})
+      : []
+
+    const next = [...current]
+    const idx = next.findIndex((d: any) => d?.type === type)
+
+    const newEntry = {
+      ...(idx >= 0 ? next[idx] : {}),
+      type,
+      status: 'pending',
+      url,
+      fileName: file.name,
+      uploadedAt: Timestamp.now(),
+      // ✅ new:
+      issueDate: toTimestamp(issue),
+      expiryDate: toTimestamp(expiry)
+    }
+    if (idx >= 0) next[idx] = newEntry
+    else next.push(newEntry)
+
+    await updateDoc(appRef, { complianceDocuments: next })
+    message.success(`Uploaded ${type} successfully`)
+    return newEntry
   }
-
-  // 1) upload to Storage
-  const storage = getStorage();
-  const safeType = type.replace(/[^\w-]+/g, '_');
-  const path = `compliance/${participantId}/${safeType}/${Date.now()}_${file.name}`;
-  const sref = ref(storage, path);
-  await uploadBytes(sref, file);
-  const url = await getDownloadURL(sref);
-
-  // 2) read-modify-write the array (dedupe by type)
-  const snap = await getDoc(appRef);
-  const data = snap.data() || {};
-  const current: any[] = Array.isArray(data.complianceDocuments)
-    ? data.complianceDocuments
-    : Array.isArray(Object.values(data.complianceDocuments || {}))
-    ? Object.values(data.complianceDocuments || {})
-    : [];
-
-  const next = current.filter(d => normalizeType(d?.type) !== normalizeType(type));
-  next.push({
-    ...current.find(d => normalizeType(d?.type) === normalizeType(type)),
-    type,
-    status: 'pending',      // change to 'valid' if you want green immediately
-    url,
-    fileName: file.name,
-    uploadedAt: Timestamp.now() // OK inside object (not a sentinel)
-  });
-
-  await updateDoc(appRef, { complianceDocuments: next });
-
-  // 3) reload the table from Firestore so UI matches database
-  await refresh(appRef);
-
-  message.success(`Uploaded ${type} successfully`);
-}
 
   const columns = [
     { title: 'Document Type', dataIndex: 'type', key: 'type' },
@@ -337,6 +301,7 @@ async function uploadComplianceDoc(type: string, file: File) {
       key: 'status',
       render: getStatusTag
     },
+    { title: 'Issue Date', dataIndex: 'issue', key: 'issue' },
     { title: 'Expiry Date', dataIndex: 'expiry', key: 'expiry' },
     {
       title: 'Actions',
@@ -365,37 +330,17 @@ async function uploadComplianceDoc(type: string, file: File) {
             </Tooltip>
           )}
 
+          {/* Replace → capture dates before uploading */}
           <Upload
             beforeUpload={async file => {
-              message.loading({
-                content: `Uploading ${file.name}...`,
-                key: record.key
-              })
-              try {
-                const entry = await uploadComplianceDoc(record.type, file)
-                if (entry) {
-                  // Update that row immediately
-                  setComplianceDocs(prev =>
-                    prev.map(d =>
-                      d.type === record.type
-                        ? { ...d, ...entry, status: entry.status || d.status }
-                        : d
-                    )
-                  )
-                  // If you want the KPI cards to react as well, tweak missing/valid/expired here
-                  // e.g., removing from missing if it was missing before:
-                  setMissingDocsList(prev =>
-                    prev.filter(t => t !== record.type)
-                  )
-                }
-                message.success({ content: 'Upload complete', key: record.key })
-              } catch (e) {
-                console.error(e)
-                message.error({ content: 'Upload failed', key: record.key })
-              }
+              // Hold file + type, open dates modal
+              setPendingReplaceType(record.type)
+              setPendingReplaceFile(file as File)
+              setIssueDateReplace(null)
+              setExpiryDateReplace(null)
+              setDatesModalOpen(true)
               return false
             }}
-            showUploadList={false}
             maxCount={1}
           >
             <Tooltip title='Replace document'>
@@ -407,22 +352,92 @@ async function uploadComplianceDoc(type: string, file: File) {
     }
   ]
 
-const handleAddNew = async () => {
-  if (!selectedType || !uploadFile) {
-    message.error('Please select a type and file.');
-    return;
-  }
-  try {
-    await uploadComplianceDoc(selectedType, uploadFile as File);
-    setIsModalVisible(false);
-    setSelectedType('');
-    setUploadFile(null);
-  } catch (e) {
-    console.error(e);
-    message.error('Failed to upload document.');
-  }
-};
+  const handleAddNew = async () => {
+    if (!selectedType || !uploadFile) {
+      message.error('Please select a type and file.')
+      return
+    }
+    try {
+      const entry = await uploadComplianceDoc(
+        selectedType,
+        uploadFile as File,
+        issueDateAdd,
+        expiryDateAdd
+      )
+      if (entry) {
+        setComplianceDocs(prev => {
+          const exists = prev.some(d => d.type === selectedType)
+          const row = {
+            key: `${selectedType}-${Date.now()}`,
+            type: selectedType,
+            status: entry.status || 'pending',
+            issue: formatAnyDate(issueDateAdd),
+            expiry: formatAnyDate(expiryDateAdd),
+            url: entry.url,
+            fileName: entry.fileName || null
+          }
+          return exists
+            ? prev.map(d => (d.type === selectedType ? { ...d, ...row } : d))
+            : [...prev, row]
+        })
+        setMissingDocsList(prev => prev.filter(t => t !== selectedType))
+      }
 
+      setIsModalVisible(false)
+      setSelectedType('')
+      setUploadFile(null)
+      setIssueDateAdd(null)
+      setExpiryDateAdd(null)
+    } catch (e) {
+      console.error(e)
+      message.error('Failed to upload document.')
+    }
+  }
+
+  const confirmReplaceUpload = async () => {
+    if (!pendingReplaceType || !pendingReplaceFile) {
+      setDatesModalOpen(false)
+      return
+    }
+    message.loading({
+      content: `Uploading ${pendingReplaceFile.name}...`,
+      key: 'replace'
+    })
+    try {
+      const entry = await uploadComplianceDoc(
+        pendingReplaceType,
+        pendingReplaceFile,
+        issueDateReplace,
+        expiryDateReplace
+      )
+      if (entry) {
+        setComplianceDocs(prev =>
+          prev.map(d =>
+            d.type === pendingReplaceType
+              ? {
+                  ...d,
+                  ...entry,
+                  status: entry.status || d.status,
+                  issue: formatAnyDate(issueDateReplace),
+                  expiry: formatAnyDate(expiryDateReplace)
+                }
+              : d
+          )
+        )
+        setMissingDocsList(prev => prev.filter(t => t !== pendingReplaceType))
+      }
+      message.success({ content: 'Upload complete', key: 'replace' })
+    } catch (e) {
+      console.error(e)
+      message.error({ content: 'Upload failed', key: 'replace' })
+    } finally {
+      setDatesModalOpen(false)
+      setPendingReplaceType('')
+      setPendingReplaceFile(null)
+      setIssueDateReplace(null)
+      setExpiryDateReplace(null)
+    }
+  }
 
   if (loading) {
     return (
@@ -458,16 +473,14 @@ const handleAddNew = async () => {
         <title>Documents Tracking</title>
       </Helmet>
 
-      {/* Informational alert */}
       <Alert
         type='info'
         showIcon
         message='Upload your compliance documents here'
-        description='To proceed in the program, please upload all required documents. You can drag & drop files or use the upload button. Expired or invalid documents should be replaced.'
+        description='To proceed in the program, please upload all required documents. Provide the issue and expiry dates where applicable.'
         style={{ marginBottom: 16 }}
       />
 
-      {/* Metrics row (full width, responsive) */}
       <Row gutter={[16, 16]} style={{ width: '100%', marginBottom: 24 }}>
         <Col xs={24} md={8}>
           <motion.div
@@ -497,7 +510,6 @@ const handleAddNew = async () => {
             </Card>
           </motion.div>
         </Col>
-
         <Col xs={24} md={8}>
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -528,7 +540,6 @@ const handleAddNew = async () => {
             </Card>
           </motion.div>
         </Col>
-
         <Col xs={24} md={8}>
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -603,11 +614,18 @@ const handleAddNew = async () => {
         </Card>
       </motion.div>
 
+      {/* Add New Document Modal (with dates) */}
       <Modal
         title='Upload New Document'
         open={isModalVisible}
         onOk={handleAddNew}
-        onCancel={() => setIsModalVisible(false)}
+        onCancel={() => {
+          setIsModalVisible(false)
+          setSelectedType('')
+          setUploadFile(null)
+          setIssueDateAdd(null)
+          setExpiryDateAdd(null)
+        }}
         okText='Upload'
       >
         <Space direction='vertical' style={{ width: '100%' }}>
@@ -627,17 +645,75 @@ const handleAddNew = async () => {
             </Select>
           </div>
 
-          <div>
-            <Text strong style={{ marginRight: 10}}>Upload File</Text>
-           <Upload
-  showUploadList={false}
-  beforeUpload={file => { setUploadFile(file); return false; }}
-  maxCount={1}
-  style={{ marginTop: 4 }}
->
-  <Button icon={<UploadOutlined />}>Select File</Button>
-</Upload>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <Text strong>Issue Date</Text>
+              <DatePicker
+                style={{ width: '100%', marginTop: 4 }}
+                value={issueDateAdd}
+                onChange={setIssueDateAdd}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <Text strong>Expiry Date</Text>
+              <DatePicker
+                style={{ width: '100%', marginTop: 4 }}
+                value={expiryDateAdd}
+                onChange={setExpiryDateAdd}
+              />
+            </div>
+          </div>
 
+          <div>
+            <Text strong style={{ marginRight: 10 }}>
+              Upload File
+            </Text>
+            <Upload
+              beforeUpload={file => {
+                setUploadFile(file)
+                return false
+              }}
+              maxCount={1}
+              style={{ marginTop: 4 }}
+              fileList={uploadFile ? [uploadFile] : []}
+              onRemove={() => setUploadFile(null)}
+            >
+              <Button icon={<UploadOutlined />}>Select File</Button>
+            </Upload>
+          </div>
+        </Space>
+      </Modal>
+
+      {/* Replace document → choose dates */}
+      <Modal
+        title='Set Document Dates'
+        open={datesModalOpen}
+        onCancel={() => setDatesModalOpen(false)}
+        onOk={confirmReplaceUpload}
+        okText='Upload'
+        destroyOnClose
+      >
+        <Space direction='vertical' style={{ width: '100%' }}>
+          <Text>
+            Replacing: <b>{pendingReplaceType || '—'}</b>
+          </Text>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <Text strong>Issue Date</Text>
+              <DatePicker
+                style={{ width: '100%', marginTop: 4 }}
+                value={issueDateReplace}
+                onChange={setIssueDateReplace}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <Text strong>Expiry Date</Text>
+              <DatePicker
+                style={{ width: '100%', marginTop: 4 }}
+                value={expiryDateReplace}
+                onChange={setExpiryDateReplace}
+              />
+            </div>
           </div>
         </Space>
       </Modal>
