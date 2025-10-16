@@ -102,10 +102,11 @@ const OperationsCompliance: React.FC = () => {
   const [isUploading, setIsUploading] = useState<boolean>(false)
   const [contactInfoMap, setContactInfoMap] = useState<Record<string, any>>({})
   const { user, loading } = useFullIdentity()
+  const [verifySubmitting, setVerifySubmitting] = useState(false)
+  const [reminderSending, setReminderSending] = useState(false)
 
   useEffect(() => {
     const fetchContactInfo = async () => {
-      console.log('Company Code:', user?.companyCode)
       if (!user?.companyCode) return
 
       const appsSnap = await getDocs(
@@ -180,7 +181,7 @@ const OperationsCompliance: React.FC = () => {
             ) {
               fetchedDocuments.push({
                 id: `${applicationDoc.id}-${index}`,
-                participantName: appData.email,
+                beneficiaryName: appData.beneficiaryName,
                 participantId: appData.participantId,
                 verificationStatus: doc.verificationStatus || 'unverified',
                 verificationComment: doc.verificationComment || '',
@@ -205,39 +206,53 @@ const OperationsCompliance: React.FC = () => {
   }, [user?.companyCode, selectedStatusFilter]) // 🔁 refetch when filter changes
 
   const handleSendReminders = async () => {
-    const remindersByUser: Record<string, ComplianceDocument[]> = {}
+    if (reminderSending) return
+    setReminderSending(true)
+    try {
+      const remindersByUser: Record<string, ComplianceDocument[]> = {}
 
-    documents.forEach(doc => {
-      const isProblematic = ['missing', 'expired', 'pending'].includes(
-        doc.status
-      )
-      const email = contactInfoMap[doc.participantId]?.email
-      if (isProblematic && email) {
-        if (!remindersByUser[email]) remindersByUser[email] = []
-        remindersByUser[email].push(doc)
-      }
-    })
-
-    const sendReminder = httpsCallable(functions, 'sendComplianceReminderEmail')
-
-    const promises = Object.entries(remindersByUser).map(
-      async ([email, docs]) => {
-        const contact = Object.values(contactInfoMap).find(
-          c => c.email === email
+      documents.forEach(doc => {
+        const isProblematic = [
+          'missing',
+          'expired',
+          'pending',
+          'invalid'
+        ].includes(
+          // ← added 'invalid'
+          (doc.status || '').toLowerCase()
         )
-        const issues = docs.map(d => `${d.type} (${d.status})`)
-
-        try {
-          await sendReminder({ email, name: contact.name, issues })
-          message.success(`📧 Reminder sent to ${contact.name}`)
-        } catch (err) {
-          console.error('❌ Email failed:', err)
-          message.error(`Failed to send to ${contact.name}`)
+        const email = contactInfoMap[doc.participantId]?.email
+        if (isProblematic && email) {
+          if (!remindersByUser[email]) remindersByUser[email] = []
+          remindersByUser[email].push(doc)
         }
-      }
-    )
+      })
 
-    await Promise.all(promises)
+      const sendReminder = httpsCallable(
+        functions,
+        'sendComplianceReminderEmail'
+      )
+
+      const promises = Object.entries(remindersByUser).map(
+        async ([email, docs]) => {
+          const contact = Object.values(contactInfoMap).find(
+            c => c.email === email
+          ) as any
+          const issues = docs.map(d => `${d.type} (${d.status})`)
+          try {
+            await sendReminder({ email, name: contact?.name || email, issues })
+            message.success(`📧 Reminder sent to ${contact?.name || email}`)
+          } catch (err) {
+            console.error('❌ Email failed:', err)
+            message.error(`Failed to send to ${contact?.name || email}`)
+          }
+        }
+      )
+
+      await Promise.all(promises)
+    } finally {
+      setReminderSending(false)
+    }
   }
 
   // Show add/edit document modal
@@ -294,7 +309,7 @@ const OperationsCompliance: React.FC = () => {
       const newDoc: ComplianceDocument = {
         id: selectedDocument?.id || `d${Date.now()}`,
         participantId: form.getFieldValue('participantId'),
-        participantName:
+        beneficiaryName:
           contactInfoMap[form.getFieldValue('participantId')]?.name || '',
         type: form.getFieldValue('type'),
         documentName: form.getFieldValue('documentName'),
@@ -386,81 +401,75 @@ const OperationsCompliance: React.FC = () => {
     }
   }
 
-const handleVerification = async (
-  status: 'verified' | 'queried',
-  comment?: string
-) => {
-  if (!verifyingDocument) return;
-
-  try {
-    const appSnap = await getDocs(
-      query(
-        collection(db, 'applications'),
-        where('participantId', '==', verifyingDocument.participantId),
-        where('companyCode', '==', user?.companyCode)
+  const handleVerification = async (
+    status: 'verified' | 'queried',
+    comment?: string
+  ) => {
+    if (!verifyingDocument || verifySubmitting) return // prevent double fire
+    setVerifySubmitting(true)
+    try {
+      const appSnap = await getDocs(
+        query(
+          collection(db, 'applications'),
+          where('participantId', '==', verifyingDocument.participantId),
+          where('companyCode', '==', user?.companyCode)
+        )
       )
-    );
+      if (appSnap.empty) {
+        message.error('Application not found')
+        return
+      }
 
-    if (appSnap.empty) {
-      message.error('Application not found');
-      return;
-    }
+      const docRef = appSnap.docs[0].ref
+      const currentData = appSnap.docs[0].data()
+      const docs = currentData.complianceDocuments || []
 
-    const docRef = appSnap.docs[0].ref;
-    const current = appSnap.docs[0].data()?.complianceDocuments || [];
-
-    // robust match: prefer id; fall back to (type+url)
-    const isSame = (a: any, b: ComplianceDocument) =>
-      (a?.id && b?.id && a.id === b.id) ||
-      (!!a?.type && a.type === b.type && !!a?.url && a.url === b.url);
-
-    const updatedDocs = current.map((d: any) =>
-      isSame(d, verifyingDocument)
-        ? {
-            ...d,
-            verificationStatus: status,
-            verificationComment: comment || '',
-            lastVerifiedBy: user?.name || 'Unknown',
-            lastVerifiedAt: new Date().toISOString(),
-            // ⬇️ force Firestore "status" as well
-            status: status === 'verified' ? 'valid' : 'invalid',
-          }
-        : d
-    );
-
-    const updatedScore = calculateComplianceScore(updatedDocs);
-
-    await updateDoc(docRef, {
-      complianceDocuments: updatedDocs,
-      complianceScore: updatedScore,
-    });
-
-    // reflect in UI
-    setDocuments(prev =>
-      prev.map(p =>
-        (p.id && verifyingDocument.id && p.id === verifyingDocument.id) ||
-        (p.type === verifyingDocument.type && p.url === verifyingDocument.url)
+      const updatedDocs = docs.map((doc: ComplianceDocument) =>
+        doc.id === verifyingDocument.id
           ? {
-              ...p,
+              ...doc,
               verificationStatus: status,
               verificationComment: comment || '',
               lastVerifiedBy: user?.name || 'Unknown',
-              lastVerifiedAt: new Date().toISOString(),
-              status: status === 'verified' ? 'valid' : 'invalid',
+              lastVerifiedAt: new Date().toISOString().split('T')[0],
+              status: status === 'queried' ? 'invalid' : doc.status
             }
-          : p
+          : doc
       )
-    );
 
-    message.success(
-      status === 'verified' ? '✅ Document verified' : '❌ Document queried'
-    );
-    setVerificationModalVisible(false);
-  } catch (err) {
-    console.error('❌ Verification failed', err);
-    message.error('Failed to verify document');
+      const updatedScore = calculateComplianceScore(updatedDocs)
+
+      await updateDoc(docRef, {
+        complianceDocuments: updatedDocs,
+        complianceScore: updatedScore
+      })
+
+      setDocuments(prev =>
+        prev.map(doc =>
+          doc.id === verifyingDocument.id
+            ? {
+                ...doc,
+                verificationStatus: status,
+                verificationComment: comment || '',
+                lastVerifiedBy: user?.name || 'Unknown',
+                lastVerifiedAt: new Date().toISOString().split('T')[0],
+                status: status === 'queried' ? 'invalid' : doc.status
+              }
+            : doc
+        )
+      )
+
+      message.success(
+        status === 'verified' ? '✅ Document verified' : '❌ Document queried'
+      )
+      setVerificationModalVisible(false)
+    } catch (err) {
+      console.error('❌ Verification failed', err)
+      message.error('Failed to verify document')
+    } finally {
+      setVerifySubmitting(false)
+    }
   }
-};
 
   // Show ED Agreement modal for specific participant
   const showEDAgreementModal = (participantId: string) => {
@@ -486,7 +495,7 @@ const handleVerification = async (
             ?.label || ''
 
         return (
-          doc.participantName
+          doc.beneficiaryName
             .toLowerCase()
             .includes(searchText.toLowerCase()) ||
           doc.type.toLowerCase().includes(searchText.toLowerCase()) ||
@@ -509,10 +518,10 @@ const handleVerification = async (
   const columns: ColumnType<ComplianceDocument>[] = [
     {
       title: 'Participant',
-      dataIndex: 'participantName',
-      key: 'participantName',
+      dataIndex: 'beneficiaryName',
+      key: 'beneficiaryName',
       sorter: (a: ComplianceDocument, b: ComplianceDocument) =>
-        a.participantName.localeCompare(b.participantName)
+        a.beneficiaryName.localeCompare(b.beneficiaryName)
     },
     {
       title: 'Document Type',
@@ -842,6 +851,8 @@ const handleVerification = async (
                   type='default'
                   icon={<UserOutlined />}
                   onClick={handleSendReminders}
+                  loading={reminderSending}
+                  disabled={reminderSending}
                 >
                   Send Email Reminders
                 </Button>
@@ -1065,7 +1076,7 @@ const handleVerification = async (
                 {verifyingDocument.documentName || 'N/A'}
               </Descriptions.Item>
               <Descriptions.Item label='Participant'>
-                {verifyingDocument.participantName || 'N/A'}
+                {verifyingDocument.beneficiaryName || 'N/A'}
               </Descriptions.Item>
               <Descriptions.Item label='Status'>
                 <Tag color='blue'>
@@ -1106,13 +1117,19 @@ const handleVerification = async (
                       <Col>
                         <Button
                           onClick={() => setVerificationModalVisible(false)}
+                          disabled={verifySubmitting}
                         >
                           Cancel
                         </Button>
                       </Col>
                       {reason ? (
                         <Col>
-                          <Button htmlType='submit' type='default'>
+                          <Button
+                            htmlType='submit'
+                            type='default'
+                            loading={verifySubmitting}
+                            disabled={verifySubmitting}
+                          >
                             Query
                           </Button>
                         </Col>
@@ -1121,6 +1138,8 @@ const handleVerification = async (
                           <Button
                             type='primary'
                             onClick={() => handleVerification('verified')}
+                            loading={verifySubmitting}
+                            disabled={verifySubmitting}
                           >
                             Verify
                           </Button>
