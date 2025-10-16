@@ -170,7 +170,13 @@ export const DocumentHub: React.FC = () => {
             issue: issueDate,
             expiry: expiryDate,
             url: doc.url || doc.link || doc.fileUrl || null,
-            fileName: doc.fileName || null
+            fileName: doc.fileName || null,
+
+            // verification fields
+            verificationStatus: (
+              doc.verificationStatus || 'unverified'
+            ).toLowerCase(),
+            verificationComment: doc.verificationComment || ''
           }
         })
 
@@ -281,10 +287,15 @@ export const DocumentHub: React.FC = () => {
       url,
       fileName: file.name,
       uploadedAt: Timestamp.now(),
-      // ✅ new:
       issueDate: toTimestamp(issue),
-      expiryDate: toTimestamp(expiry)
+      expiryDate: toTimestamp(expiry),
+      // reset review flags on replace/add
+      verificationStatus: 'unverified',
+      verificationComment: '',
+      lastVerifiedBy: '',
+      lastVerifiedAt: ''
     }
+
     if (idx >= 0) next[idx] = newEntry
     else next.push(newEntry)
 
@@ -301,6 +312,42 @@ export const DocumentHub: React.FC = () => {
       key: 'status',
       render: getStatusTag
     },
+    {
+      title: 'Review',
+      key: 'review',
+      render: (_: any, record: any) => {
+        const vs = (record.verificationStatus || 'unverified').toLowerCase()
+
+        const color =
+          vs === 'verified' ? 'green' : vs === 'queried' ? 'red' : 'orange'
+
+        const label =
+          vs === 'verified'
+            ? 'Verified'
+            : vs === 'queried'
+            ? 'Queried'
+            : 'Unverified'
+
+        // If queried and there is a reason, show it via Tooltip
+        return (
+          <Space>
+            <Tag color={color}>{label}</Tag>
+            {vs === 'queried' && record.verificationComment ? (
+              <Tooltip
+                title={
+                  <div style={{ maxWidth: 320 }}>
+                    <b>Reason:</b> {record.verificationComment}
+                  </div>
+                }
+              >
+                <ExclamationCircleOutlined style={{ color: '#fa541c' }} />
+              </Tooltip>
+            ) : null}
+          </Space>
+        )
+      }
+    },
+
     { title: 'Issue Date', dataIndex: 'issue', key: 'issue' },
     { title: 'Expiry Date', dataIndex: 'expiry', key: 'expiry' },
     {
@@ -347,6 +394,12 @@ export const DocumentHub: React.FC = () => {
               <Button type='text' shape='circle' icon={<UploadOutlined />} />
             </Tooltip>
           </Upload>
+          {record.verificationStatus === 'queried' &&
+            record.verificationComment && (
+              <Tooltip title={`Queried: ${record.verificationComment}`}>
+                <ExclamationCircleOutlined style={{ color: '#fa8c16' }} />
+              </Tooltip>
+            )}
         </Space>
       )
     }
@@ -581,6 +634,16 @@ export const DocumentHub: React.FC = () => {
       >
         <Divider>Compliance Documents</Divider>
       </div>
+
+      {complianceDocs.some(d => d.verificationStatus === 'queried') && (
+        <Alert
+          type='warning'
+          showIcon
+          style={{ marginBottom: 12 }}
+          message='Some of your documents were queried'
+          description='Open the orange icon in the Review column to read the reason, then re-upload the corrected document.'
+        />
+      )}
 
       <motion.div
         initial={{ opacity: 0, y: 10 }}
