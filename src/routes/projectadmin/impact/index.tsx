@@ -30,7 +30,7 @@ if (typeof Highcharts === 'function') {
   Treegraph(Highcharts)
 }
 
-type Target = 'sales' | 'revenue'
+type Target = 'employees' | 'revenue'
 
 interface Intervention {
   name: string
@@ -133,7 +133,7 @@ const ExpandableChart: React.FC<{
 
 /** ---------------- Dummy fallbacks ---------------- */
 const DUMMY_IMPACTS: Record<Target, Intervention[]> = {
-  sales: [
+  employees: [
     { name: 'Website Development', weightByMonth: [80, 85, 90, 92] },
     { name: 'CRM Setup', weightByMonth: [60, 65, 75, 78] },
     { name: 'Mentorship Sessions', weightByMonth: [88, 89, 91, 94] },
@@ -175,21 +175,21 @@ const DUMMY_INCUBATEES: Incubatee[] = [
     name: 'John Mokoena',
     revenue: [120, 138, 145, 162, 175, 189],
     headcount: [3, 3, 4, 4, 5, 5],
-    impacts: { sales: DUMMY_IMPACTS.sales, revenue: DUMMY_IMPACTS.revenue }
+    impacts: { employees: DUMMY_IMPACTS.employees, revenue: DUMMY_IMPACTS.revenue }
   },
   {
     id: 'sarah',
     name: 'Sarah Nkosi',
     revenue: [95, 102, 110, 118, 130, 141],
     headcount: [2, 2, 2, 3, 3, 3],
-    impacts: { sales: DUMMY_IMPACTS.sales, revenue: DUMMY_IMPACTS.revenue }
+    impacts: { employees: DUMMY_IMPACTS.employees, revenue: DUMMY_IMPACTS.revenue }
   },
   {
     id: 'lebo',
     name: 'Lebo Dlamini',
     revenue: [150, 155, 160, 170, 180, 195],
     headcount: [4, 4, 4, 5, 5, 6],
-    impacts: { sales: DUMMY_IMPACTS.sales, revenue: DUMMY_IMPACTS.revenue }
+    impacts: { employees: DUMMY_IMPACTS.employees, revenue: DUMMY_IMPACTS.revenue }
   }
 ]
 
@@ -298,7 +298,7 @@ const lcg01 = (seed: number): number => {
 export const ImpactAnalysisForm: React.FC = () => {
   const [topN, setTopN] = useState(5)
   const [forecastAhead, setForecastAhead] = useState<number>(0)
-  const [target, setTarget] = useState<Target>('sales')
+  const [target, setTarget] = useState<Target>('employees')
   const [randSeed, setRandSeed] = useState<number>(() => Date.now())
 
   const [companyCode, setCompanyCode] = useState<string | null>(null)
@@ -377,7 +377,7 @@ export const ImpactAnalysisForm: React.FC = () => {
     chart: { type: 'bar', height: 360 },
     title: {
       text: `Top ${topN} Interventions — ${
-        target === 'sales' ? 'Sales' : 'Revenue'
+        target === 'employees' ? 'Sales' : 'Revenue'
       } (Horizon: ${forecastAhead} mo)`
     },
     xAxis: { categories: rankingData.map(i => i.name), title: { text: null } },
@@ -385,7 +385,7 @@ export const ImpactAnalysisForm: React.FC = () => {
       min: WEIGHT_MIN,
       max: WEIGHT_MAX,
       title: {
-        text: `Weight on ${target === 'sales' ? 'Sales' : 'Revenue'}`,
+        text: `Weight on ${target === 'employees' ? 'Sales' : 'Revenue'}`,
         align: 'high'
       },
       plotLines: [{ value: 0, width: 1, color: '#999' }]
@@ -598,7 +598,7 @@ export const ImpactAnalysisForm: React.FC = () => {
     title: {
       text: `Top ${topN} Interventions for ${
         selectedIncubatee?.name ?? 'Incubatee'
-      } — ${target === 'sales' ? 'Sales' : 'Revenue'}`
+      } — ${target === 'employees' ? 'Sales' : 'Revenue'}`
     },
     xAxis: { categories: incubateeImpacts.map(i => i.name) },
     yAxis: {
@@ -635,7 +635,7 @@ export const ImpactAnalysisForm: React.FC = () => {
     },
     title: {
       text: `Intervention Map — ${selectedIncubatee?.name ?? 'Incubatee'} (${
-        target === 'sales' ? 'Sales' : 'Revenue'
+        target === 'employees' ? 'Sales' : 'Revenue'
       })`
     },
     colorAxis: {
@@ -753,8 +753,8 @@ export const ImpactAnalysisForm: React.FC = () => {
                 <Form.Item label='Target' style={{ marginBottom: 8 }}>
                   <Space.Compact block>
                     <Button
-                      type={target === 'sales' ? 'primary' : 'default'}
-                      onClick={() => setTarget('sales')}
+                      type={target === 'employees' ? 'primary' : 'default'}
+                      onClick={() => setTarget('employees')}
                     >
                       Sales
                     </Button>
@@ -874,3 +874,4 @@ export const ImpactAnalysisForm: React.FC = () => {
 }
 
 export default ImpactAnalysisForm
+
