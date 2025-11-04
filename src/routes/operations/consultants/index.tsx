@@ -19,7 +19,8 @@ import {
   Grid,
   List,
   Avatar,
-  Empty
+  Empty,
+  Alert
 } from 'antd'
 import { db } from '@/firebase'
 import {
@@ -183,14 +184,19 @@ export const ConsultantPage: React.FC = () => {
         name: values.name,
         role: 'consultant',
         companyCode,
-        // consultant extras
         expertise: values.expertise || [],
         rate: Number(values.rate),
-        // options
-        sendEmail: true,
-        sendResetLink: true,
-        allowExisting: false
+        // IMPORTANT: default password settings
+        initialPassword: 'Password@1', // <-- backend should set this
+        sendResetLink: false, // we’re using a known default
+        forcePasswordChangeOnFirstLogin: true, // backend should enforce
+        allowExisting: false,
+        type: values.type || 'External'
       }
+
+      // If you have a callable function that already does this, prefer it:
+      // const createUser = httpsCallable(functions, 'createConsultantWithDefaultPassword')
+      // const data = await createUser(payload)
 
       const resp = await fetch(
         'https://createplatformuser-zv4wtb2ujq-uc.a.run.app',
@@ -198,22 +204,21 @@ export const ConsultantPage: React.FC = () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${idToken}`,
+            Authorization: `Bearer ${idToken}`
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(payload)
         }
-      );
-
+      )
 
       const data = await resp.json()
       if (!resp.ok || !data.ok) {
         throw new Error(data?.error || 'create_failed')
       }
 
-      message.success('Consultant created. Password reset email sent.')
+      message.success('Consultant created with default password: Password@1')
       form.resetFields()
       setAddModalVisible(false)
-      fetchConsultants(companyCode) // refresh list
+      fetchConsultants(companyCode)
     } catch (error: any) {
       console.error(error)
       message.error(error?.message || 'Failed to register consultant.')
@@ -303,104 +308,6 @@ export const ConsultantPage: React.FC = () => {
     ? consultants.reduce((sum, c) => sum + (c.rating ?? 0), 0) /
       totalConsultants
     : 0
-
-  const columns = [
-    {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-      sorter: (a: Consultant, b: Consultant) => a.name.localeCompare(b.name)
-    },
-    {
-      title: 'Email',
-      dataIndex: 'email',
-      key: 'email',
-      sorter: (a: Consultant, b: Consultant) => a.email.localeCompare(b.email)
-    },
-    {
-      title: 'Rate/hr',
-      dataIndex: 'rate',
-      key: 'rate',
-      render: val => `R ${val}`
-    },
-    {
-      title: 'Expertise',
-      dataIndex: 'expertise',
-      key: 'expertise',
-      render: (expertise: string[]) => (
-        <Space wrap>
-          {expertise.map((item, index) => (
-            <Tag color='blue' key={index}>
-              {item}
-            </Tag>
-          ))}
-        </Space>
-      )
-    },
-    {
-      title: 'Assignments',
-      dataIndex: 'assignmentsCount',
-      key: 'assignmentsCount',
-      sorter: (a: Consultant, b: Consultant) =>
-        a.assignmentsCount - b.assignmentsCount
-    },
-    {
-      title: 'Rating',
-      dataIndex: 'rating',
-      key: 'rating',
-      sorter: (a: Consultant, b: Consultant) =>
-        (a.rating ?? 0) - (b.rating ?? 0)
-    },
-    {
-      title: 'Status',
-      dataIndex: 'active',
-      key: 'active',
-      render: (active: boolean) => (
-        <Tag color={active ? 'green' : 'red'}>
-          {active ? 'Active' : 'Inactive'}
-        </Tag>
-      ),
-      sorter: (a: Consultant, b: Consultant) =>
-        Number(a.active) - Number(b.active)
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (_: any, record: Consultant) => (
-        <Space>
-          <Button
-            size='small'
-            onClick={() =>
-              navigate(`/operations/consultants/${record.id}/performance`, {
-                state: { consultantName: record.name }
-              })
-            }
-          >
-            View Performance
-          </Button>
-
-          <Button
-            size='small'
-            icon={<EditOutlined />}
-            onClick={() => {
-              setEditingConsultant(record)
-              editForm.setFieldsValue(record)
-              setEditModalVisible(true)
-            }}
-          />
-          <Button
-            size='small'
-            icon={<DeleteOutlined />}
-            danger
-            onClick={() => handleDeleteConsultant(record.id)}
-          />
-          <Button size='small' onClick={() => handleActivateToggle(record)}>
-            {record.active ? 'Deactivate' : 'Activate'}
-          </Button>
-        </Space>
-      )
-    }
-  ]
 
   return (
     <div
@@ -523,7 +430,7 @@ export const ConsultantPage: React.FC = () => {
         transition={{ duration: 0.4 }}
       >
         <MotionCard>
-          <Col style={{ marginBottom: 10 }}>
+          <Col>
             <Space>
               <Input.Search
                 placeholder='Search by name or email'
@@ -658,12 +565,8 @@ export const ConsultantPage: React.FC = () => {
                                 <Text strong>{c.assignmentsCount ?? 0}</Text>
                               </Text>
                               <Space>
-                                <Text>Rating:</Text>
-                                <Rate
-                                  disabled
-                                  allowHalf
-                                  value={Number(c.rating ?? 0)}
-                                />
+                                Rating:
+                                <Text> {Number(c.rating ?? 0)}</Text>
                               </Space>
                             </Space>
                           </div>
@@ -674,13 +577,132 @@ export const ConsultantPage: React.FC = () => {
                 />
               ) : (
                 <Table
-                  columns={columns}
+                  columns={[
+                    {
+                      title: 'Name',
+                      dataIndex: 'name',
+                      key: 'name',
+                      sorter: (a: Consultant, b: Consultant) =>
+                        a.name.localeCompare(b.name),
+                      fixed: 'left',
+                      width: 220
+                    },
+                    {
+                      title: 'Email',
+                      dataIndex: 'email',
+                      key: 'email',
+                      sorter: (a: Consultant, b: Consultant) =>
+                        a.email.localeCompare(b.email),
+                      ellipsis: true,
+                      width: 260
+                    },
+                    {
+                      title: 'Rate/hr',
+                      dataIndex: 'rate',
+                      key: 'rate',
+                      render: val => `R ${val}`,
+                      responsive: ['sm'],
+                      width: 120
+                    },
+                    {
+                      title: 'Expertise',
+                      dataIndex: 'expertise',
+                      key: 'expertise',
+                      render: (expertise: string[]) => (
+                        <Space wrap>
+                          {expertise.map((item, index) => (
+                            <Tag color='blue' key={index}>
+                              {item}
+                            </Tag>
+                          ))}
+                        </Space>
+                      ),
+                      responsive: ['md'],
+                      width: 280
+                    },
+                    {
+                      title: 'Assignments',
+                      dataIndex: 'assignmentsCount',
+                      key: 'assignmentsCount',
+                      sorter: (a: Consultant, b: Consultant) =>
+                        a.assignmentsCount - b.assignmentsCount,
+                      responsive: ['lg'],
+                      width: 140
+                    },
+                    {
+                      title: 'Rating',
+                      dataIndex: 'rating',
+                      key: 'rating',
+                      sorter: (a: Consultant, b: Consultant) =>
+                        (a.rating ?? 0) - (b.rating ?? 0),
+                      width: 120,
+                      render: (v: number) => <Text>{Number(v ?? 0)}</Text>
+                    },
+                    {
+                      title: 'Status',
+                      dataIndex: 'active',
+                      key: 'active',
+                      render: (active: boolean) => (
+                        <Tag color={active ? 'green' : 'red'}>
+                          {active ? 'Active' : 'Inactive'}
+                        </Tag>
+                      ),
+                      width: 120,
+                      responsive: ['sm']
+                    },
+                    {
+                      title: 'Actions',
+                      key: 'actions',
+                      fixed: 'right',
+                      width: 320,
+                      render: (_: any, record: Consultant) => (
+                        <Space wrap>
+                          <Button
+                            size='small'
+                            onClick={() =>
+                              navigate(
+                                `/operations/consultants/${record.id}/performance`,
+                                {
+                                  state: { consultantName: record.name }
+                                }
+                              )
+                            }
+                          >
+                            View Performance
+                          </Button>
+                          <Button
+                            size='small'
+                            icon={<EditOutlined />}
+                            onClick={() => {
+                              setEditingConsultant(record)
+                              editForm.setFieldsValue(record)
+                              setEditModalVisible(true)
+                            }}
+                          />
+                          <Button
+                            size='small'
+                            icon={<DeleteOutlined />}
+                            danger
+                            onClick={() => handleDeleteConsultant(record.id)}
+                          />
+                          <Button
+                            size='small'
+                            onClick={() => handleActivateToggle(record)}
+                          >
+                            {record.active ? 'Deactivate' : 'Activate'}
+                          </Button>
+                        </Space>
+                      )
+                    }
+                  ]}
                   dataSource={filteredConsultants}
                   rowKey='id'
-                  pagination={{ pageSize: 8 }}
+                  pagination={{ pageSize: 8, showSizeChanger: false }}
                   rowClassName={record =>
                     record.id === newConsultantId ? 'highlighted-row' : ''
                   }
+                  scroll={{ x: 1100 }}
+                  tableLayout='fixed'
                 />
               )}
             </Skeleton>
@@ -696,8 +718,21 @@ export const ConsultantPage: React.FC = () => {
         okText='Add Consultant'
         centered
         confirmLoading={adding}
-        bodyStyle={{ maxHeight: '70vh', overflowY: 'auto' }} // 👉 limit height nicely
+        bodyStyle={{ maxHeight: '70vh', overflowY: 'auto' }}
       >
+        <Alert
+          type='info'
+          showIcon
+          message='Default password'
+          description={
+            <span>
+              New consultants are created with the default password{' '}
+              <b>Password@1</b>. They should change it on first login.
+            </span>
+          }
+          style={{ marginBottom: 16 }}
+        />
+
         <Form form={form} layout='vertical' onFinish={handleAddConsultant}>
           <Form.Item
             name='name'
