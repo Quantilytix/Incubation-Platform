@@ -1,34 +1,23 @@
+import React from 'react'
 import {
   EyeInvisibleOutlined,
   EyeTwoTone,
   GoogleOutlined
 } from '@ant-design/icons'
-import {
-  Button,
-  Form,
-  Input,
-  Select,
-  Typography,
-  message,
-  Spin,
-  Card
-} from 'antd'
-import React from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Button, Form, Input, Select, Typography, message } from 'antd'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup
 } from 'firebase/auth'
-import { auth } from '@/firebase'
+import { auth, db } from '@/firebase'
 import { doc, setDoc } from 'firebase/firestore'
-import { db } from '@/firebase'
-import { useSearchParams } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 
-const { Title } = Typography
+const { Title, Text } = Typography
 
-function formatFirebaseError (error) {
+function formatFirebaseError (error: any) {
   if (!error || !error.code)
     return error?.message || 'An unexpected error occurred.'
   switch (error.code) {
@@ -54,16 +43,20 @@ function formatFirebaseError (error) {
 export const RegisterPage: React.FC = () => {
   const [form] = Form.useForm()
   const navigate = useNavigate()
-  const [loading, setLoading] = React.useState(false)
-  const [googleLoading, setGoogleLoading] = React.useState(false)
-  const [redirecting, setRedirecting] = React.useState(false)
   const [searchParams] = useSearchParams()
   const code = searchParams.get('code') || ''
   const roleFromParams = searchParams.get('role') || ''
   const [selectedRole, setSelectedRole] = React.useState(roleFromParams)
 
+  const [loading, setLoading] = React.useState(false)
+  const [googleLoading, setGoogleLoading] = React.useState(false)
+  const [redirecting, setRedirecting] = React.useState(false)
+  const isSubmitting = loading || googleLoading || redirecting
+
+  const reduceMotion = useReducedMotion()
+
   React.useEffect(() => {
-    document.title = 'Register • Incubation Platform'
+    document.title = 'Register • Smart Incubation'
   }, [])
 
   const roleOptions = [
@@ -87,6 +80,7 @@ export const RegisterPage: React.FC = () => {
         values.password
       )
       const user = userCred.user
+
       const assignedRole =
         selectedRole === 'sme'
           ? 'incubatee'
@@ -104,17 +98,13 @@ export const RegisterPage: React.FC = () => {
         ...(assignedRole === 'director' ? { firstLoginComplete: false } : {})
       }
       await setDoc(doc(db, 'users', user.uid), userDoc)
-      message.success('🎉 Registration successful! Redirecting...', 2)
+      message.success('🎉 Registration successful! Redirecting...', 1.4)
       setRedirecting(true)
       setTimeout(() => {
-        if (assignedRole === 'incubatee') {
-          navigate('/incubatee/tracker')
-        } else if (assignedRole === 'director') {
-          navigate('/director/onboarding')
-        } else {
-          navigate(`/${assignedRole}`)
-        }
-      }, 2000)
+        if (assignedRole === 'incubatee') navigate('/incubatee/tracker')
+        else if (assignedRole === 'director') navigate('/director/onboarding')
+        else navigate(`/${assignedRole}`)
+      }, 1200)
     } catch (error: any) {
       message.error(formatFirebaseError(error))
     } finally {
@@ -128,6 +118,7 @@ export const RegisterPage: React.FC = () => {
       const provider = new GoogleAuthProvider()
       const result = await signInWithPopup(auth, provider)
       const user = result.user
+
       const assignedRole =
         selectedRole === 'sme'
           ? 'incubatee'
@@ -145,17 +136,13 @@ export const RegisterPage: React.FC = () => {
         ...(assignedRole === 'director' ? { firstLoginComplete: false } : {})
       }
       await setDoc(doc(db, 'users', user.uid), userDoc, { merge: true })
-      message.success('✅ Google sign-up successful! Redirecting...', 2)
+      message.success('✅ Google sign-up successful! Redirecting...', 1.4)
       setRedirecting(true)
       setTimeout(() => {
-        if (assignedRole === 'incubatee') {
-          navigate('/incubatee/tracker')
-        } else if (assignedRole === 'director') {
-          navigate('/director/onboarding')
-        } else {
-          navigate(`/${assignedRole || 'dashboard'}`)
-        }
-      }, 2000)
+        if (assignedRole === 'incubatee') navigate('/incubatee/tracker')
+        else if (assignedRole === 'director') navigate('/director/onboarding')
+        else navigate(`/${assignedRole || 'dashboard'}`)
+      }, 1200)
     } catch (error: any) {
       message.error(formatFirebaseError(error))
     } finally {
@@ -163,358 +150,390 @@ export const RegisterPage: React.FC = () => {
     }
   }
 
-  // Card animation (short)
-  const cardVariants = {
-    initial: { opacity: 0, scale: 0.94, y: 30 },
-    animate: {
-      opacity: 1,
-      scale: 1,
-      y: 0,
-      transition: { duration: 0.7, ease: 'easeOut' }
-    }
+  // overlay + spinner animations (same feel as login)
+  const overlayVariants = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1, transition: { duration: 0.8 } },
+    exit: { opacity: 0, transition: { duration: 0.6 } }
   }
-
-  const logoVariants = {
-    initial: { opacity: 0, scale: 0.7 },
+  const spinnerVariants = {
     animate: {
-      opacity: 1,
-      scale: 1,
-      transition: { duration: 1.2, delay: 0.5, ease: 'easeOut' }
-    }
-  }
-
-  // -- BLOB VARIANTS (blobs behind the card) --
-  const blobVariants = {
-    initial: { opacity: 0, scale: 0.95, y: 20 },
-    animate: {
-      opacity: 0.7,
-      scale: 1,
-      y: 0,
-      transition: { duration: 1.2, ease: 'easeOut' }
+      rotate: [0, 180, 360],
+      scale: [1, 1.03, 1],
+      transition: { duration: 2, repeat: Infinity, ease: 'easeInOut' }
     }
   }
 
   return (
-    <Spin spinning={loading || googleLoading || redirecting} size='large'>
+    <>
       <div
         style={{
           minHeight: '100vh',
-          width: '100vw',
-          background:
-            'linear-gradient(120deg, #aecbfa 0%, #7fa7fa 60%, #cfbcfa 100%)',
-          overflow: 'hidden',
-          position: 'relative',
+          width: '100%',
           display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
-          alignItems: 'center'
+          background: '#f4f6f8',
+          padding: 24,
+          position: 'relative'
         }}
       >
-        {/* BLOBS */}
-        <motion.svg
-          className='animated-blob blob-bottom-left'
-          viewBox='0 0 400 400'
-          style={{
-            position: 'absolute',
-            left: '-130px',
-            bottom: '-90px',
-            width: 320,
-            height: 310,
-            zIndex: 0,
-            pointerEvents: 'none'
-          }}
-          initial='initial'
-          animate='animate'
-          variants={blobVariants}
-        >
-          <defs>
-            <linearGradient id='blob1' x1='0' y1='0' x2='1' y2='1'>
-              <stop offset='0%' stopColor='#38bdf8' />
-              <stop offset='100%' stopColor='#818cf8' />
-            </linearGradient>
-          </defs>
-          <path
-            fill='url(#blob1)'
-            d='M326.9,309Q298,378,218.5,374.5Q139,371,81,312.5Q23,254,56.5,172Q90,90,180.5,63.5Q271,37,322.5,118.5Q374,200,326.9,309Z'
-          />
-        </motion.svg>
-        <motion.svg
-          className='animated-blob blob-top-right'
-          viewBox='0 0 400 400'
-          style={{
-            position: 'absolute',
-            right: '-110px',
-            top: '-70px',
-            width: 280,
-            height: 260,
-            zIndex: 0,
-            pointerEvents: 'none'
-          }}
-          initial='initial'
-          animate='animate'
-          variants={blobVariants}
-        >
-          <defs>
-            <linearGradient id='blob2' x1='0' y1='0' x2='1' y2='1'>
-              <stop offset='0%' stopColor='#fbc2eb' />
-              <stop offset='100%' stopColor='#a6c1ee' />
-            </linearGradient>
-          </defs>
-          <path
-            fill='url(#blob2)'
-            d='M343,294.5Q302,389,199.5,371Q97,353,71.5,226.5Q46,100,154,72.5Q262,45,315,122.5Q368,200,343,294.5Z'
-          />
-        </motion.svg>
-
-        {/* CARD */}
+        {/* CARD: hero left, form right */}
         <motion.div
-          initial='initial'
-          animate='animate'
-          variants={cardVariants}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45 }}
           style={{
-            width: 720,
-            minWidth: 300,
-            minHeight: 310, // shorter
-            display: 'flex',
-            borderRadius: 16,
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            width: '100%',
+            maxWidth: 980, // narrower card
+            borderRadius: 14,
+            overflow: 'hidden',
             background: '#fff',
-            boxShadow: '0 8px 44px #5ec3fa24, 0 1.5px 10px #91bfff08',
-            zIndex: 1
+            boxShadow: '0 6px 24px rgba(0,0,0,0.08)'
           }}
         >
-          {/* Left Panel */}
+          {/* LEFT: Gradient hero (compact) */}
           <div
             style={{
-              flex: 1,
-              minWidth: 230,
-              background: 'linear-gradient(135deg, #24b6d7 60%, #18d19a 100%)',
-              borderTopLeftRadius: 16,
-              borderBottomLeftRadius: 16,
+              background:
+                'radial-gradient(120% 120% at 80% 20%, #0ea5a4 0%, #064e3b 45%, #0b3d3a 100%)',
+              color: 'white',
               display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
               alignItems: 'center',
-              padding: '28px 18px'
+              justifyContent: 'center',
+              padding: 20 // tighter
             }}
           >
-            <div style={{ width: '100%', maxWidth: 230 }}>
-              <Title
-                level={4}
+            <div style={{ maxWidth: 460, lineHeight: 1.06 }}>
+              <h1
                 style={{
-                  color: '#fff',
-                  marginBottom: 2,
-                  marginTop: 0,
-                  textAlign: 'center'
-                }}
-              >
-                Smart Incubation
-              </Title>
-              <div
-                style={{
-                  fontSize: 14,
-                  opacity: 0.95,
-                  marginBottom: 18,
-                  color: '#fff'
-                }}
-              >
-                To keep connected, please login with your personal info.
-              </div>
-              <Button
-                size='middle'
-                shape='round'
-                style={{
-                  background: 'transparent',
-                  color: '#fff',
-                  border: '1.8px solid #fff',
-                  fontWeight: 600,
-                  width: '100%',
-                  fontSize: 14,
-                  marginTop: 2
-                }}
-                onClick={() => navigate('/login')}
-              >
-                SIGN IN
-              </Button>
-            </div>
-          </div>
-
-          {/* Right Panel: Form */}
-          <div
-            style={{
-              flex: 1.2,
-              minWidth: 260,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              alignItems: 'center',
-              padding: '28px 20px'
-            }}
-          >
-            <div style={{ width: '100%', maxWidth: 290 }}>
-              <Title
-                level={4}
-                style={{
-                  color: '#16b8e0',
-                  textAlign: 'center',
-                  fontWeight: 700,
+                  fontSize: 26, // smaller title
+                  fontWeight: 800,
+                  letterSpacing: -0.4,
                   margin: 0
                 }}
               >
-                Create Account
-              </Title>
+                Revolutionize Incubation
+                <br />
+                with Smarter Automation
+              </h1>
+            </div>
+          </div>
 
-              <Form
-                layout='vertical'
-                form={form}
-                onFinish={handleRegister}
-                requiredMark={false}
-                initialValues={{ role: roleFromParams || undefined }}
-                style={{ margin: 0 }}
-              >
-                {!roleFromParams && (
-                  <Form.Item
-                    name='role'
-                    label='Select Role'
-                    rules={[
-                      { required: true, message: 'Please select your role' }
+          {/* RIGHT: Registration form (compact) */}
+          <div
+            style={{
+              padding: '20px 22px', // tighter
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center'
+            }}
+          >
+            <Title
+              level={4}
+              style={{
+                marginBottom: 4,
+                color: '#0f172a',
+                fontWeight: 700,
+                textAlign: 'center'
+              }}
+            >
+              Create Account
+            </Title>
+            <Text
+              style={{ color: '#64748b', fontSize: 13, textAlign: 'center' }}
+            >
+              Join the platform and streamline your incubation workflow.
+            </Text>
+
+            <Form
+              layout='vertical'
+              form={form}
+              onFinish={handleRegister}
+              requiredMark={false}
+              initialValues={{ role: roleFromParams || undefined }}
+              style={{ marginTop: 12, maxWidth: 420 }}
+            >
+              {!roleFromParams && (
+                <Form.Item
+                  name='role'
+                  label={<span style={{ fontSize: 12 }}>Select Role</span>}
+                  rules={[
+                    { required: true, message: 'Please select your role' }
+                  ]}
+                  style={{ marginBottom: 8 }}
+                >
+                  <Select
+                    placeholder='Choose your role'
+                    options={[
+                      { label: 'SME', value: 'sme' },
+                      { label: 'Incubate Implementor', value: 'incubate' },
+                      { label: 'Government', value: 'government' },
+                      { label: 'Investor', value: 'investor' },
+                      { label: 'Funder', value: 'funder' }
                     ]}
+                    onChange={val => setSelectedRole(val)}
+                    size='middle'
+                  />
+                </Form.Item>
+              )}
+
+              {/* Compact grid for fields to save vertical space */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 8
+                }}
+              >
+                <div>
+                  <Form.Item
+                    name='name'
+                    label={<span style={{ fontSize: 12 }}>Name</span>}
+                    rules={[
+                      { required: true, message: 'Please enter your full name' }
+                    ]}
+                    style={{ marginBottom: 8 }}
                   >
-                    <Select
-                      placeholder='Choose your role'
-                      options={roleOptions}
-                      onChange={val => setSelectedRole(val)}
+                    <Input
+                      placeholder='Daniel Rumona'
+                      size='middle'
+                      style={{ borderRadius: 10 }}
                     />
                   </Form.Item>
-                )}
-                <Form.Item
-                  name='name'
-                  label='Name'
-                  rules={[
-                    { required: true, message: 'Please enter your full name' }
-                  ]}
-                  style={{ marginBottom: 10 }}
-                >
-                  <Input placeholder='Daniel Rumona' />
-                </Form.Item>
-                <Form.Item
-                  name='email'
-                  label='Email'
-                  rules={[
-                    { required: true, message: 'Please enter your email' },
-                    { type: 'email', message: 'Enter a valid email' }
-                  ]}
-                  style={{ marginBottom: 10 }}
-                >
-                  <Input placeholder='you@example.com' />
-                </Form.Item>
-                <Form.Item
-                  name='password'
-                  label='Password'
-                  rules={[
-                    { required: true, message: 'Please enter your password' },
-                    {
-                      min: 6,
-                      message: 'Password must be at least 6 characters'
-                    }
-                  ]}
-                  hasFeedback
-                  style={{ marginBottom: 10 }}
-                >
-                  <Input.Password
-                    placeholder='Enter your password'
-                    iconRender={visible =>
-                      visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
-                    }
-                  />
-                </Form.Item>
-                <Form.Item
-                  name='confirmPassword'
-                  label='Confirm Password'
-                  dependencies={['password']}
-                  hasFeedback
-                  rules={[
-                    { required: true, message: 'Please confirm your password' },
-                    ({ getFieldValue }) => ({
-                      validator (_, value) {
-                        if (!value || getFieldValue('password') === value) {
-                          return Promise.resolve()
-                        }
-                        return Promise.reject(
-                          new Error('The two passwords do not match!')
+                </div>
+                <div>
+                  <Form.Item
+                    name='email'
+                    label={<span style={{ fontSize: 12 }}>Email</span>}
+                    rules={[
+                      { required: true, message: 'Please enter your email' },
+                      { type: 'email', message: 'Enter a valid email' }
+                    ]}
+                    style={{ marginBottom: 8 }}
+                  >
+                    <Input
+                      placeholder='you@example.com'
+                      size='middle'
+                      style={{ borderRadius: 10 }}
+                    />
+                  </Form.Item>
+                </div>
+                <div>
+                  <Form.Item
+                    name='password'
+                    label={<span style={{ fontSize: 12 }}>Password</span>}
+                    rules={[
+                      { required: true, message: 'Please enter your password' },
+                      { min: 6, message: 'At least 6 characters' }
+                    ]}
+                    hasFeedback
+                    style={{ marginBottom: 8 }}
+                  >
+                    <Input.Password
+                      placeholder='Password'
+                      size='middle'
+                      style={{ borderRadius: 10 }}
+                      iconRender={v =>
+                        v ? (
+                          <EyeTwoTone twoToneColor='#64748b' />
+                        ) : (
+                          <EyeInvisibleOutlined />
                         )
                       }
-                    })
-                  ]}
-                  style={{ marginBottom: 12 }}
-                >
-                  <Input.Password
-                    placeholder='Confirm your password'
-                    iconRender={visible =>
-                      visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
-                    }
-                  />
-                </Form.Item>
-                <Form.Item style={{ marginBottom: 7 }}>
-                  <Button
-                    type='primary'
-                    htmlType='submit'
-                    block
-                    loading={loading}
+                    />
+                  </Form.Item>
+                </div>
+                <div>
+                  <Form.Item
+                    name='confirmPassword'
+                    label={<span style={{ fontSize: 12 }}>Confirm</span>}
+                    dependencies={['password']}
+                    hasFeedback
+                    rules={[
+                      {
+                        required: true,
+                        message: 'Please confirm your password'
+                      },
+                      ({ getFieldValue }) => ({
+                        validator (_, value) {
+                          if (!value || getFieldValue('password') === value)
+                            return Promise.resolve()
+                          return Promise.reject(
+                            new Error('Passwords do not match')
+                          )
+                        }
+                      })
+                    ]}
+                    style={{ marginBottom: 8 }}
                   >
-                    SIGN UP
-                  </Button>
-                </Form.Item>
-                <div
-                  style={{
-                    color: '#000',
-                    textAlign: 'center',
-                    fontSize: 13,
-                    marginBottom: 5
-                  }}
-                >
-                  or use your Google Account for registration:
+                    <Input.Password
+                      placeholder='Confirm password'
+                      size='middle'
+                      style={{ borderRadius: 10 }}
+                      iconRender={v =>
+                        v ? (
+                          <EyeTwoTone twoToneColor='#64748b' />
+                        ) : (
+                          <EyeInvisibleOutlined />
+                        )
+                      }
+                    />
+                  </Form.Item>
                 </div>
-                <div
+              </div>
+
+              <Form.Item style={{ marginBottom: 8 }}>
+                <Button
+                  type='primary'
+                  htmlType='submit'
+                  block
+                  size='middle' // shorter button
                   style={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    margin: '13px 0 2px'
+                    borderRadius: 10,
+                    fontWeight: 600,
+                    background: '#0f766e',
+                    borderColor: '#0f766e'
                   }}
+                  loading={loading}
                 >
-                  <Button
-                    icon={<GoogleOutlined style={{ color: '#ea4335' }} />}
-                    shape='circle'
-                    style={{
-                      margin: '0 8px',
-                      border: '1px solid #eee',
-                      background: '#fff',
-                      height: '32px'
-                    }}
-                    onClick={handleGoogleRegister}
-                    loading={googleLoading}
-                  />
-                </div>
-              </Form>
+                  Sign Up
+                </Button>
+              </Form.Item>
+
+              <div
+                style={{
+                  textAlign: 'center',
+                  margin: '6px 0',
+                  color: '#94a3b8',
+                  fontSize: 12
+                }}
+              >
+                OR
+              </div>
+
+              <Button
+                icon={<GoogleOutlined />}
+                block
+                size='middle'
+                onClick={handleGoogleRegister}
+                style={{ borderRadius: 10, fontWeight: 600 }}
+                loading={googleLoading}
+              >
+                Continue with Google
+              </Button>
+            </Form>
+
+            {/* Sign-in switch */}
+            <div style={{ textAlign: 'center', marginTop: 10 }}>
+              <Text style={{ color: '#64748b', fontSize: 13 }}>
+                Already have an account?{' '}
+                <Button
+                  type='link'
+                  style={{ padding: 0, color: '#0f766e', fontWeight: 600 }}
+                  onClick={() => navigate('/login')}
+                >
+                  Sign In
+                </Button>
+              </Text>
             </div>
           </div>
         </motion.div>
 
-        {/* Bottom-right logo */}
-        <motion.img
-          initial='initial'
-          animate='animate'
-          variants={logoVariants}
-          src='/assets/images/QuantilytixO.png'
-          alt='Quantilytix Logo'
+        {/* Bottom-right QuantO logo with dark background */}
+        <div
           style={{
             position: 'fixed',
-            bottom: 22,
+            bottom: 20,
             right: 20,
             height: 46,
             width: 110,
-            zIndex: 99
+            zIndex: 99,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            borderRadius: 8,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 6,
+            boxShadow: '0 6px 18px rgba(0,0,0,0.25)'
           }}
-        />
+        >
+          <img
+            src='/assets/images/QuantilytixO.png'
+            alt='QuantO Logo'
+            style={{ height: '100%', width: '100%', objectFit: 'contain' }}
+          />
+        </div>
       </div>
-    </Spin>
+
+      {/* Animated loading overlay (shows when switching/submitting) */}
+      <AnimatePresence>
+        {isSubmitting && (
+          <motion.div
+            key='loading'
+            variants={overlayVariants}
+            initial='initial'
+            animate='animate'
+            exit='exit'
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              backdropFilter: 'blur(3px)',
+              background: 'rgba(255,255,255,0.65)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'wait'
+            }}
+            aria-live='polite'
+            role='status'
+            aria-busy='true'
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 12
+              }}
+            >
+              <motion.div
+                variants={spinnerVariants}
+                animate={reduceMotion ? { rotate: 0, scale: 1 } : 'animate'}
+                style={{
+                  width: 58,
+                  height: 58,
+                  borderRadius: '50%',
+                  border: '4px solid rgba(15,118,110,0.25)',
+                  borderTopColor: '#0f766e',
+                  boxShadow: '0 0 0 2px rgba(15,118,110,0.06) inset'
+                }}
+              />
+              <div
+                style={{
+                  fontWeight: 600,
+                  color: '#0f172a',
+                  letterSpacing: 0.2
+                }}
+              >
+                {googleLoading
+                  ? 'Creating with Google…'
+                  : redirecting
+                  ? 'Redirecting…'
+                  : 'Creating your account…'}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   )
 }
+
+export default RegisterPage
