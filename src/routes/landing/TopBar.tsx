@@ -2,8 +2,11 @@
 import React from 'react'
 import { Button, Space } from 'antd'
 import { LoginOutlined, RocketOutlined } from '@ant-design/icons'
+import { useNavigate } from 'react-router-dom' // ✅ import navigation hook
 
 const TopBar: React.FC = () => {
+  const navigate = useNavigate() // ✅ init router
+
   return (
     <div
       style={{
@@ -49,26 +52,28 @@ const TopBar: React.FC = () => {
         <Space size='middle'>
           <Button
             icon={<LoginOutlined />}
-            iconPosition='end'
-            color='cyan'
-            variant='filled'
             size='small'
+            variant='filled'
+            color='cyan'
             style={{ padding: '15px 10px' }}
+            onClick={() => navigate('/login')}
           >
             Sign In
           </Button>
+
           <span style={{ color: '#999' }}>|</span>
+
           <Button
             size='small'
             type='primary'
             icon={<RocketOutlined />}
-            iconPosition='end'
             style={{
               background: 'linear-gradient(90deg, #1677ff, #13c2c2)',
               border: 'none',
               color: '#fff',
               padding: '15px 10px'
             }}
+            onClick={() => navigate('/registration')}
           >
             Get Started
           </Button>
