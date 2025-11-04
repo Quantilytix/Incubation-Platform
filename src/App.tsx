@@ -1,7 +1,7 @@
 // ───────────────────────────────────────────────────────────
 // 🔹 Core Libraries
 // ───────────────────────────────────────────────────────────
-import { BrowserRouter, Route, Routes, Outlet } from 'react-router-dom'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // ───────────────────────────────────────────────────────────
@@ -38,45 +38,55 @@ import { CustomLayout } from '@/components/layout'
 // ───────────────────────────────────────────────────────────
 import { LoginPage } from '@/routes/login'
 import { RegisterPage } from '@/routes/registration'
-import { ResetPasswordPage } from '@/routes/reset-password'
-
-
+import { ResetPasswordPage } from './routes/reset-password'
+import NotFoundPage from './routes/not-found'
+import LandingPage from './routes/landing'
 
 // ───────────────────────────────────────────────────────────
-// 🔹 Admin & Operations Dashboards
+// 🔹 Director Routes
 // ───────────────────────────────────────────────────────────
-import { AdminDashboard } from '@/routes/operations/admin/adminDashboard'
 import { DirectorDashboard } from '@/routes/directors/directorDashboard'
-import { OperationsDashboard } from '@/routes/operations/OperationsDashboard'
+import { DirectorOnboardingPage } from './routes/directors/onboarding'
+import OperationsOnboardingDashboard from './routes/directors/operations'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Admin Routes
 // ───────────────────────────────────────────────────────────
 import FormManagement from '@/routes/admin/forms'
+import { AdminDashboard } from '@/routes/operations/admin/adminDashboard'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Operations Routes
 // ───────────────────────────────────────────────────────────
-import OperationsFormsManagement from '@/routes/operations/forms'
+import { OperationsDashboard } from '@/routes/operations/OperationsDashboard'
 import OperationsParticipantsManagement from '@/routes/operations/participants'
 import OperationsResourceManagement from '@/routes/operations/resources'
 import OperationsCompliance from './routes/operations/compliance'
 import OperationsReports from './routes/operations/reports'
 import { ConsultantAssignments } from './routes/operations/assignments'
 import ParticipantSuccess from './routes/operations/participants/success'
+import { TasksManager } from './routes/operations/tasks'
+import DiagnosticsDashboard from './routes/operations/diagnostics'
+import ConsultantPerformance from './routes/operations/consultants/perfomance'
+import IncubateePerformancePage from './routes/operations/participants/[id]/perfomance'
 import { ConsultantPage } from './routes/operations/consultants'
+import InterventionSuggestions from './components/interventions/InterventionsSuggestions'
+import FormBuilder from './components/forms/builder'
+import FormResponseViewer from './components/form-response-viewer/FormResponseViewer'
+import TemplatesPage from './components/forms'
+import FormBuilderPage from './components/forms/builder/[id]'
+import FormSubmission from './components/form-submission/FormSubmission'
+import IndicativeCalendar from './components/calendar/IndicativeCalendar'
+import PostAssessmentBuilder from './components/assessments/PostAssessmentBuilder'
+
 // ───────────────────────────────────────────────────────────
 // 🔹 Funder Routes
 // ───────────────────────────────────────────────────────────
 import { FunderDashboard } from '@/routes/funder/funderDashboard'
 import { FunderAnalytics } from '@/routes/funder/analytics/funderAnalytics'
-// ───────────────────────────────────────────────────────────
-// 🔹 Funder Routes
-// ───────────────────────────────────────────────────────────
 import InvestorDashboard from './routes/investor/investor/Dashboard'
 import { FunderOpportunities } from './routes/investor/opportunities'
 import { FunderPortfolio } from './routes/investor/portfolio'
-import Analytics, { InvestorAnalytics } from './routes/investor/analytics'
 import { FunderDocuments } from './routes/investor/documents'
 import { FunderDueDiligence } from './routes/investor/due-diligence'
 import FunderCalendarPage from './routes/investor/calendar'
@@ -87,9 +97,16 @@ import { ImpactReports } from './routes/government/reports'
 // 🔹 Incubatee Routes
 // ───────────────────────────────────────────────────────────
 import { IncubateeDashboard } from '@/routes/incubatee'
+import SMEDashboard from './routes/incubatee/sme' //For non-incubatee
+import ApplicationTracker from './routes/incubatee/tracker'
 import { DocumentHub } from './routes/incubatee/documents/DocumentsHub'
 import InterventionsTrackingView from './routes/incubatee/interventions'
 import { MonthlyPerformanceForm } from './routes/incubatee/metrics'
+import FinancialReportsInterface from './routes/incubatee/financials'
+import IncubateeLayout from './components/IncubateeLayout'
+import IncubateeAnalytics from './routes/incubatee/analytics'
+import ProfileForm from './routes/incubatee/profile'
+import GrowthPlanPage from './routes/incubatee/diagnostic'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Consultant Routes
@@ -97,6 +114,8 @@ import { MonthlyPerformanceForm } from './routes/incubatee/metrics'
 import { ConsultantDashboard } from '@/routes/consultants/ConsultantDashboard'
 import { AssignedInterventions } from '@/routes/consultants/allocated'
 import { InterventionTrack } from '@/routes/consultants/allocated/intervention'
+import AppointmentsManager from './routes/consultants/appointments'
+import AllocatedHistory from './routes/consultants/allocated/history'
 import { FeedbackWorkspace } from '@/routes/consultants/feedback/FeedbackWorkspace'
 import { ProjectAnalytics } from '@/routes/consultants/analytics/ProjectAnalytics'
 
@@ -106,48 +125,25 @@ import { ProjectAnalytics } from '@/routes/consultants/analytics/ProjectAnalytic
 import { ProjectAdminDashboard } from './routes/projectadmin/projectAdminDashboard'
 import MonitoringEvaluationSection from '@/routes/projectadmin/monitoring'
 import { ImpactAnalysisForm } from './routes/projectadmin/impact'
+import ProjectAdminReports from './routes/projectadmin/reports'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Registration Routes
 // ───────────────────────────────────────────────────────────
 import ParticipantFormalRegistration from './routes/registration/onboarding'
+import ParticipantRegistrationStepForm from './routes/registration/onboarding'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Utilities / Misc
 // ───────────────────────────────────────────────────────────
 import Chat from '@/routes/chat/chat'
 import ApplicationsPage from './routes/applications'
-import { DirectorOnboardingPage } from './routes/directors/onboarding'
-import OperationsOnboardingDashboard from './routes/directors/operations'
-import ParticipantRegistrationStepForm from './routes/registration/onboarding'
 import ProgramManager from './routes/programs'
-import ProgramExpenseForm from './routes/expenses'
 import GenericProgramExpenseForm from './routes/expenses'
 import SystemSetupForm from './routes/system'
 import InterventionDatabaseView from './routes/interventions'
-import ProjectAdminReports from './routes/projectadmin/reports'
-import FinancialReportsInterface from './routes/incubatee/financials'
-import ApplicationTracker from './routes/incubatee/tracker'
-import LandingPage from './routes/landing'
-import RoleDetailPage from './routes/landing/role'
-import SMEDashboard from './routes/incubatee/sme'
-import IncubateeLayout from './components/IncubateeLayout'
-import IncubateeAnalytics from './routes/incubatee/analytics'
-import ProfileForm from './routes/incubatee/profile'
-import GrowthPlanPage from './routes/incubatee/diagnostic'
+
 import { TasksEventsPage } from './routes/tasksEvents'
-import AppointmentsManager from './routes/consultants/appointments'
-import AllocatedHistory from './routes/consultants/allocated/history'
-import { TasksManager } from './routes/operations/tasks'
-import DiagnosticsDashboard from './routes/operations/diagnostics'
-import ConsultantPerformance from './routes/operations/consultants/perfomance'
-import IncubateePerformancePage from './routes/operations/participants/[id]/perfomance'
-import FormBuilder from './components/forms/builder'
-import FormResponseViewer from './components/form-response-viewer/FormResponseViewer'
-import TemplatesPage from './components/forms'
-import FormBuilderPage from './components/forms/builder/[id]'
-import FormSubmission from './components/form-submission/FormSubmission'
-import IndicativeCalendar from './components/calendar/IndicativeCalendar'
 
 const queryClient = new QueryClient()
 
@@ -158,7 +154,25 @@ const App = () => {
     <>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <ConfigProvider theme={RefineThemes.Blue}>
+          {/* <ConfigProvider theme={RefineThemes.Blue}> */}
+          <ConfigProvider
+            theme={{
+              ...RefineThemes.Blue,
+              token: {
+                ...RefineThemes.Blue.token,
+                // make only the page canvas transparent
+                colorBgLayout: 'transparent'
+              },
+              components: {
+                Layout: {
+                  headerBg: 'transparent',
+                  bodyBg: 'transparent',
+                  siderBg: 'transparent',
+                  footerBg: 'transparent'
+                }
+              }
+            }}
+          >
             <AntdApp>
               <DevtoolsProvider>
                 <Refine
@@ -184,7 +198,7 @@ const App = () => {
                         <Authenticated
                           fallback={<CatchAllNavigate to='/login' />}
                         >
-                          <CustomLayout /> {/* ✅ Replaces ThemedLayoutV2 */}
+                          <CustomLayout />
                         </Authenticated>
                       }
                     >
@@ -271,6 +285,10 @@ const App = () => {
                       <Route path='consultant'>
                         <Route index element={<ConsultantDashboard />} />
                         <Route
+                          path='assessments/post'
+                          element={<PostAssessmentBuilder />}
+                        />
+                        <Route
                           path='appointments'
                           element={<AppointmentsManager />}
                         />
@@ -334,6 +352,10 @@ const App = () => {
                           element={<FormResponseViewer />}
                         />
                         <Route
+                          path='assessments/post'
+                          element={<PostAssessmentBuilder />}
+                        />
+                        <Route
                           path='participants'
                           element={<OperationsParticipantsManagement />}
                         />
@@ -351,6 +373,10 @@ const App = () => {
                         <Route
                           path='resources'
                           element={<OperationsResourceManagement />}
+                        />
+                        <Route
+                          path='indicative'
+                          element={<InterventionSuggestions />}
                         />
                         <Route
                           path='compliance'
@@ -412,7 +438,7 @@ const App = () => {
                     <Route path='/role/:roleId' element={<RoleDetailPage />} />
                     <Route path='/landing/sme' element={<SMEDashboard />} />
                     <Route path='/login' element={<LoginPage />} />
-                       <Route
+                    <Route
                       path='/reset-password'
                       element={<ResetPasswordPage />}
                     />
@@ -429,7 +455,7 @@ const App = () => {
                       />
                     </Route>
 
-                    <Route path='*' element={<h1>Page Not Found</h1>} />
+                    <Route path='*' element={<NotFoundPage />} />
                   </Routes>
 
                   <UnsavedChangesNotifier />
