@@ -1,443 +1,714 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { Button, Form, Input, Typography, message, Spin, Modal, Alert } from 'antd'
-import { EyeInvisibleOutlined, EyeTwoTone, GoogleOutlined } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
-import { Helmet } from 'react-helmet'
-import { motion } from 'framer-motion'
-import { auth, db } from '@/firebase'
+import React, { useEffect, useState } from 'react'
 import {
-  browserLocalPersistence,
-  EmailAuthProvider,
-  fetchSignInMethodsForEmail,
-  getRedirectResult,
-  GoogleAuthProvider,
-  linkWithCredential,
-  setPersistence,
+  EyeInvisibleOutlined,
+  EyeTwoTone,
+  GoogleOutlined
+} from '@ant-design/icons'
+import {
+  Button,
+  Form,
+  Input,
+  Typography,
+  Grid,
+  Modal,
+  Alert,
+  message
+} from 'antd'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import {
   signInWithEmailAndPassword,
+  GoogleAuthProvider,
   signInWithPopup,
-  signInWithRedirect,
-  sendEmailVerification,
+  sendPasswordResetEmail
 } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where
+} from 'firebase/firestore'
+import { auth, db } from '@/firebase'
+import { Helmet } from 'react-helmet'
 
-const { Title } = Typography
+const { Title, Text } = Typography
+const { useBreakpoint } = Grid
 
-function formatFirebaseError (error: any) {
-  if (!error || !error.code) return error?.message || 'An unexpected error occurred.'
-  switch (error.code) {
-    case 'auth/wrong-password':
-      return 'The password you entered is incorrect.'
-    case 'auth/user-not-found':
-      return 'No user found with this email address.'
-    case 'auth/invalid-email':
-      return 'The email address is not valid.'
-    case 'auth/too-many-requests':
-      return 'Too many failed attempts. Please wait a few minutes or reset your password.'
-    case 'auth/network-request-failed':
-      return 'Network error. Please check your internet connection.'
-    case 'auth/popup-closed-by-user':
-      return 'Login window was closed before completing sign in.'
-    case 'auth/popup-blocked':
-      return 'Popup was blocked by the browser.'
-    case 'auth/user-disabled':
-      return 'Your account has been disabled. Please contact support.'
-    case 'auth/account-exists-with-different-credential':
-      return 'This email already has an account with a different sign-in method.'
-    default:
-      if (typeof error.code === 'string') {
-        return error.code.replace('auth/','').replace(/-/g,' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
-      }
-      return error.message || 'Login failed. Please try again.'
+type ErrorContext = 'signin' | 'google' | 'reset'
+
+export function formatFirebaseError (
+  error: any,
+  ctx: ErrorContext = 'signin'
+): string {
+  const code = String(error?.code || '').toLowerCase()
+  const generic =
+    ctx === 'reset'
+      ? 'If an account exists for that email, we’ll send a reset link.'
+      : 'Something went wrong. Please try again.'
+  const M: Record<string, string> = {
+    'auth/invalid-credential': 'The email or password is incorrect.',
+    'auth/invalid-login-credentials': 'The email or password is incorrect.',
+    'auth/wrong-password': 'The email or password is incorrect.',
+    'auth/user-not-found':
+      ctx === 'reset'
+        ? 'If an account exists for that email, we’ll send a reset link.'
+        : 'The email or password is incorrect.',
+    'auth/user-disabled':
+      'This account has been disabled. Please contact support.',
+    'auth/operation-not-allowed':
+      'This sign-in method is not enabled. Please contact support.',
+    'auth/invalid-email': 'Please enter a valid email address.',
+    'auth/missing-email': 'Please enter your email address.',
+    'auth/too-many-requests':
+      'Too many attempts. Try again later or reset your password.',
+    'auth/network-request-failed':
+      'We couldn’t reach the server. Check your internet connection.',
+    unavailable:
+      'Service is temporarily unavailable. Please try again shortly.',
+    'deadline-exceeded': 'Request took too long. Please try again.',
+    'resource-exhausted': 'Temporary limit reached. Please try again shortly.',
+    'auth/popup-closed-by-user':
+      'The sign-in window was closed before finishing.',
+    'auth/cancelled-popup-request':
+      'Another sign-in window is already open. Use the latest one.',
+    'auth/popup-blocked':
+      'Your browser blocked the sign-in window. Allow pop-ups and try again.',
+    'auth/unauthorized-domain':
+      'This domain is not allowed for sign-in. Please contact support.',
+    'auth/account-exists-with-different-credential':
+      'An account already exists with this email using a different sign-in method. Sign in with your email and password, then link Google in your profile.',
+    'auth/credential-already-in-use':
+      'Those sign-in details are already linked to another account.',
+    'permission-denied': 'You don’t have access to complete that action.',
+    'not-found': 'We couldn’t find what you were looking for.'
   }
+  if (M[code]) return M[code]
+  const trimmed = code.replace(/^auth\//, '')
+  if (M[trimmed]) return M[trimmed]
+  const msg = String(error?.message || '').toLowerCase()
+  if (msg.includes('network')) return M['auth/network-request-failed']
+  if (
+    ctx === 'reset' &&
+    (code.includes('user-not-found') || msg.includes('user not found'))
+  ) {
+    return M['auth/user-not-found']
+  }
+  return generic
 }
 
-const supportedRoles = [
-  'admin',
-  'funder',
-  'consultant',
-  'incubatee',
-  'operations',
-  'director',
-  'projectadmin',
-  'investor',
-  'government'
-]
+// --- RESET CONFIG
+const RESET_ENDPOINT =
+  'https://us-central1-incubation-platform-61610.cloudfunctions.net/sendPasswordReset'
+const FALLBACK_RESET_URL =
+  'https://incubation-platform.vercel.app/reset-password'
 
-const normalizeRole = (role?: string) => role?.toLowerCase()?.replace(/\s+/g, '') || ''
+const norm = (v?: string) => (v ?? '').toLowerCase().trim()
 
-async function checkUser (user: any) {
-  const userRef = doc(db, 'users', user.uid)
-  const userSnap = await getDoc(userRef)
-  if (!userSnap.exists()) {
-    return { error: true, message: '🚫 User not found in the system. Please contact the admin.' }
-  }
-  const data = userSnap.data() || {}
-  if (data?.disabled === true) {
-    return { error: true, message: '🚫 Your account has been disabled in the system. Please contact support.' }
-  }
-  return { role: normalizeRole(data.role), firstLoginComplete: !!data.firstLoginComplete }
+async function getAcceptedAppByEmail (email?: string) {
+  if (!email) return null
+  const appsSnap = await getDocs(
+    query(collection(db, 'applications'), where('email', '==', email))
+  )
+  const apps = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any))
+  return apps.find(a => norm(a.applicationStatus) === 'accepted') || null
 }
 
-async function handleIncubateeRouting (navigate: any, userEmail: string, role: string) {
-  try {
-    const appsSnap = await getDocs(query(collection(db, 'applications'), where('email', '==', userEmail)))
-    const apps = appsSnap.docs.map(d => d.data() as any)
-    if (apps.length === 0) { navigate('/incubatee/sme'); return }
-    const pending = apps.find((app: any) => app.applicationStatus?.toLowerCase?.() === 'pending' || !app.applicationStatus)
-    const accepted = apps.find((app: any) => app.applicationStatus?.toLowerCase?.() === 'accepted')
-    if (pending) { navigate('/incubatee/tracker'); return }
-    if (accepted) { navigate(`/${role}`); return }
-    navigate('/incubatee/sme')
-  } catch (error) {
-    console.error('Error fetching applications:', error)
-    message.error('Failed to check application status. Please try again.')
-    navigate(`/${role}`)
-  }
+async function getParticipantByEmail (email?: string) {
+  if (!email) return null
+  const ps = await getDocs(
+    query(collection(db, 'participants'), where('email', '==', email))
+  )
+  const doc0 = ps.docs[0]
+  return doc0 ? { id: doc0.id, ...(doc0.data() as any) } : null
 }
 
 export const LoginPage: React.FC = () => {
   const [form] = Form.useForm()
   const navigate = useNavigate()
+  const screens = useBreakpoint()
+  const isMobile = !screens.md
 
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
+  const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false)
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('')
+  const [resetLoading, setResetLoading] = useState(false)
+  const [searchParams] = useSearchParams()
 
-  // Provider linking state
-  const [linkModalOpen, setLinkModalOpen] = useState(false)
-  const [linking, setLinking] = useState(false)
-  const [linkEmail, setLinkEmail] = useState<string | null>(null)
-  const [pendingOAuthCredential, setPendingOAuthCredential] = useState<any>(null)
-  const [linkForm] = Form.useForm()
+  const reduceMotion = useReducedMotion()
 
-  // Soft verify modal (now PAUSES navigation)
-  const [verifyModalOpen, setVerifyModalOpen] = useState(false)
-  const [verifySending, setVerifySending] = useState(false)
-  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
-
-  // Store "what to do next" so we can run it after the user acts in the modal
-  const nextNavRef = useRef<null | (() => Promise<void>)>(null)
-
-  // Framer Motion variants
-  const blobVariants = { initial: { opacity: 0, scale: 0.95, y: 20 }, animate: { opacity: 0.7, scale: 1, y: 0, transition: { duration: 1.2, ease: 'easeOut' } } }
-  const cardVariants = { initial: { opacity: 0, scale: 0.94, y: 30 }, animate: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.7, ease: 'easeOut' } } }
-  const logoVariants = { initial: { opacity: 0, scale: 0.7 }, animate: { opacity: 1, scale: 1, transition: { duration: 1.2, delay: 0.5, ease: 'easeOut' } } }
-
-  // Centralized post-auth routing & checks
-  const postAuth = async (user: any) => {
-    const usedPassword = user?.providerData?.some((p: any) => p?.providerId === 'password')
-
-    const result = await checkUser(user)
-    if (result.error) throw new Error(result.message)
-
-    const { role, firstLoginComplete } = result
-    if (!supportedRoles.includes(role)) {
-      throw new Error(`🚫 The role "${role}" is not recognized.`)
+  const overlayVariants = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1, transition: { duration: 0.8 } },
+    exit: { opacity: 0, transition: { duration: 0.6 } }
+  }
+  const spinnerVariants = {
+    animate: {
+      rotate: [0, 180, 360],
+      scale: [1, 1.03, 1],
+      transition: { duration: 2, repeat: Infinity, ease: 'easeInOut' }
     }
-
-    // compute next navigation once
-    nextNavRef.current = async () => {
-      if (role === 'incubatee') {
-        await handleIncubateeRouting(navigate, user.email, role)
-        return
-      }
-      if (role === 'director' && !firstLoginComplete) {
-        navigate('/director/onboarding')
-      } else {
-        navigate(`/${role}`)
-      }
-    }
-
-    // If password user & unverified: SHOW modal and STOP navigation until user clicks Continue
-    if (usedPassword && !user.emailVerified) {
-      setUnverifiedEmail(user.email ?? null)
-      setVerifyModalOpen(true)
-      return
-    }
-
-    // otherwise navigate immediately
-    await nextNavRef.current?.()
   }
 
-  // Handle redirect results (Google fallback / explicit redirect)
   useEffect(() => {
-    let mounted = true
-    ;(async () => {
-      try {
-        const result = await getRedirectResult(auth)
-        if (!mounted || !result?.user) return
-        message.success('Google login successful! Redirecting...', 1.5)
-        setRedirecting(true)
-        await postAuth(result.user)
-      } catch (err: any) {
-        if (err?.code === 'auth/account-exists-with-different-credential') {
-          const email = err?.customData?.email
-          const pendingCred = GoogleAuthProvider.credentialFromError(err)
-          if (email && pendingCred) {
-            const methods = await fetchSignInMethodsForEmail(auth, email)
-            if (methods.includes(EmailAuthProvider.PROVIDER_ID)) {
-              setLinkEmail(email)
-              setPendingOAuthCredential(pendingCred)
-              setLinkModalOpen(true)
-              message.info('This email already has an account. Enter your password to link Google.')
-              return
-            }
-            message.error(`Account exists with a different sign-in method: ${methods.join(', ')}. Use that method first, then link Google from your profile.`)
-            return
-          }
-        }
-        message.error(formatFirebaseError(err))
-      } finally {
-        setRedirecting(false)
-      }
-    })()
-    return () => { mounted = false }
-  }, [])
+    if (searchParams.get('reset') === '1') {
+      setForgotPasswordVisible(true)
+    }
+  }, [searchParams])
 
-  // Email/password login
-  const handleLogin = async (values: any) => {
+  async function checkUser (user: any) {
+    const userRef = doc(db, 'users', user.uid)
+    const userSnap = await getDoc(userRef)
+    if (!userSnap.exists()) {
+      return {
+        error: true,
+        message: '🚫 User not found in the system. Please contact the admin.'
+      }
+    }
+    const data = userSnap.data() as any
+    const normalizeRole = (role: string) =>
+      role?.toLowerCase()?.replace(/\s+/g, '') || ''
+    const firstLoginDone = Boolean(data.firstLoginComplete === true)
+    return { role: normalizeRole(data.role), firstLoginDone }
+  }
+
+  const handleLogin = async (values: { email: string; password: string }) => {
     try {
       setLoading(true)
-      await setPersistence(auth, browserLocalPersistence)
-      const cred = await signInWithEmailAndPassword(auth, values.email, values.password)
-      await postAuth(cred.user)
+      const { user } = await signInWithEmailAndPassword(
+        auth,
+        values.email,
+        values.password
+      )
+      const {
+        error,
+        message: errMsg,
+        role,
+        firstLoginDone
+      } = await checkUser(user as any)
+      if (error) return message.error(errMsg)
 
-      // Link pending Google cred if present (from earlier attempt)
-      if (pendingOAuthCredential) {
-        try {
-          await linkWithCredential(auth.currentUser!, pendingOAuthCredential)
-          message.success('Your Google account has been linked successfully.')
-          setPendingOAuthCredential(null)
-          setLinkEmail(null)
-        } catch (linkErr: any) {
-          console.error('Linking failed:', linkErr)
-          message.error(formatFirebaseError(linkErr))
+      if (role === 'incubatee') {
+        const accepted = await getAcceptedAppByEmail(user.email || undefined)
+        if (accepted) {
+          const gapDone = norm(accepted.gapAnalysisStatus) === 'completed'
+          if (!gapDone) {
+            const participant = await getParticipantByEmail(
+              user.email || undefined
+            )
+            navigate('/incubatee/gap-analysis', {
+              state: {
+                participantId: participant?.id ?? null,
+                prefillData: {
+                  companyName: participant?.beneficiaryName ?? '',
+                  region: participant?.province ?? '',
+                  contactDetails: participant?.phone ?? '',
+                  email: participant?.email ?? user.email,
+                  dateOfEngagement: accepted?.dateAccepted ?? null
+                }
+              }
+            })
+            return
+          }
+          navigate('/incubatee')
+          return
         }
+        if (!firstLoginDone) return navigate('/welcome')
+
+        const appsSnap = await getDocs(
+          query(
+            collection(db, 'applications'),
+            where('email', '==', user.email)
+          )
+        )
+        const apps = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any))
+        if (apps.length === 0) return navigate('/incubatee/sme')
+        const pending = apps.find(a =>
+          ['pending', undefined].includes(a.applicationStatus?.toLowerCase?.())
+        )
+        if (pending) return navigate('/incubatee/tracker')
+        return navigate('/incubatee/sme')
       }
+
+      if (!firstLoginDone) return navigate('/welcome')
+      navigate(`/${role}`)
     } catch (error: any) {
-      message.error(formatFirebaseError(error))
+      message.error(formatFirebaseError(error, 'signin'))
     } finally {
       setLoading(false)
     }
   }
 
-  // Google OAuth
   const handleGoogleLogin = async () => {
-    const provider = new GoogleAuthProvider()
-    provider.setCustomParameters({ prompt: 'select_account' })
-
     try {
       setGoogleLoading(true)
-      await setPersistence(auth, browserLocalPersistence)
+      const result = await signInWithPopup(auth, new GoogleAuthProvider())
+      const user = result.user
+      const {
+        error,
+        message: errMsg,
+        role,
+        firstLoginDone
+      } = await checkUser(user as any)
+      if (error) return message.error(errMsg)
 
-      try {
-        const res = await signInWithPopup(auth, provider)
-        message.success('Google login successful! Redirecting...', 1.5)
-        setRedirecting(true)
-        await postAuth(res.user)
-        return
-      } catch (e: any) {
-        if (e?.code === 'auth/popup-blocked') {
-          message.info('Popup was blocked. Redirecting you to Google login…')
-          await signInWithRedirect(auth, provider)
-          return
-        }
-        if (e?.code === 'auth/popup-closed-by-user') {
-          message.info('Popup closed. Redirecting you to Google login…')
-          await signInWithRedirect(auth, provider)
-          return
-        }
-        if (e?.code === 'auth/account-exists-with-different-credential') {
-          const email = e?.customData?.email
-          const pendingCred = GoogleAuthProvider.credentialFromError(e)
-          if (email && pendingCred) {
-            const methods = await fetchSignInMethodsForEmail(auth, email)
-            if (methods.includes(EmailAuthProvider.PROVIDER_ID)) {
-              setLinkEmail(email)
-              setPendingOAuthCredential(pendingCred)
-              setLinkModalOpen(true)
-              message.info('This email already has an account. Enter your password to link Google.')
-              return
-            }
-            message.error(`Account exists with a different sign-in method: ${methods.join(', ')}. Use that method first, then link Google from your profile.`)
+      if (role === 'incubatee') {
+        const accepted = await getAcceptedAppByEmail(user.email || undefined)
+        if (accepted) {
+          const gapDone = norm(accepted.gapAnalysisStatus) === 'completed'
+          if (!gapDone) {
+            const participant = await getParticipantByEmail(
+              user.email || undefined
+            )
+            navigate('/incubatee/gap-analysis', {
+              state: {
+                participantId: participant?.id ?? null,
+                prefillData: {
+                  companyName: participant?.beneficiaryName ?? '',
+                  region: participant?.province ?? '',
+                  contactDetails: participant?.phone ?? '',
+                  email: participant?.email ?? user.email,
+                  dateOfEngagement: accepted?.dateAccepted ?? null
+                }
+              }
+            })
             return
           }
+          navigate('/incubatee')
+          return
         }
-        throw e
+        if (!firstLoginDone) return navigate('/welcome')
+
+        const appsSnap = await getDocs(
+          query(
+            collection(db, 'applications'),
+            where('email', '==', user.email)
+          )
+        )
+        const apps = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any))
+        if (apps.length === 0) return navigate('/incubatee/sme')
+        const pending = apps.find(a =>
+          ['pending', undefined].includes(a.applicationStatus?.toLowerCase?.())
+        )
+        if (pending) return navigate('/incubatee/tracker')
+        return navigate('/incubatee/sme')
       }
+
+      if (!firstLoginDone) return navigate('/welcome')
+      setRedirecting(true)
+      navigate(`/${role}`)
     } catch (error: any) {
-      message.error(formatFirebaseError(error))
+      message.error(formatFirebaseError(error, 'google'))
     } finally {
       setGoogleLoading(false)
-      setRedirecting(false)
     }
   }
 
-  // Link Providers Modal submit
-  const handleLinkSubmit = async () => {
+  const handleForgotPassword = async () => {
+    const email = (forgotPasswordEmail || '').trim()
+    if (!email) return message.warning('Please enter your email.')
+
     try {
-      setLinking(true)
-      const { password } = await linkForm.validateFields()
-      if (!linkEmail || !pendingOAuthCredential) {
-        throw new Error('Linking context lost. Please try Google sign-in again.')
+      setResetLoading(true)
+
+      // Use your Cloud Function to send a branded reset email to your custom page
+      const r = await fetch(RESET_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, continueUrl: FALLBACK_RESET_URL })
+      })
+
+      if (!r.ok) throw new Error('reset_endpoint_failed')
+
+      // Neutral message to prevent user enumeration
+      message.success('If an account exists, we’ve sent a reset link.')
+      setForgotPasswordVisible(false)
+      setForgotPasswordEmail('')
+    } catch (err) {
+      // Fallback to client SDK (still points to your custom reset page)
+      try {
+        await sendPasswordResetEmail(auth, email, { url: FALLBACK_RESET_URL })
+        message.success('If an account exists, we’ve sent a reset link.')
+        setForgotPasswordVisible(false)
+        setForgotPasswordEmail('')
+      } catch (error: any) {
+        message.error(formatFirebaseError(error, 'reset'))
       }
-      const passwordCred = await signInWithEmailAndPassword(auth, linkEmail, password)
-      await linkWithCredential(passwordCred.user, pendingOAuthCredential)
-
-      setPendingOAuthCredential(null)
-      setLinkEmail(null)
-      setLinkModalOpen(false)
-      linkForm.resetFields()
-
-      message.success('Accounts linked. Redirecting…')
-      await postAuth(passwordCred.user)
-    } catch (err: any) {
-      message.error(formatFirebaseError(err))
     } finally {
-      setLinking(false)
+      setResetLoading(false)
     }
   }
 
-  // Send verification email (from modal)
-  const sendVerify = async () => {
-    try {
-      setVerifySending(true)
-      if (!auth.currentUser) {
-        message.info('Login first, then resend verification from your profile.')
-        return
-      }
-      await sendEmailVerification(auth.currentUser)
-      message.success('Verification email sent.')
-    } catch (err: any) {
-      message.error(formatFirebaseError(err))
-    } finally {
-      setVerifySending(false)
-    }
-  }
-
-  // Continue after modal
-  const continueAfterVerifyPrompt = async () => {
-    setVerifyModalOpen(false)
-    await nextNavRef.current?.()
-  }
+  const isSubmitting = googleLoading || redirecting || loading
 
   return (
-    <Spin spinning={loading || googleLoading || redirecting} size='large'>
+    <>
       <Helmet>
         <title>Login | Smart Incubation Platform</title>
-        <meta name='description' content='Log in to your Smart Incubation account to access tailored tools and resources for entrepreneurs, consultants, and administrators.' />
       </Helmet>
-
-      {/* Link Providers Modal */}
-      <Modal
-        title='Link your Google account'
-        open={linkModalOpen}
-        onCancel={() => !linking && setLinkModalOpen(false)}
-        onOk={handleLinkSubmit}
-        okText='Link & Continue'
-        confirmLoading={linking}
-        destroyOnClose
-      >
-        <Typography.Paragraph>
-          We found an existing account for <b>{linkEmail}</b>. Enter your password to link your Google sign-in to this account.
-        </Typography.Paragraph>
-        <Form form={linkForm} layout='vertical' preserve={false}>
-          <Form.Item name='password' label='Password' rules={[{ required: true, message: 'Please enter your password' }]}>
-            <Input.Password placeholder='Enter your password' iconRender={(v) => (v ? <EyeTwoTone /> : <EyeInvisibleOutlined />)} />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {/* Verification prompt (PAUSES navigation) */}
-      <Modal
-        title='Verify your email'
-        open={verifyModalOpen}
-        onCancel={() => setVerifyModalOpen(false)}
-        footer={[
-          <Button key='later' onClick={continueAfterVerifyPrompt}>
-            Continue
-          </Button>,
-          <Button key='send' type='primary' loading={verifySending} onClick={sendVerify}>
-            Send verification email
-          </Button>,
-        ]}
-      >
-        <Alert
-          type='warning'
-          showIcon
-          message='Your email is not verified'
-          description={`We recommend verifying ${unverifiedEmail ?? 'your email'} to secure your account and enable all features.`}
-        />
-      </Modal>
 
       <div
         style={{
           minHeight: '100vh',
-          width: '100vw',
-          background: 'linear-gradient(120deg, #aecbfa 0%, #7fa7fa 60%, #cfbcfa 100%)',
-          overflow: 'hidden',
-          position: 'relative',
+          width: '100%',
           display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
-          alignItems: 'center'
+          background: '#f4f6f8',
+          padding: isMobile ? 16 : 24,
+          position: 'relative'
         }}
       >
-        {/* BLOBS */}
-        <motion.svg className='animated-blob blob-bottom-left' viewBox='0 0 400 400' style={{ position: 'absolute', left: '-130px', bottom: '-90px', width: 320, height: 310, zIndex: 0, pointerEvents: 'none' }} initial='initial' animate='animate' variants={blobVariants}>
-          <defs><linearGradient id='blob1' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stopColor='#38bdf8' /><stop offset='100%' stopColor='#818cf8' /></linearGradient></defs>
-          <path fill='url(#blob1)' d='M326.9,309Q298,378,218.5,374.5Q139,371,81,312.5Q23,254,56.5,172Q90,90,180.5,63.5Q271,37,322.5,118.5Q374,200,326.9,309Z' />
-        </motion.svg>
-        <motion.svg className='animated-blob blob-top-right' viewBox='0 0 400 400' style={{ position: 'absolute', right: '-110px', top: '-70px', width: 280, height: 260, zIndex: 0, pointerEvents: 'none' }} initial='initial' animate='animate' variants={blobVariants}>
-          <defs><linearGradient id='blob2' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stopColor='#fbc2eb' /><stop offset='100%' stopColor='#a6c1ee' /></linearGradient></defs>
-          <path fill='url(#blob2)' d='M343,294.5Q302,389,199.5,371Q97,353,71.5,226.5Q46,100,154,72.5Q262,45,315,122.5Q368,200,343,294.5Z' />
-        </motion.svg>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+            gap: 0,
+            width: '100%',
+            maxWidth: 1040,
+            minHeight: isMobile ? 'auto' : 600,
+            borderRadius: 16,
+            overflow: 'hidden',
+            background: '#fff',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.08)'
+          }}
+        >
+          {/* LEFT: Sign-in form */}
+          <div
+            style={{
+              padding: isMobile ? '28px 20px' : '48px 40px',
+              background: '#fff'
+            }}
+          >
+            <Title
+              level={3}
+              style={{ marginBottom: 6, color: '#0f172a', textAlign: 'center' }}
+            >
+              Welcome Back!
+            </Title>
+            <Text style={{ color: '#64748b', textAlign: 'center' }}>
+              Sign in to access your dashboard and continue optimizing your
+              Smart Incubation process.
+            </Text>
 
-        {/* CARD */}
-        <motion.div initial='initial' animate='animate' variants={cardVariants} style={{ width: 700, minWidth: 300, minHeight: 310, display: 'flex', borderRadius: 16, background: '#fff', boxShadow: '0 8px 44px #5ec3fa24, 0 1.5px 10px #91bfff08', zIndex: 1 }}>
-          {/* Left Panel */}
-          <div style={{ flex: 1, minWidth: 210, background: 'linear-gradient(135deg, #24b6d7 60%, #18d19a 100%)', borderTopLeftRadius: 16, borderBottomLeftRadius: 16, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '24px 14px' }}>
-            <div style={{ width: '100%', maxWidth: 220 }}>
-              <Title level={4} style={{ color: '#fff', marginBottom: 2, marginTop: 0, textAlign: 'center' }}>Smart Incubation</Title>
-              <div style={{ fontSize: 14, opacity: 0.95, marginBottom: 18, color: '#fff' }}>To gain access, kindly create an account below.</div>
-              <Button size='middle' shape='round' style={{ background: 'transparent', color: '#fff', border: '1.8px solid #fff', fontWeight: 600, width: '100%', fontSize: 14, marginTop: 2 }} onClick={() => navigate('/registration')}>SIGN UP</Button>
+            <Form
+              layout='vertical'
+              form={form}
+              onFinish={handleLogin}
+              requiredMark={false}
+              style={{ marginTop: 24 }}
+            >
+              <Form.Item
+                name='email'
+                label={<span style={{ color: '#0f172a' }}>Email</span>}
+                rules={[
+                  { required: true, message: 'Please enter your email' },
+                  { type: 'email', message: 'Enter a valid email' }
+                ]}
+              >
+                <Input
+                  placeholder='Enter your email'
+                  size='large'
+                  style={{ borderRadius: 12 }}
+                />
+              </Form.Item>
+
+              <Form.Item
+                name='password'
+                label={<span style={{ color: '#0f172a' }}>Password</span>}
+                rules={[
+                  { required: true, message: 'Please enter your password' }
+                ]}
+              >
+                <Input.Password
+                  placeholder='Enter your password'
+                  size='large'
+                  style={{ borderRadius: 12 }}
+                  iconRender={visible =>
+                    visible ? (
+                      <EyeTwoTone twoToneColor='#64748b' />
+                    ) : (
+                      <EyeInvisibleOutlined />
+                    )
+                  }
+                />
+              </Form.Item>
+
+              <div style={{ textAlign: 'right', marginBottom: 12 }}>
+                <Button
+                  type='link'
+                  onClick={() => setForgotPasswordVisible(true)}
+                  style={{ padding: 0 }}
+                >
+                  Forgot password?
+                </Button>
+              </div>
+
+              <Form.Item>
+                <Button
+                  type='primary'
+                  htmlType='submit'
+                  block
+                  size='large'
+                  style={{
+                    borderRadius: 12,
+                    fontWeight: 600,
+                    background: '#0f766e',
+                    borderColor: '#0f766e'
+                  }}
+                >
+                  Sign In
+                </Button>
+              </Form.Item>
+
+              <div
+                style={{
+                  textAlign: 'center',
+                  margin: '8px 0',
+                  color: '#94a3b8'
+                }}
+              >
+                OR
+              </div>
+
+              <Button
+                icon={<GoogleOutlined />}
+                block
+                size='large'
+                onClick={handleGoogleLogin}
+                style={{ borderRadius: 12, fontWeight: 600 }}
+              >
+                Continue with Google
+              </Button>
+            </Form>
+
+            <div style={{ textAlign: 'center', marginTop: 18 }}>
+              <Text style={{ color: '#64748b' }}>
+                Don&apos;t have an account?{' '}
+                <Button
+                  type='link'
+                  style={{ padding: 0 }}
+                  onClick={() => navigate('/registration')}
+                >
+                  Sign Up
+                </Button>
+              </Text>
             </div>
           </div>
 
-          {/* Right Panel: Form */}
-          <div style={{ flex: 1.2, minWidth: 260, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '40px 32px' }}>
-            <div style={{ width: '100%', maxWidth: 290 }}>
-              <Title level={4} style={{ color: '#16b8e0', textAlign: 'center', fontWeight: 700, margin: 0 }}>Login to your account</Title>
-              <Form layout='vertical' form={form} onFinish={handleLogin} requiredMark={false} style={{ marginTop: 15 }}>
-                <Form.Item name='email' label='Email' rules={[{ required: true, message: 'Please enter your email' }, { type: 'email', message: 'Enter a valid email' }]} style={{ marginBottom: 10 }}>
-                  <Input placeholder='you@example.com' />
-                </Form.Item>
-                <Form.Item name='password' label='Password' rules={[{ required: true, message: 'Please enter your password' }]} style={{ marginBottom: 10 }}>
-                  <Input.Password placeholder='Enter your password' iconRender={(v) => (v ? <EyeTwoTone /> : <EyeInvisibleOutlined />)} />
-                </Form.Item>
-                <Form.Item style={{ marginBottom: 7 }}>
-                  <Button type='primary' htmlType='submit' block loading={loading}>LOGIN</Button>
-                </Form.Item>
-
-                <div style={{ color: '#000', textAlign: 'center', fontSize: 13, marginBottom: 5 }}>
-                  or use your Google Account for access:
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'center', margin: '13px 0 2px' }}>
-                  <Button
-                    icon={<GoogleOutlined style={{ color: '#ea4335' }} />}
-                    shape='circle'
-                    style={{ margin: '0 8px', border: '1px solid #eee', background: '#fff' }}
-                    onClick={handleGoogleLogin}
-                    loading={googleLoading}
-                  />
-                </div>
-              </Form>
+          {/* RIGHT: Gradient hero with title only */}
+          {!isMobile && (
+            <div
+              style={{
+                position: 'relative',
+                background:
+                  'radial-gradient(120% 120% at 80% 20%, #0ea5a4 0%, #064e3b 45%, #0b3d3a 100%)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '40px'
+              }}
+            >
+              <div style={{ maxWidth: 540, lineHeight: 1.1 }}>
+                <h1
+                  style={{
+                    fontSize: 34,
+                    fontWeight: 800,
+                    letterSpacing: -0.6,
+                    margin: 0
+                  }}
+                >
+                  Revolutionize Business Incubation
+                  <br />
+                  with Smarter Automation
+                </h1>
+              </div>
             </div>
-          </div>
+          )}
         </motion.div>
 
-        {/* Bottom-right logo */}
-        <motion.img initial='initial' animate='animate' variants={logoVariants} src='/assets/images/QuantilytixO.png' alt='Quantilytix Logo' style={{ position: 'fixed', bottom: 22, right: 20, height: 46, width: 110, zIndex: 99 }} />
+        {/* Bottom-right QuantO logo with dark background */}
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 20,
+            right: 20,
+            height: 46,
+            width: 110,
+            zIndex: 99,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            borderRadius: 8,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 6,
+            boxShadow: '0 6px 18px rgba(0,0,0,0.25)'
+          }}
+        >
+          <img
+            src='/assets/images/QuantilytixO.png' // replace with your QuantO white logo path if different
+            alt='QuantO Logo'
+            style={{ height: '100%', width: '100%', objectFit: 'contain' }}
+          />
+        </div>
       </div>
-    </Spin>
+
+      {/* Reset Password Modal */}
+      <Modal
+        open={forgotPasswordVisible}
+        onCancel={() => setForgotPasswordVisible(false)}
+        footer={null}
+        centered
+        closable={false}
+        width={400}
+      >
+        <div style={{ textAlign: 'center', padding: '12px 8px' }}>
+          {/* Icon with shaded background */}
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: '50%',
+              margin: '0 auto 16px',
+              background: 'rgba(15,118,110,0.12)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <span role='img' aria-label='key' style={{ fontSize: 26 }}>
+              🔑
+            </span>
+          </div>
+
+          {/* Heading and subtitle */}
+          <Typography.Title
+            level={4}
+            style={{ marginBottom: 4, color: '#0f172a' }}
+          >
+            Forgot your password?
+          </Typography.Title>
+          <Typography.Text type='secondary'>
+            No problem — enter your registered email below and we’ll send you a
+            secure reset link.
+          </Typography.Text>
+
+          {/* Email input */}
+          <Input
+            placeholder='you@example.com'
+            type='email'
+            value={forgotPasswordEmail}
+            onChange={e => setForgotPasswordEmail(e.target.value)}
+            size='large'
+            style={{ marginTop: 20, borderRadius: 10 }}
+            autoFocus
+          />
+
+          {/* Action buttons */}
+          <div
+            style={{
+              marginTop: 22,
+              display: 'flex',
+              justifyContent: 'center',
+              gap: 8
+            }}
+          >
+            <Button
+              onClick={() => setForgotPasswordVisible(false)}
+              style={{ borderRadius: 10 }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type='primary'
+              onClick={handleForgotPassword}
+              loading={resetLoading}
+              style={{
+                borderRadius: 10,
+                background: '#0f766e',
+                borderColor: '#0f766e',
+                fontWeight: 600
+              }}
+            >
+              Send Reset Link
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Loading overlay */}
+      <AnimatePresence>
+        {isSubmitting && (
+          <motion.div
+            key='loading'
+            variants={overlayVariants}
+            initial='initial'
+            animate='animate'
+            exit='exit'
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              backdropFilter: 'blur(3px)',
+              background: 'rgba(255,255,255,0.65)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'wait'
+            }}
+            aria-live='polite'
+            role='status'
+            aria-busy='true'
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 12
+              }}
+            >
+              <motion.div
+                variants={spinnerVariants}
+                animate={reduceMotion ? { rotate: 0, scale: 1 } : 'animate'}
+                style={{
+                  width: 58,
+                  height: 58,
+                  borderRadius: '50%',
+                  border: '4px solid rgba(15,118,110,0.25)',
+                  borderTopColor: '#0f766e',
+                  boxShadow: '0 0 0 2px rgba(15,118,110,0.06) inset'
+                }}
+              />
+              <div
+                style={{
+                  fontWeight: 600,
+                  color: '#0f172a',
+                  letterSpacing: 0.2
+                }}
+              >
+                {googleLoading
+                  ? 'Signing in with Google…'
+                  : redirecting
+                  ? 'Redirecting…'
+                  : 'Signing you in…'}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   )
 }
+
+export default LoginPage
