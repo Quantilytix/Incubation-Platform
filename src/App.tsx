@@ -38,6 +38,9 @@ import { CustomLayout } from '@/components/layout'
 // ───────────────────────────────────────────────────────────
 import { LoginPage } from '@/routes/login'
 import { RegisterPage } from '@/routes/registration'
+import { ResetPasswordPage } from '@/routes/reset-password'
+
+
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Admin & Operations Dashboards
@@ -409,6 +412,10 @@ const App = () => {
                     <Route path='/role/:roleId' element={<RoleDetailPage />} />
                     <Route path='/landing/sme' element={<SMEDashboard />} />
                     <Route path='/login' element={<LoginPage />} />
+                       <Route
+                      path='/reset-password'
+                      element={<ResetPasswordPage />}
+                    />
 
                     <Route
                       path='/director/onboarding'
