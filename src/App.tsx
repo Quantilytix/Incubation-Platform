@@ -77,7 +77,7 @@ import TemplatesPage from './components/forms'
 import FormBuilderPage from './components/forms/builder/[id]'
 import FormSubmission from './components/form-submission/FormSubmission'
 import IndicativeCalendar from './components/calendar/IndicativeCalendar'
-// import PostAssessmentBuilder from './components/assessments/PostAssessmentBuilder'
+// import from './components/assessments/PostAssessmentBuilder'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Funder Routes
@@ -351,10 +351,10 @@ const App = () => {
                           path='surveys/view'
                           element={<FormResponseViewer />}
                         />
-                        <Route
+                        {/* <Route
                           path='assessments/post'
                           element={<PostAssessmentBuilder />}
-                        />
+                        /> */}
                         <Route
                           path='participants'
                           element={<OperationsParticipantsManagement />}
