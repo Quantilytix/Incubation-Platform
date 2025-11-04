@@ -20,7 +20,9 @@ import {
   Tooltip,
   Drawer,
   Slider,
-  Switch
+  Switch,
+  Segmented,
+  Grid
 } from 'antd'
 import {
   CheckCircleOutlined,
@@ -35,7 +37,7 @@ import {
   setDoc,
   doc,
   Timestamp,
-  updateDoc,
+  arrayUnion,
   getDocs,
   addDoc,
   query,
@@ -48,13 +50,21 @@ import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { MotionCard } from '@/components/shared/Header'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import InterventionSuggestions from '@/components/interventions/InterventionsSuggestions'
+import { DashboardHeaderCard } from '@/components/shared/Header'
+import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 
 const { Title, Text, Paragraph } = Typography
-const { TabPane } = Tabs
 
 type InterventionType = 'singular' | 'grouped'
-
+type OperationUser = { id: string; name: string; email?: string }
+type AssigneeType = 'consultant' | 'operations'
+type ReassignForm = {
+  assigneeType: 'consultant' | 'operations'
+  consultant?: string
+  operationUser?: string
+  reason?: string
+  keepStatus?: boolean
+}
 interface Assignment {
   id: string
   participantId: string
@@ -118,6 +128,8 @@ type AnalyticsFilters = {
 
 export const ConsultantAssignments: React.FC = () => {
   const { user } = useFullIdentity()
+  const screens = Grid.useBreakpoint()
+  const isMobile = !screens.md
 
   const [isRecurringSelected, setIsRecurringSelected] = useState(false)
 
@@ -135,6 +147,10 @@ export const ConsultantAssignments: React.FC = () => {
   const [reviewRow, setReviewRow] = useState<SuggestionRow | null>(null)
   const [assignmentModalVisible, setAssignmentModalVisible] = useState(false)
   const [assignmentForm] = Form.useForm()
+  const [reassignOpen, setReassignOpen] = useState(false)
+  const [reassignTarget, setReassignTarget] = useState<Assignment | null>(null)
+  const [reassigning, setReassigning] = useState(false)
+  const [reassignForm] = Form.useForm()
   const [selectedType, setSelectedType] = useState<'singular' | 'grouped'>(
     'singular'
   )
@@ -156,6 +172,13 @@ export const ConsultantAssignments: React.FC = () => {
   const [analyticsSearch, setAnalyticsSearch] = useState('')
   const [analyticsProgram, setAnalyticsProgram] = useState<string | undefined>()
   const [donutStatus, setDonutStatus] = useState<string | null>(null)
+
+  const [segment, setSegment] = useState<'Assignments' | 'Analytics'>(
+    'Assignments'
+  )
+
+  //  operations list
+  const [operations, setOperations] = useState<OperationUser[]>([])
 
   const [af, setAf] = useState<AnalyticsFilters>({
     statuses: [],
@@ -184,6 +207,12 @@ export const ConsultantAssignments: React.FC = () => {
       })),
     [consultants]
   )
+
+  const startReassign = (a: Assignment) => {
+    setReassignTarget(a)
+    setReassignOpen(true)
+    reassignForm.resetFields()
+  }
 
   // ---------- data load ----------
   const fetchAssignments = async () => {
@@ -283,6 +312,64 @@ export const ConsultantAssignments: React.FC = () => {
       }
     }
     if (user?.companyCode) fetchAll()
+  }, [user?.companyCode])
+
+  useEffect(() => {
+    if (!user?.companyCode) return
+    ;(async () => {
+      try {
+        // Pull ops staff for this company
+        const opsSnap = await getDocs(
+          query(
+            collection(db, 'users'),
+            where('role', '==', 'operations'),
+            where('companyCode', '==', user?.companyCode)
+          )
+        )
+
+        const ops = opsSnap.docs.map(d => {
+          const data = d.data() as any
+          return {
+            id: d.id,
+            name:
+              data?.name ||
+              data?.fullName ||
+              data?.displayName ||
+              'Operations User',
+            email: data?.email || undefined
+          } as OperationUser
+        })
+
+        // ensure *your* account is available for self-assignment
+        const meId = `self:${user?.email || user?.name || 'me'}`
+        const me: OperationUser = {
+          id: meId,
+          name: user?.name || 'Me',
+          email: user?.email
+        }
+        const exists = ops.some(
+          o =>
+            o.email &&
+            me.email &&
+            o.email.toLowerCase() === me.email.toLowerCase()
+        )
+        setOperations(exists ? ops : [me, ...ops])
+      } catch (e) {
+        console.error('Failed to load operations', e)
+        // don't block the page if ops fail; you can still assign to consultants
+        setOperations(
+          user?.email
+            ? [
+                {
+                  id: `self:${user.email}`,
+                  name: user.name || 'Me',
+                  email: user.email
+                }
+              ]
+            : []
+        )
+      }
+    })()
   }, [user?.companyCode])
 
   useEffect(() => {
@@ -733,9 +820,8 @@ export const ConsultantAssignments: React.FC = () => {
       key: 'beneficiaryName'
     },
     { title: 'Sector', dataIndex: 'sector', key: 'sector' },
-    { title: 'Program', dataIndex: 'programName', key: 'programName' },
     {
-      title: 'Required Interventions',
+      title: 'Interventions',
       key: 'requiredInterventions',
       render: (_: any, r: Participant) => (
         <Tag>{participantInterventionMap[r.id]?.length || 0}</Tag>
@@ -876,6 +962,83 @@ export const ConsultantAssignments: React.FC = () => {
       intervention: intervention.id
     })
     setAssignmentModalVisible(true)
+  }
+
+  const handleReassignSubmit = async (values: ReassignForm) => {
+    if (!reassignTarget) return
+    setReassigning(true)
+    try {
+      // Resolve new assignee
+      let newId = ''
+      let newName = ''
+      let newEmail = ''
+      if (values.assigneeType === 'consultant') {
+        const c = consultants.find(cc => cc.id === values.consultant)
+        if (!c) return message.error('Select a consultant')
+        newId = c.id
+        newName = c.name
+      } else {
+        const o = operations.find(oo => oo.id === values.operationUser)
+        if (!o) return message.error('Select an operations user')
+        newId = o.id
+        newName = o.name
+        newEmail = o.email || ''
+      }
+
+      // Self-assign detection for operations (auto-accept)
+      const isSelf =
+        values.assigneeType === 'operations' &&
+        ((newEmail &&
+          user?.email &&
+          newEmail.toLowerCase() === user.email.toLowerCase()) ||
+          newId.startsWith('self:'))
+
+      // Decide statuses
+      const nextConsultantStatus = isSelf ? 'accepted' : 'pending'
+      const nextStatus = values.keepStatus
+        ? reassignTarget.status
+        : reassignTarget.status === 'completed'
+        ? 'in-progress'
+        : 'assigned'
+
+      const now = Timestamp.now()
+
+      await updateDoc(doc(db, 'assignedInterventions', reassignTarget.id), {
+        assigneeType: values.assigneeType,
+        consultantId: newId, // keep legacy field name
+        consultantName: newName,
+        consultantStatus: nextConsultantStatus,
+        // userStatus unchanged (incubatee re-accept can stay pending unless you want to reset)
+        status: nextStatus,
+        updatedAt: now,
+        reassignmentHistory: arrayUnion({
+          at: now,
+          by: user?.email || user?.name || 'system',
+          reason: values.reason || null,
+          from: {
+            assigneeType: (reassignTarget as any).assigneeType || 'consultant',
+            consultantId: reassignTarget.consultantId,
+            consultantName: reassignTarget.consultantName
+          },
+          to: {
+            assigneeType: values.assigneeType,
+            consultantId: newId,
+            consultantName: newName
+          }
+        })
+      })
+
+      message.success('Assignment reassigned')
+      setReassignOpen(false)
+      setReassignTarget(null)
+      reassignForm.resetFields()
+      await fetchAssignments()
+    } catch (e) {
+      console.error('Reassign failed:', e)
+      message.error('Failed to reassign')
+    } finally {
+      setReassigning(false)
+    }
   }
 
   // ---------- Analytics tab ----------
@@ -1127,9 +1290,26 @@ export const ConsultantAssignments: React.FC = () => {
         <title>Consultant Assignments | Incubation Platform</title>
       </Helmet>
 
-      <Tabs centered defaultActiveKey='assignments' destroyInactiveTabPane>
-        {/* ASSIGNMENTS */}
-        <TabPane tab='Assignments' key='assignments'>
+      <DashboardHeaderCard
+        title='Assignments & Analytics'
+        subtitle='Assign interventions to consultants or operations (including self-assignment), then monitor progress and status.'
+        extraRight={
+          <Segmented
+            value={segment}
+            onChange={v => setSegment(v as any)}
+            options={['Assignments', 'Analytics']}
+          />
+        }
+      />
+
+      {/* show global loading overlay when fetching */}
+      {loading && (
+        <LoadingOverlay tip='Loading assignments and participants…' />
+      )}
+
+      {segment === 'Assignments' ? (
+        <>
+          {/* ASSIGNMENTS */}
           <Row gutter={[16, 16]} style={{ marginBottom: 15 }}>
             {progressMetrics.map(
               ({ title, value, icon, customRender, color, bgColor }) => (
@@ -1164,37 +1344,32 @@ export const ConsultantAssignments: React.FC = () => {
           </Row>
 
           <MotionCard style={{ marginBottom: 10 }}>
-            <Row justify='space-between' style={{ marginBottom: 16 }}>
-              <Col>
+            <Row gutter={[12, 12]} align='middle' wrap>
+              <Col xs={24} md={10}>
                 <Input.Search
                   placeholder='Search beneficiary...'
                   allowClear
                   value={searchText}
                   onChange={e => setSearchText(e.target.value)}
-                  style={{ width: 250 }}
+                  style={{ width: '100%' }}
                 />
               </Col>
-              <Col>
-                <Space>
-                  <Select
-                    placeholder='Filter by program'
-                    allowClear
-                    style={{ width: 250 }}
-                    value={selectedProgram}
-                    onChange={value => setSelectedProgram(value)}
-                  >
-                    {[...new Set(participants.map(p => p.programName))].map(
-                      p => (
-                        <Select.Option key={p} value={p}>
-                          {p}
-                        </Select.Option>
-                      )
-                    )}
-                  </Select>
+
+              <Col xs={24} md={14}>
+                <Space
+                  direction={isMobile ? 'vertical' : 'horizontal'}
+                  size={isMobile ? 8 : 12}
+                  style={{
+                    width: '100%',
+                    justifyContent: isMobile ? 'stretch' : 'flex-end'
+                  }}
+                  wrap
+                >
                   <Button
                     type='primary'
                     icon={<CheckCircleOutlined />}
                     onClick={() => setAssignmentModalVisible(true)}
+                    block={isMobile}
                   >
                     Assign New Intervention
                   </Button>
@@ -1204,46 +1379,46 @@ export const ConsultantAssignments: React.FC = () => {
           </MotionCard>
 
           <MotionCard>
-            <Table
-              columns={columns}
-              dataSource={filteredParticipants}
-              rowKey='id'
-              pagination={{ pageSize: 10 }}
-              loading={loading}
-            />
+            <div style={{ width: '100%', overflowX: 'auto' }}>
+              <Table
+                columns={columns}
+                dataSource={filteredParticipants}
+                rowKey='id'
+                size={isMobile ? 'small' : 'middle'}
+                pagination={{
+                  pageSize: isMobile ? 6 : 10,
+                  simple: isMobile,
+                  showSizeChanger: !isMobile,
+                  responsive: true
+                }}
+                scroll={{ x: 'max-content' }}
+                sticky
+              />
+            </div>
           </MotionCard>
-        </TabPane>
-
-        {/* SUGGESTIONS */}
-        <TabPane tab='Calendar' key='calendar'>
-          <InterventionSuggestions
-            user={user}
-            participants={participants}
-            coordinators={coordinatorsForSuggest}
-          />
-        </TabPane>
-
-        {/* ANALYTICS */}
-        <TabPane tab='Analytics' key='analytics'>
+        </>
+      ) : (
+        <>
+          {/* ANALYTICS */}
           <Row gutter={[16, 16]}>
             <Col xs={24} md={8}>
-              <Card>
+              <MotionCard>
                 <Text type='secondary'>Average Progress</Text>
                 <div style={{ marginTop: 8 }}>
                   <Progress percent={avgProgress} />
                 </div>
-              </Card>
+              </MotionCard>
             </Col>
             <Col xs={24} md={8}>
-              <Card>
+              <MotionCard>
                 <Text type='secondary'>Total Interventions (filtered)</Text>
                 <Title level={3} style={{ margin: 0 }}>
                   {filteredInterventionRows.length}
                 </Title>
-              </Card>
+              </MotionCard>
             </Col>
             <Col xs={24} md={8}>
-              <Card>
+              <MotionCard>
                 <Text type='secondary'>Completed (filtered)</Text>
                 <Title level={3} style={{ margin: 0 }}>
                   {
@@ -1252,13 +1427,12 @@ export const ConsultantAssignments: React.FC = () => {
                     ).length
                   }
                 </Title>
-              </Card>
+              </MotionCard>
             </Col>
           </Row>
-
           <Row gutter={16} style={{ marginTop: 12 }}>
             <Col xs={24} md={10}>
-              <Card
+              <MotionCard
                 title={
                   <div
                     style={{
@@ -1280,7 +1454,7 @@ export const ConsultantAssignments: React.FC = () => {
                   highcharts={Highcharts}
                   options={statusDonutOptions}
                 />
-              </Card>
+              </MotionCard>
             </Col>
 
             <Col xs={24} md={14}>
@@ -1293,21 +1467,6 @@ export const ConsultantAssignments: React.FC = () => {
                       value={analyticsSearch}
                       onChange={e => setAnalyticsSearch(e.target.value)}
                     />
-                  </Col>
-                  <Col flex='0 1 220px'>
-                    <Select
-                      allowClear
-                      placeholder='Filter by program'
-                      style={{ width: '100%' }}
-                      value={analyticsProgram}
-                      onChange={v => setAnalyticsProgram(v)}
-                    >
-                      {analyticsProgramOptions.map(p => (
-                        <Select.Option key={p} value={p}>
-                          {p}
-                        </Select.Option>
-                      ))}
-                    </Select>
                   </Col>
                   <Col flex='none'>
                     <Button onClick={() => setAnalyticsOpen(true)}>
@@ -1340,7 +1499,6 @@ export const ConsultantAssignments: React.FC = () => {
               </Card>
             </Col>
           </Row>
-
           <Row style={{ marginTop: 12 }}>
             <Col span={24}>
               <Card title='Interventions (Detailed)'>
@@ -1354,7 +1512,6 @@ export const ConsultantAssignments: React.FC = () => {
               </Card>
             </Col>
           </Row>
-
           {/* Advanced Filters Drawer */}
           <Drawer
             title='Analytics — Advanced Filters'
@@ -1524,10 +1681,10 @@ export const ConsultantAssignments: React.FC = () => {
               </Form.Item>
             </Form>
           </Drawer>
-        </TabPane>
-      </Tabs>
+        </>
+      )}
 
-      {/* ASSIGN MODAL (unchanged logic, no departments) */}
+      {/* ASSIGN MODAL */}
       <Modal
         title='Assign New Intervention'
         open={assignmentModalVisible}
@@ -1549,41 +1706,58 @@ export const ConsultantAssignments: React.FC = () => {
                 ? values.participants
                 : [values.participant]
 
-              const consultant = consultants.find(
-                c => c.id === values.consultant
-              )
-              if (!consultant) {
-                message.error('Consultant not found')
-                return
+              // Resolve chosen assignee
+              const assigneeType: AssigneeType = values.assigneeType
+              let assigneeId = ''
+              let assigneeName = ''
+              let assigneeEmail = ''
+
+              if (assigneeType === 'consultant') {
+                const consultant = consultants.find(
+                  c => c.id === values.consultant
+                )
+                if (!consultant) return message.error('Consultant not found')
+                assigneeId = consultant.id
+                assigneeName = consultant.name
+              } else {
+                const op = operations.find(o => o.id === values.operationUser)
+                if (!op) return message.error('Operations user not found')
+                assigneeId = op.id
+                assigneeName = op.name
+                assigneeEmail = op.email || ''
               }
 
+              // Determine self-assign (only for operations; you asked “if I choose myself” → accepted=true)
+              const isSelf =
+                assigneeType === 'operations' &&
+                ((!!assigneeEmail &&
+                  !!user?.email &&
+                  assigneeEmail.toLowerCase() === user.email.toLowerCase()) ||
+                  assigneeId.startsWith('self:'))
+
               // resolve interventionId & meta
-              let interventionId: string = values.intervention
+              const interventionId: string = values.intervention
               const meta = await getInterventionMeta(interventionId)
 
               const selectedParticipants = selectedIds
                 .map((pid: string) => participants.find(p => p.id === pid))
                 .filter(Boolean) as Participant[]
               if (!selectedParticipants.length) {
-                message.error('No valid participant(s) selected')
-                return
+                return message.error('No valid participant(s) selected')
               }
 
               if (isGrouped && !interventionId) {
-                message.error('Select a shared intervention')
-                return
+                return message.error('Select a shared intervention')
               }
               if (!isGrouped) {
                 const p0 = selectedParticipants[0]
                 const found = (p0.requiredInterventions || []).find(
                   i => i.id === interventionId
                 )
-                if (!found) {
-                  message.error(
+                if (!found)
+                  return message.error(
                     'Intervention not found for selected participant'
                   )
-                  return
-                }
               }
 
               const batch = writeBatch(db)
@@ -1603,13 +1777,14 @@ export const ConsultantAssignments: React.FC = () => {
                   id: groupRef.id,
                   groupId,
                   type: 'grouped',
-                  consultantId: consultant.id,
-                  consultantName: consultant.name,
+                  assigneeType, // NEW
+                  consultantId: assigneeId, // keep schema compatibility
+                  consultantName: assigneeName,
                   interventionId,
                   participantIds: selectedParticipants.map(p => p.id),
                   dueDate: dueTs,
-                  implementationDate: implTs, // 👈 save implementationDate to group record too
-                  isRecurring: !!meta.isRecurring, // 👈 optional but useful
+                  implementationDate: implTs,
+                  isRecurring: !!meta.isRecurring,
                   createdAt: now,
                   updatedAt: now
                 })
@@ -1621,18 +1796,26 @@ export const ConsultantAssignments: React.FC = () => {
                 ) || { id: interventionId, title: 'Unknown' }
 
                 const aRef = doc(collection(db, 'assignedInterventions'))
+
+                // acceptance flags:
+                // - self (ops) → accepted instantly
+                // - otherwise → pending (as before)
+                const consultantStatus = isSelf ? 'accepted' : 'pending'
+                const userStatus = 'pending' // (unchanged; incubatee acceptance stays separate)
+
                 batch.set(aRef, {
                   id: aRef.id,
                   groupId,
                   companyCode: user?.companyCode,
                   type: values.type,
+                  assigneeType, // NEW
                   participantId: p.id,
                   beneficiaryName: p.beneficiaryName,
-                  consultantId: consultant.id,
-                  consultantName: consultant.name,
+                  consultantId: assigneeId, // keep field name for backward compat
+                  consultantName: assigneeName,
                   interventionId: intv.id,
                   interventionTitle: intv.title,
-                  subtitle: meta.isRecurring ? values.subtitle || null : null, // 👈 NEW
+                  subtitle: meta.isRecurring ? values.subtitle || null : null,
                   isRecurring: !!meta.isRecurring,
                   targetType: values.targetType,
                   targetValue: values.targetValue ?? null,
@@ -1640,8 +1823,8 @@ export const ConsultantAssignments: React.FC = () => {
                   implementationDate: implTs,
                   dueDate: dueTs,
                   status: 'assigned',
-                  consultantStatus: 'pending',
-                  userStatus: 'pending',
+                  consultantStatus, 
+                  userStatus,
                   consultantCompletionStatus: 'pending',
                   userCompletionStatus: 'pending',
                   createdAt: now,
@@ -1863,17 +2046,62 @@ export const ConsultantAssignments: React.FC = () => {
           )}
 
           <Form.Item
-            name='consultant'
-            label='Select Consultant'
-            rules={[{ required: true, message: 'Please select a consultant' }]}
+            name='assigneeType'
+            label='Assign To'
+            rules={[{ required: true, message: 'Choose who to assign to' }]}
+            initialValue='consultant'
           >
-            <Select placeholder='Choose a consultant'>
-              {consultants.map(c => (
-                <Select.Option key={c.id} value={c.id}>
-                  {c.name}
-                </Select.Option>
-              ))}
-            </Select>
+            <Select
+              options={[
+                { label: 'Consultant', value: 'consultant' },
+                { label: 'Operations', value: 'operations' }
+              ]}
+            />
+          </Form.Item>
+
+          {/* Conditionally show either Consultants or Operations */}
+          <Form.Item
+            noStyle
+            shouldUpdate={(p, c) => p.assigneeType !== c.assigneeType}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue('assigneeType') === 'consultant' ? (
+                <Form.Item
+                  name='consultant'
+                  label='Select Consultant'
+                  rules={[
+                    { required: true, message: 'Please select a consultant' }
+                  ]}
+                >
+                  <Select placeholder='Choose a consultant'>
+                    {consultants.map(c => (
+                      <Select.Option key={c.id} value={c.id}>
+                        {c.name}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              ) : (
+                <Form.Item
+                  name='operationUser'
+                  label='Select Operations User'
+                  rules={[
+                    {
+                      required: true,
+                      message: 'Please select an operations user'
+                    }
+                  ]}
+                >
+                  <Select placeholder='Choose operations assignee'>
+                    {operations.map(o => (
+                      <Select.Option key={o.id} value={o.id}>
+                        {o.name} {o.email ? `— ${o.email}` : ''}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              )
+            }
           </Form.Item>
 
           <Form.Item
@@ -1957,6 +2185,124 @@ export const ConsultantAssignments: React.FC = () => {
         </Form>
       </Modal>
 
+      {/* REASSIGN MODAL */}
+      <Modal
+        title={
+          reassignTarget
+            ? `Reassign: ${reassignTarget.interventionTitle}`
+            : 'Reassign'
+        }
+        open={reassignOpen}
+        onCancel={() => {
+          setReassignOpen(false)
+          setReassignTarget(null)
+          reassignForm.resetFields()
+        }}
+        footer={null}
+        destroyOnClose
+      >
+        {reassigning && <LoadingOverlay tip='Reassigning…' />}
+
+        <Form
+          form={reassignForm}
+          layout='vertical'
+          onFinish={handleReassignSubmit}
+        >
+          <Form.Item
+            name='assigneeType'
+            label='Assign To'
+            initialValue={(reassignTarget as any)?.assigneeType || 'consultant'}
+            rules={[{ required: true, message: 'Choose who to assign to' }]}
+          >
+            <Select
+              options={[
+                { label: 'Consultant', value: 'consultant' },
+                { label: 'Operations', value: 'operations' }
+              ]}
+            />
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(p, c) => p.assigneeType !== c.assigneeType}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue('assigneeType') === 'consultant' ? (
+                <Form.Item
+                  name='consultant'
+                  label='Select Consultant'
+                  rules={[
+                    { required: true, message: 'Please select a consultant' }
+                  ]}
+                  initialValue={
+                    (reassignTarget?.assigneeType === 'consultant' &&
+                      reassignTarget?.consultantId) ||
+                    undefined
+                  }
+                >
+                  <Select
+                    placeholder='Choose a consultant'
+                    options={consultants.map(c => ({
+                      label: c.name,
+                      value: c.id
+                    }))}
+                    showSearch
+                    optionFilterProp='label'
+                  />
+                </Form.Item>
+              ) : (
+                <Form.Item
+                  name='operationUser'
+                  label='Select Operations User'
+                  rules={[
+                    {
+                      required: true,
+                      message: 'Please select an operations user'
+                    }
+                  ]}
+                  initialValue={
+                    (reassignTarget?.assigneeType === 'operations' &&
+                      reassignTarget?.consultantId) ||
+                    undefined
+                  }
+                >
+                  <Select
+                    placeholder='Choose operations assignee'
+                    options={operations.map(o => ({
+                      label: `${o.name}${o.email ? ` — ${o.email}` : ''}`,
+                      value: o.id
+                    }))}
+                    showSearch
+                    optionFilterProp='label'
+                  />
+                </Form.Item>
+              )
+            }
+          </Form.Item>
+
+          <Form.Item name='reason' label='Reason (optional)'>
+            <Input.TextArea
+              placeholder='Why are you reassigning this?'
+              rows={3}
+            />
+          </Form.Item>
+
+          <Form.Item name='keepStatus' valuePropName='checked'>
+            <Switch />{' '}
+            <span style={{ marginLeft: 8 }}>Keep current overall status</span>
+          </Form.Item>
+
+          <Form.Item>
+            <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+              <Button onClick={() => setReassignOpen(false)}>Cancel</Button>
+              <Button type='primary' htmlType='submit' loading={reassigning}>
+                Confirm Reassignment
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
       {/* MANAGE PARTICIPANT MODAL */}
       <Modal
         title={`Interventions for ${
@@ -1965,86 +2311,171 @@ export const ConsultantAssignments: React.FC = () => {
         open={manageModalVisible}
         onCancel={() => setManageModalVisible(false)}
         footer={null}
-        width={900}
+        width={isMobile ? '100%' : 900}
+        style={{ top: isMobile ? 8 : 24, paddingInline: isMobile ? 8 : 0 }}
+        bodyStyle={{ padding: isMobile ? 12 : 24 }}
+        destroyOnClose
       >
-        <Form layout='inline' style={{ marginBottom: 16 }}>
-          <Form.Item label='Filter'>
-            <Select
-              value={interventionFilter}
-              onChange={setInterventionFilter}
-              style={{ width: 220 }}
-            >
-              <Select.Option value='all'>All Interventions</Select.Option>
-              <Select.Option value='assigned'>Assigned</Select.Option>
-              <Select.Option value='unassigned'>Unassigned</Select.Option>
-            </Select>
-          </Form.Item>
+        {/* Filter row: stacks on mobile */}
+        <Form layout='vertical' style={{ marginBottom: 12 }}>
+          <Row gutter={[8, 8]} align='middle'>
+            <Col xs={24} sm={16} md={10}>
+              <Form.Item label='Filter' style={{ marginBottom: 0 }}>
+                <Select
+                  value={interventionFilter}
+                  onChange={setInterventionFilter}
+                  style={{ width: '100%' }}
+                >
+                  <Select.Option value='all'>All Interventions</Select.Option>
+                  <Select.Option value='assigned'>Assigned</Select.Option>
+                  <Select.Option value='unassigned'>Unassigned</Select.Option>
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
         </Form>
 
-        <Table
-          columns={modalColumns as any}
-          dataSource={getFilteredInterventions()}
-          rowKey='id'
-          expandable={{
-            expandedRowRender: (record: any) =>
-              record.isUnassigned ? (
-                <Text type='secondary'>
-                  This intervention has not been assigned yet.
-                </Text>
-              ) : (
-                <div style={{ padding: 10 }}>
-                  <Paragraph>
-                    <Text strong>Type:</Text> {record.type || 'N/A'} <br />
-                    <Text strong>Target:</Text> {record.targetValue ?? '—'}{' '}
-                    {record.targetType ?? ''} ({record.targetMetric || '—'})
-                  </Paragraph>
-                  <Paragraph>
-                    <Text strong>Assigned On:</Text>{' '}
-                    {record.createdAt?.toMillis
-                      ? new Date(
-                          record.createdAt.toMillis()
-                        ).toLocaleDateString()
-                      : 'N/A'}
-                  </Paragraph>
-                  {record.dueDate && (
-                    <Paragraph>
-                      <Text strong>Due Date:</Text>{' '}
-                      {typeof record.dueDate === 'string'
-                        ? new Date(record.dueDate).toLocaleDateString()
-                        : record.dueDate?.toDate?.()?.toLocaleDateString() ??
-                          'N/A'}
-                    </Paragraph>
-                  )}
-                  <Paragraph>
-                    <Text strong>Status Summary:</Text>
-                    <br />
-                    <Tag color='blue'>Overall: {record.status}</Tag>
-                    <Tag color='purple'>
-                      Consultant: {record.consultantStatus}
-                    </Tag>
-                    <Tag color='gold'>User: {record.userStatus}</Tag>
-                    <Tag color='cyan'>
-                      Consultant Completion: {record.consultantCompletionStatus}
-                    </Tag>
-                    <Tag color='lime'>
-                      User Confirmation: {record.userCompletionStatus}
-                    </Tag>
-                  </Paragraph>
-                  {record.feedback && (
-                    <Paragraph>
-                      <Text strong>Feedback:</Text>
-                      <br />
-                      <Text italic>"{record.feedback.comments}"</Text>
-                      <br />
-                      <Tag color='green'>
-                        Rating: {record.feedback.rating} / 5
+        {/* Table wrapper for horizontal scroll on small screens */}
+        <div style={{ width: '100%', overflowX: 'auto' }}>
+          <Table
+            rowKey='id'
+            size={isMobile ? 'small' : 'middle'}
+            pagination={{
+              pageSize: isMobile ? 6 : 10,
+              simple: isMobile,
+              showSizeChanger: !isMobile,
+              responsive: true
+            }}
+            scroll={{ x: 'max-content' }}
+            columns={
+              [
+                {
+                  title: 'Intervention Title',
+                  dataIndex: 'interventionTitle',
+                  key: 'interventionTitle'
+                },
+                {
+                  title: 'Consultant',
+                  dataIndex: 'consultantName',
+                  key: 'consultantName'
+                },
+                {
+                  title: 'Status',
+                  key: 'status',
+                  render: (_: any, record: any) =>
+                    record.isUnassigned ? (
+                      <Tag>Unassigned</Tag>
+                    ) : (
+                      <Tag color={getCompositeStatus(record as any).color}>
+                        {getCompositeStatus(record as any).label}
                       </Tag>
+                    )
+                },
+                {
+                  title: 'Due',
+                  key: 'dueDate',
+                  responsive: ['md'], // hide on mobile
+                  render: (_: any, record: any) => {
+                    if (!record.dueDate) return '—'
+                    const d =
+                      typeof record.dueDate === 'string'
+                        ? new Date(record.dueDate)
+                        : record.dueDate?.toDate?.() ?? new Date()
+                    return d.toLocaleDateString()
+                  }
+                },
+                {
+                  title: 'Action',
+                  key: 'action',
+                  fixed: isMobile ? undefined : 'right',
+                  render: (_: any, record: any) =>
+                    record.isUnassigned ? (
+                      <Button
+                        type='link'
+                        onClick={() => handleQuickAssign(record)}
+                      >
+                        Assign
+                      </Button>
+                    ) : (
+                      <Space>
+                        <Button
+                          type='link'
+                          onClick={() => startReassign(record)}
+                        >
+                          Reassign
+                        </Button>
+                      </Space>
+                    )
+                }
+              ] as any[]
+            }
+            dataSource={getFilteredInterventions()}
+            expandable={{
+              expandedRowRender: (record: any) =>
+                record.isUnassigned ? (
+                  <Text type='secondary'>
+                    This intervention has not been assigned yet.
+                  </Text>
+                ) : (
+                  <div style={{ padding: isMobile ? 6 : 10 }}>
+                    <Paragraph style={{ marginBottom: 8 }}>
+                      <Text strong>Type:</Text> {record.type || 'N/A'}
+                      <br />
+                      <Text strong>Target:</Text> {record.targetValue ?? '—'}{' '}
+                      {record.targetType ?? ''} ({record.targetMetric || '—'})
                     </Paragraph>
-                  )}
-                </div>
-              )
-          }}
-        />
+                    <Paragraph style={{ marginBottom: 8 }}>
+                      <Text strong>Assigned On:</Text>{' '}
+                      {record.createdAt?.toMillis
+                        ? new Date(
+                            record.createdAt.toMillis()
+                          ).toLocaleDateString()
+                        : 'N/A'}
+                    </Paragraph>
+                    {record.dueDate && (
+                      <Paragraph style={{ marginBottom: 8 }}>
+                        <Text strong>Due Date:</Text>{' '}
+                        {typeof record.dueDate === 'string'
+                          ? new Date(record.dueDate).toLocaleDateString()
+                          : record.dueDate?.toDate?.()?.toLocaleDateString() ??
+                            'N/A'}
+                      </Paragraph>
+                    )}
+                    <Paragraph style={{ marginBottom: 8 }}>
+                      <Text strong>Status Summary:</Text>
+                      <br />
+                      <Space size={[8, 8]} wrap>
+                        <Tag color='blue'>Overall: {record.status}</Tag>
+                        <Tag color='purple'>
+                          Consultant: {record.consultantStatus}
+                        </Tag>
+                        <Tag color='gold'>User: {record.userStatus}</Tag>
+                        <Tag color='cyan'>
+                          Consultant Completion:{' '}
+                          {record.consultantCompletionStatus}
+                        </Tag>
+                        <Tag color='lime'>
+                          User Confirmation: {record.userCompletionStatus}
+                        </Tag>
+                      </Space>
+                    </Paragraph>
+                    {record.feedback && (
+                      <Paragraph style={{ marginBottom: 0 }}>
+                        <Text strong>Feedback:</Text>
+                        <br />
+                        <Text italic>"{record.feedback.comments}"</Text>
+                        <br />
+                        <Tag color='green'>
+                          Rating: {record.feedback.rating} / 5
+                        </Tag>
+                      </Paragraph>
+                    )}
+                  </div>
+                )
+            }}
+            sticky
+          />
+        </div>
       </Modal>
 
       {/* SUGGESTED INTERVENTIONS MODAL */}
@@ -2100,10 +2531,10 @@ export const ConsultantAssignments: React.FC = () => {
               <Table
                 size='small'
                 rowKey='id'
-                pagination={{ pageSize: 8 }} // 👈 paginate
+                pagination={{ pageSize: 8 }} 
                 columns={[
                   { title: 'Incubatee', dataIndex: 'name', key: 'name' },
-                  { title: 'Email', dataIndex: 'email', key: 'email' } // 👈 show email
+                  { title: 'Email', dataIndex: 'email', key: 'email' } 
                 ]}
                 dataSource={reviewRow.participants}
               />
