@@ -77,7 +77,7 @@ import TemplatesPage from './components/forms'
 import FormBuilderPage from './components/forms/builder/[id]'
 import FormSubmission from './components/form-submission/FormSubmission'
 import IndicativeCalendar from './components/calendar/IndicativeCalendar'
-import PostAssessmentBuilder from './components/assessments/PostAssessmentBuilder'
+// import PostAssessmentBuilder from './components/assessments/PostAssessmentBuilder'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Funder Routes
@@ -284,10 +284,10 @@ const App = () => {
                       {/* Consultant Routes */}
                       <Route path='consultant'>
                         <Route index element={<ConsultantDashboard />} />
-                        <Route
+                        {/* <Route
                           path='assessments/post'
                           element={<PostAssessmentBuilder />}
-                        />
+                        /> */}
                         <Route
                           path='appointments'
                           element={<AppointmentsManager />}
@@ -435,7 +435,6 @@ const App = () => {
                     </Route>
                     {/* <Route path='/' element={<LoginPage />} /> */}
                     <Route path='/' element={<LandingPage />} />
-                    <Route path='/role/:roleId' element={<RoleDetailPage />} />
                     <Route path='/landing/sme' element={<SMEDashboard />} />
                     <Route path='/login' element={<LoginPage />} />
                     <Route
