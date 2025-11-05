@@ -165,7 +165,7 @@ export const LoginPage: React.FC = () => {
     if (!userSnap.exists()) {
       return {
         error: true,
-        message: '🚫 User not found in the system. Please contact the admin.'
+        message: 'User not found in the system. Please contact the admin.'
       }
     }
     const data = userSnap.data() as any
@@ -175,68 +175,52 @@ export const LoginPage: React.FC = () => {
     return { role: normalizeRole(data.role), firstLoginDone }
   }
 
+  // Utility: find applications for this email (case-insensitive if `emailLower` exists)
+  async function findAppsByEmail (rawEmail?: string) {
+    const email = (rawEmail || '').toLowerCase()
+    const appsCol = collection(db, 'applications')
+
+    // Try emailLower first (recommended), then fall back to email
+    const [byLowerSnap, byExactSnap] = await Promise.all([
+      getDocs(query(appsCol, where('emailLower', '==', email))),
+      getDocs(query(appsCol, where('email', '==', rawEmail || '')))
+    ])
+
+    const docs = !byLowerSnap.empty ? byLowerSnap.docs : byExactSnap.docs
+
+    return docs.map(d => ({ id: d.id, ...(d.data() as any) }))
+  }
+
   const handleLogin = async (values: { email: string; password: string }) => {
     try {
       setLoading(true)
+
       const { user } = await signInWithEmailAndPassword(
         auth,
         values.email,
         values.password
       )
-      const {
-        error,
-        message: errMsg,
-        role,
-        firstLoginDone
-      } = await checkUser(user as any)
+      const { error, message: errMsg, role } = await checkUser(user as any)
       if (error) return message.error(errMsg)
 
       if (role === 'incubatee') {
-        const accepted = await getAcceptedAppByEmail(user.email || undefined)
-        if (accepted) {
-          const gapDone = norm(accepted.gapAnalysisStatus) === 'completed'
-          if (!gapDone) {
-            const participant = await getParticipantByEmail(
-              user.email || undefined
-            )
-            navigate('/incubatee/gap-analysis', {
-              state: {
-                participantId: participant?.id ?? null,
-                prefillData: {
-                  companyName: participant?.beneficiaryName ?? '',
-                  region: participant?.province ?? '',
-                  contactDetails: participant?.phone ?? '',
-                  email: participant?.email ?? user.email,
-                  dateOfEngagement: accepted?.dateAccepted ?? null
-                }
-              }
-            })
-            return
-          }
-          navigate('/incubatee')
-          return
-        }
-        if (!firstLoginDone) return navigate('/welcome')
+        const apps = await findAppsByEmail(user.email || undefined)
+        const hasAccepted = apps.some(
+          a => String(a.applicationStatus || '').toLowerCase() === 'accepted'
+        )
 
-        const appsSnap = await getDocs(
-          query(
-            collection(db, 'applications'),
-            where('email', '==', user.email)
-          )
-        )
-        const apps = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any))
-        if (apps.length === 0) return navigate('/incubatee/sme')
-        const pending = apps.find(a =>
-          ['pending', undefined].includes(a.applicationStatus?.toLowerCase?.())
-        )
-        if (pending) return navigate('/incubatee/tracker')
-        return navigate('/incubatee/sme')
+        if (hasAccepted) {
+          navigate('/incubatee')
+        } else {
+          navigate('/incubatee/sme')
+        }
+        return
       }
 
-      if (!firstLoginDone) return navigate('/welcome')
+      // Any other role -> /role
       navigate(`/${role}`)
-    } catch (error: any) {
-      message.error(formatFirebaseError(error, 'signin'))
+    } catch (err: any) {
+      message.error(formatFirebaseError(err, 'signin'))
     } finally {
       setLoading(false)
     }
@@ -245,63 +229,31 @@ export const LoginPage: React.FC = () => {
   const handleGoogleLogin = async () => {
     try {
       setGoogleLoading(true)
+
       const result = await signInWithPopup(auth, new GoogleAuthProvider())
       const user = result.user
-      const {
-        error,
-        message: errMsg,
-        role,
-        firstLoginDone
-      } = await checkUser(user as any)
+
+      const { error, message: errMsg, role } = await checkUser(user as any)
       if (error) return message.error(errMsg)
 
       if (role === 'incubatee') {
-        const accepted = await getAcceptedAppByEmail(user.email || undefined)
-        if (accepted) {
-          const gapDone = norm(accepted.gapAnalysisStatus) === 'completed'
-          if (!gapDone) {
-            const participant = await getParticipantByEmail(
-              user.email || undefined
-            )
-            navigate('/incubatee/gap-analysis', {
-              state: {
-                participantId: participant?.id ?? null,
-                prefillData: {
-                  companyName: participant?.beneficiaryName ?? '',
-                  region: participant?.province ?? '',
-                  contactDetails: participant?.phone ?? '',
-                  email: participant?.email ?? user.email,
-                  dateOfEngagement: accepted?.dateAccepted ?? null
-                }
-              }
-            })
-            return
-          }
-          navigate('/incubatee')
-          return
-        }
-        if (!firstLoginDone) return navigate('/welcome')
+        const apps = await findAppsByEmail(user.email || undefined)
+        const hasAccepted = apps.some(
+          a => String(a.applicationStatus || '').toLowerCase() === 'accepted'
+        )
 
-        const appsSnap = await getDocs(
-          query(
-            collection(db, 'applications'),
-            where('email', '==', user.email)
-          )
-        )
-        const apps = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any))
-        if (apps.length === 0) return navigate('/incubatee/sme')
-        const pending = apps.find(a =>
-          ['pending', undefined].includes(a.applicationStatus?.toLowerCase?.())
-        )
-        if (pending) return navigate('/incubatee/tracker')
-        return navigate('/incubatee/sme')
+        if (hasAccepted) {
+          navigate('/incubatee')
+        } else {
+          navigate('/incubatee/sme')
+        }
+        return
       }
 
-      if (!firstLoginDone) return navigate('/welcome')
-      setRedirecting(true)
+      // Any other role -> /role
       navigate(`/${role}`)
-    } catch (error: any) {
-      message.error(formatFirebaseError(error, 'google'))
+    } catch (err: any) {
+      message.error(formatFirebaseError(err, 'google'))
     } finally {
       setGoogleLoading(false)
     }
@@ -553,7 +505,7 @@ export const LoginPage: React.FC = () => {
           }}
         >
           <img
-            src='/assets/images/QuantilytixO.png' // replace with your QuantO white logo path if different
+            src='/assets/images/QuantilytixO.png'
             alt='QuantO Logo'
             style={{ height: '100%', width: '100%', objectFit: 'contain' }}
           />
