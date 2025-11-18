@@ -377,7 +377,7 @@ export const ImpactAnalysisForm: React.FC = () => {
     chart: { type: 'bar', height: 360 },
     title: {
       text: `Top ${topN} Interventions — ${
-        target === 'employees' ? 'Sales' : 'Revenue'
+        target === 'employees' ? 'Employees' : 'Revenue'
       } (Horizon: ${forecastAhead} mo)`
     },
     xAxis: { categories: rankingData.map(i => i.name), title: { text: null } },
@@ -385,7 +385,7 @@ export const ImpactAnalysisForm: React.FC = () => {
       min: WEIGHT_MIN,
       max: WEIGHT_MAX,
       title: {
-        text: `Weight on ${target === 'employees' ? 'Sales' : 'Revenue'}`,
+        text: `Weight on ${target === 'employees' ? 'Employees' : 'Revenue'}`,
         align: 'high'
       },
       plotLines: [{ value: 0, width: 1, color: '#999' }]
@@ -598,7 +598,7 @@ export const ImpactAnalysisForm: React.FC = () => {
     title: {
       text: `Top ${topN} Interventions for ${
         selectedIncubatee?.name ?? 'Incubatee'
-      } — ${target === 'employees' ? 'Sales' : 'Revenue'}`
+      } — ${target === 'employees' ? 'Employees' : 'Revenue'}`
     },
     xAxis: { categories: incubateeImpacts.map(i => i.name) },
     yAxis: {
@@ -635,7 +635,7 @@ export const ImpactAnalysisForm: React.FC = () => {
     },
     title: {
       text: `Intervention Map — ${selectedIncubatee?.name ?? 'Incubatee'} (${
-        target === 'employees' ? 'Sales' : 'Revenue'
+        target === 'employees' ? 'Employees' : 'Revenue'
       })`
     },
     colorAxis: {
@@ -756,7 +756,7 @@ export const ImpactAnalysisForm: React.FC = () => {
                       type={target === 'employees' ? 'primary' : 'default'}
                       onClick={() => setTarget('employees')}
                     >
-                      Sales
+                      Employees
                     </Button>
                     <Button
                       type={target === 'revenue' ? 'primary' : 'default'}
@@ -874,4 +874,5 @@ export const ImpactAnalysisForm: React.FC = () => {
 }
 
 export default ImpactAnalysisForm
+
 
