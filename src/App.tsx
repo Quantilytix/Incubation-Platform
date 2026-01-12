@@ -112,7 +112,7 @@ import GrowthPlanPage from './routes/incubatee/diagnostic'
 // 🔹 Consultant Routes
 // ───────────────────────────────────────────────────────────
 import { ConsultantDashboard } from '@/routes/consultants/ConsultantDashboard'
-import { AssignedInterventions } from '@/routes/consultants/allocated'
+import AssignedInterventions from '@/routes/consultants/allocated'
 import { InterventionTrack } from '@/routes/consultants/allocated/intervention'
 import AppointmentsManager from './routes/consultants/appointments'
 import AllocatedHistory from './routes/consultants/allocated/history'
