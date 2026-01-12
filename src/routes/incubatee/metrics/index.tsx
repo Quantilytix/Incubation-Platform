@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   Card,
   Typography,
@@ -16,7 +16,8 @@ import {
   Statistic,
   Progress,
   Alert,
-  Tabs
+  Tabs,
+  Input
 } from 'antd'
 import {
   PlusOutlined,
@@ -41,7 +42,7 @@ import { auth, db, storage } from '@/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import axios from 'axios'
 import { motion } from 'framer-motion'
-import dayjs from 'dayjs'
+import dayjs, { Dayjs } from 'dayjs'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 
@@ -55,7 +56,9 @@ export const MonthlyPerformanceForm: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false)
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
-  // add near the top of the component body
+
+  // Month selection (for backfilling)
+  const [selectedMonth, setSelectedMonth] = useState<Dayjs>(dayjs())
   const thisMonth = dayjs().format('MMMM YYYY')
 
   // Progress modal
@@ -67,10 +70,10 @@ export const MonthlyPerformanceForm: React.FC = () => {
   const [previewVisible, setPreviewVisible] = useState(false)
   const [previewTransactions, setPreviewTransactions] = useState<any[]>([])
 
-  //Application Details
-  const [pRevenueMonthly, setPRevenueMonthly] = useState<
-    Record<string, number>
-  >({})
+  // Application Details (participant doc baselines)
+  const [pRevenueMonthly, setPRevenueMonthly] = useState<Record<string, number>>(
+    {}
+  )
   const [pHeadcountMonthly, setPHeadcountMonthly] = useState<
     Record<string, { permanent?: number; temporary?: number }>
   >({})
@@ -95,6 +98,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
     'November',
     'December'
   ]
+
   // Map "April 2025" -> "April"
   const monthFromLabel = (label?: string) => (label || '').trim().split(' ')[0]
 
@@ -107,14 +111,21 @@ export const MonthlyPerformanceForm: React.FC = () => {
     const customers = Array(12).fill(null) as (number | null)[]
 
     rows.forEach(r => {
-      const mName = monthFromLabel(r.month)
+      const label = r.monthLabel || r.month
+      const mName = monthFromLabel(label)
       const i = monthNames.findIndex(m => m === mName)
       if (i >= 0) {
-        revenue[i] = Number(r.revenue ?? null)
-        perm[i] = Number(r.headPermanent ?? null)
-        temp[i] = Number(r.headTemporary ?? null)
-        orders[i] = Number(r.orders ?? null)
-        customers[i] = Number(r.customers ?? null)
+        revenue[i] = Number.isFinite(Number(r.revenue)) ? Number(r.revenue) : null
+        perm[i] = Number.isFinite(Number(r.headPermanent))
+          ? Number(r.headPermanent)
+          : null
+        temp[i] = Number.isFinite(Number(r.headTemporary))
+          ? Number(r.headTemporary)
+          : null
+        orders[i] = Number.isFinite(Number(r.orders)) ? Number(r.orders) : null
+        customers[i] = Number.isFinite(Number(r.customers))
+          ? Number(r.customers)
+          : null
       }
     })
 
@@ -122,7 +133,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
   }
 
   const normalizeRevenueMap = (m?: Record<string, any>) => {
-    const result: number[] = Array(12).fill(null)
+    const result: (number | null)[] = Array(12).fill(null)
     if (!m) return result
     monthNames.forEach((name, i) => {
       const v = Number(m[name])
@@ -185,25 +196,21 @@ export const MonthlyPerformanceForm: React.FC = () => {
         const snapshot = await getDocs(q)
 
         if (!snapshot.empty) {
-          setParticipantId(snapshot.docs[0].id)
-          // after setParticipantId(...)
-          if (snapshot && !snapshot.empty) {
-            const pid = snapshot.docs[0].id
-            setParticipantId(pid)
+          const pid = snapshot.docs[0].id
+          setParticipantId(pid)
 
-            // NEW: fetch participant doc to read histories
-            const pDoc = await getDoc(doc(db, 'participants', pid))
-            if (pDoc.exists()) {
-              const pdata = pDoc.data() as any
+          // fetch participant doc to read histories
+          const pDoc = await getDoc(doc(db, 'participants', pid))
+          if (pDoc.exists()) {
+            const pdata = pDoc.data() as any
 
-              // revenueHistory.monthly (2025 months by name)
-              const revMonthly = pdata?.revenueHistory?.monthly || {}
-              setPRevenueMonthly(revMonthly)
+            // revenueHistory.monthly (months by name)
+            const revMonthly = pdata?.revenueHistory?.monthly || {}
+            setPRevenueMonthly(revMonthly)
 
-              // headcountHistory.monthly { April: {permanent, temporary}, ... }
-              const hcMonthly = pdata?.headcountHistory?.monthly || {}
-              setPHeadcountMonthly(hcMonthly)
-            }
+            // headcountHistory.monthly { April: {permanent, temporary}, ... }
+            const hcMonthly = pdata?.headcountHistory?.monthly || {}
+            setPHeadcountMonthly(hcMonthly)
           }
         } else {
           message.error('No participant record found for this user.')
@@ -217,12 +224,23 @@ export const MonthlyPerformanceForm: React.FC = () => {
   const fetchData = async () => {
     if (!participantId) return
     try {
+      // Prefer ordering by monthId if present, fallback to createdAt
+      // (Firestore cannot order by a field that doesn't exist on all docs reliably,
+      // so we keep createdAt and sort client-side below.)
       const q = query(
         collection(db, `monthlyPerformance/${participantId}/history`),
         orderBy('createdAt', 'desc')
       )
       const snapshot = await getDocs(q)
-      setData(snapshot.docs.map(doc => ({ key: doc.id, ...doc.data() })))
+
+      const rows = snapshot.docs.map(d => ({ key: d.id, ...d.data() }))
+      // sort client-side by monthId (YYYY-MM) if present
+      rows.sort((a: any, b: any) => {
+        if (a.monthId && b.monthId) return String(b.monthId).localeCompare(String(a.monthId))
+        return 0
+      })
+
+      setData(rows)
     } catch (error) {
       console.error(error)
       message.error('Failed to load monthly performance data.')
@@ -231,14 +249,13 @@ export const MonthlyPerformanceForm: React.FC = () => {
 
   useEffect(() => {
     fetchData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participantId])
 
-  // Participant doc monthly maps (e.g., revenueHistory.monthly.April) -> arrays
+  // Participant doc monthly maps -> arrays
   const participantRev = normalizeRevenueMap(pRevenueMonthly)
   const { perm: participantPerm, temp: participantTemp } =
     normalizeHeadcountMap(pHeadcountMonthly)
-
-  // 1) keep your monthNames, buildUploadedByMonth, normalizeRevenueMap, normalizeHeadcountMap
 
   // Prefer uploaded value, else participant value, else null
   const mergePrefUploaded = (
@@ -249,19 +266,19 @@ export const MonthlyPerformanceForm: React.FC = () => {
       uploaded[i] != null ? uploaded[i] : participant[i] ?? null
     )
 
-  // --- Build base arrays ---
+  // Build base arrays
   const uploaded = buildUploadedByMonth(data)
   const pRev = normalizeRevenueMap(pRevenueMonthly)
   const pHC = normalizeHeadcountMap(pHeadcountMonthly)
 
-  // --- Merge to single series per metric ---
+  // Merge to single series per metric
   const revenueMerged = mergePrefUploaded(uploaded.revenue, pRev)
   const permMerged = mergePrefUploaded(uploaded.perm, pHC.perm)
   const tempMerged = mergePrefUploaded(uploaded.temp, pHC.temp)
-  const ordersMerged = uploaded.orders // participant doc has no orders -> just uploaded
-  const customersMerged = uploaded.customers // participant doc has no customers -> just uploaded
+  const ordersMerged = uploaded.orders
+  const customersMerged = uploaded.customers
 
-  // Optional: 3-month moving average on the merged revenue
+  // 3-month moving average on the merged revenue
   const revMA3 = revenueMerged.map((_, i) => {
     const windowVals = revenueMerged.slice(Math.max(0, i - 2), i + 1)
     const nums = windowVals.filter(v => typeof v === 'number') as number[]
@@ -274,13 +291,13 @@ export const MonthlyPerformanceForm: React.FC = () => {
   const monthIdxInRange = (() => {
     const startM = range?.[0]?.month() ?? 0
     const endM = range?.[1]?.month() ?? 11
-    const idxs = []
+    const idxs: number[] = []
     for (let i = startM; i <= endM; i++) idxs.push(i)
     return idxs
   })()
 
   const formatLabel = (mIndex: number, year: number) =>
-    dayjs().year(year).month(mIndex).format('MMM YY') // e.g., "Jan 25"
+    dayjs().year(year).month(mIndex).format('MMM YY')
 
   const categories = monthIdxInRange.map(i =>
     formatLabel(i, range?.[0]?.year() ?? dayjs().year())
@@ -288,7 +305,6 @@ export const MonthlyPerformanceForm: React.FC = () => {
 
   const pickRange = (arr: (number | null)[]) => monthIdxInRange.map(i => arr[i])
 
-  // 2) Charts now use ONE series per metric
   const revenueTrendOptions: Highcharts.Options = {
     chart: { type: 'line' },
     title: { text: 'Revenue Trend' },
@@ -325,34 +341,21 @@ export const MonthlyPerformanceForm: React.FC = () => {
   const ordersCustomersDualAxis: Highcharts.Options = {
     title: { text: 'Orders vs Customers' },
     xAxis: [{ categories, crosshair: true }],
-    yAxis: [
-      { title: { text: 'Orders' } },
-      { title: { text: 'Customers' }, opposite: true }
-    ],
+    yAxis: [{ title: { text: 'Orders' } }, { title: { text: 'Customers' }, opposite: true }],
     tooltip: { shared: true },
     series: [
-      {
-        name: 'Orders',
-        type: 'column',
-        yAxis: 0,
-        data: pickRange(ordersMerged)
-      },
-      {
-        name: 'Customers',
-        type: 'spline',
-        yAxis: 1,
-        data: pickRange(customersMerged)
-      }
+      { name: 'Orders', type: 'column', yAxis: 0, data: pickRange(ordersMerged) },
+      { name: 'Customers', type: 'spline', yAxis: 1, data: pickRange(customersMerged) }
     ]
   }
 
-  const uploadProofs = async (files: any[], type: string, monthKey: string) => {
+  const uploadProofs = async (files: any[], type: string, monthId: string) => {
     const urls: string[] = []
     for (const file of files) {
       const cleanName = file.name.replace(/\s+/g, '_')
       const storageRef = ref(
         storage,
-        `monthlyPerformance/${monthKey}/${type}-${monthKey}-${cleanName}`
+        `monthlyPerformance/${participantId}/${monthId}/${type}-${monthId}-${cleanName}`
       )
       await uploadBytes(storageRef, file.originFileObj)
       const url = await getDownloadURL(storageRef)
@@ -368,9 +371,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
       const response = await axios.post(
         'https://rairo-stmt-api.hf.space/process-pdf',
         formData,
-        {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        }
+        { headers: { 'Content-Type': 'multipart/form-data' } }
       )
       return response.data.transactions || []
     } catch (err: any) {
@@ -380,16 +381,20 @@ export const MonthlyPerformanceForm: React.FC = () => {
     }
   }
 
-  // ✅ First step: Process and show preview
+  // ✅ Step 1: Process and show preview
   const handleSubmit = async (values: any) => {
     try {
+      if (!values.month) {
+        message.error('Please select the month you are uploading for.')
+        return
+      }
+
       setLoading(true)
       const rawTransactions =
         values.revenueProof?.fileList?.length > 0
           ? await processBankStatement(values.revenueProof.fileList[0])
           : []
 
-      // ✅ Map API fields to our table structure
       const formattedTransactions = rawTransactions.map((txn: any) => ({
         date: txn.Date || '',
         description: txn.Description || txn.Destination_of_funds || '',
@@ -410,7 +415,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
     }
   }
 
-  // ✅ Final step: Save everything to Firestore
+  // ✅ Step 2: Save everything to Firestore
   const finalizeSave = async () => {
     let interval: any
     try {
@@ -418,24 +423,31 @@ export const MonthlyPerformanceForm: React.FC = () => {
       interval = simulateProgress()
 
       const values = form.getFieldsValue()
-      const monthKey = new Date().toLocaleString('default', {
-        month: 'long',
-        year: 'numeric'
-      })
+      const monthDayjs: Dayjs = values.month
+
+      if (!monthDayjs || !monthDayjs.isValid?.()) {
+        message.error('Please select a valid month.')
+        clearInterval(interval)
+        setProgressVisible(false)
+        setLoading(false)
+        return
+      }
+
+      const monthId = monthDayjs.format('YYYY-MM') // ✅ stable doc id
+      const monthLabel = monthDayjs.format('MMMM YYYY') // ✅ display label
 
       const revenueProofUrls = values.revenueProof?.fileList?.length
-        ? await uploadProofs(values.revenueProof.fileList, 'revenue', monthKey)
+        ? await uploadProofs(values.revenueProof.fileList, 'revenue', monthId)
         : []
       const employeeProofUrls = values.employeeProof?.fileList?.length
-        ? await uploadProofs(
-            values.employeeProof.fileList,
-            'employee',
-            monthKey
-          )
+        ? await uploadProofs(values.employeeProof.fileList, 'employee', monthId)
         : []
 
       if (!participantId || !userEmail) {
         message.error('Unable to determine participant identity.')
+        clearInterval(interval)
+        setProgressVisible(false)
+        setLoading(false)
         return
       }
 
@@ -451,28 +463,35 @@ export const MonthlyPerformanceForm: React.FC = () => {
 
       const monthDocRef = doc(
         db,
-        `monthlyPerformance/${participantId}/history/${monthKey}`
+        `monthlyPerformance/${participantId}/history/${monthId}`
       )
 
-      await setDoc(monthDocRef, {
-        month: monthKey,
-        revenue: values.revenue,
-        headPermanent: values.headPermanent,
-        headTemporary: values.headTemporary,
-        orders: values.orders,
-        customers: values.customers,
-        traffic: values.traffic,
-        networking: values.networking,
-        revenueProofUrls,
-        employeeProofUrls,
-        createdAt: Timestamp.now()
-      })
+      await setDoc(
+        monthDocRef,
+        {
+          monthId,
+          monthLabel,
+          month: monthLabel, // keep legacy field for existing UI paths
+          revenue: values.revenue,
+          headPermanent: values.headPermanent,
+          headTemporary: values.headTemporary,
+          orders: values.orders,
+          customers: values.customers,
+          traffic: values.traffic,
+          networking: values.networking,
+          revenueProofUrls,
+          employeeProofUrls,
+          createdAt: Timestamp.now()
+        },
+        { merge: true }
+      )
 
+      // Save parsed transactions (optional)
       for (const txn of previewTransactions) {
         await addDoc(
           collection(
             db,
-            `monthlyPerformance/${participantId}/history/${monthKey}/bankTransactions`
+            `monthlyPerformance/${participantId}/history/${monthId}/bankTransactions`
           ),
           txn
         )
@@ -485,7 +504,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
 
       await fetchData()
       message.success(
-        `Saved successfully with ${previewTransactions.length} transactions!`
+        `Saved successfully for ${monthLabel} with ${previewTransactions.length} transactions!`
       )
       setModalVisible(false)
       setPreviewVisible(false)
@@ -500,19 +519,51 @@ export const MonthlyPerformanceForm: React.FC = () => {
     }
   }
 
+  // Missing months (current year, up to current month)
+  const existingMonthIds = useMemo(
+    () =>
+      new Set(
+        (data || [])
+          .map(r => r.monthId)
+          .filter(Boolean)
+          .map((x: any) => String(x))
+      ),
+    [data]
+  )
+
+  const existingMonthLabels = useMemo(
+    () =>
+      new Set(
+        (data || [])
+          .map(r => r.monthLabel || r.month)
+          .filter(Boolean)
+          .map((x: any) => String(x))
+      ),
+    [data]
+  )
+
+  const missingMonths = useMemo(() => {
+    const year = dayjs().year()
+    return monthNames
+      .map((m, idx) => {
+        const label = dayjs().year(year).month(idx).format('MMMM YYYY')
+        const id = dayjs().year(year).month(idx).format('YYYY-MM')
+        return { idx, label, id }
+      })
+      .filter(x => x.idx <= dayjs().month())
+      .filter(x => !existingMonthIds.has(x.id) && !existingMonthLabels.has(x.label))
+  }, [existingMonthIds, existingMonthLabels])
+
   const columns = [
-    { title: 'Month', dataIndex: 'month', key: 'month' },
+    {
+      title: 'Month',
+      dataIndex: 'month',
+      key: 'month',
+      render: (_: any, record: any) => record.monthLabel || record.month || record.monthId
+    },
     { title: 'Revenue (R)', dataIndex: 'revenue', key: 'revenue' },
-    {
-      title: 'Permanent Employees',
-      dataIndex: 'headPermanent',
-      key: 'headPermanent'
-    },
-    {
-      title: 'Temporary Employees',
-      dataIndex: 'headTemporary',
-      key: 'headTemporary'
-    },
+    { title: 'Permanent Employees', dataIndex: 'headPermanent', key: 'headPermanent' },
+    { title: 'Temporary Employees', dataIndex: 'headTemporary', key: 'headTemporary' },
     { title: 'Orders', dataIndex: 'orders', key: 'orders' },
     { title: 'Customers', dataIndex: 'customers', key: 'customers' },
     { title: 'Traffic', dataIndex: 'traffic', key: 'traffic' },
@@ -524,12 +575,12 @@ export const MonthlyPerformanceForm: React.FC = () => {
       title: 'Date',
       dataIndex: 'date',
       key: 'date',
-      render: (text: any, record: any, index: number) => (
-        <InputNumber
+      render: (_: any, record: any, index: number) => (
+        <Input
           value={record.date}
-          onChange={val => {
+          onChange={e => {
             const updated = [...previewTransactions]
-            updated[index].date = val
+            updated[index].date = e.target.value
             setPreviewTransactions(updated)
           }}
         />
@@ -539,9 +590,8 @@ export const MonthlyPerformanceForm: React.FC = () => {
       title: 'Description',
       dataIndex: 'description',
       key: 'description',
-      render: (text: any, record: any, index: number) => (
-        <input
-          style={{ width: '100%' }}
+      render: (_: any, record: any, index: number) => (
+        <Input
           value={record.description}
           onChange={e => {
             const updated = [...previewTransactions]
@@ -555,13 +605,14 @@ export const MonthlyPerformanceForm: React.FC = () => {
       title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
-      render: (text: any, record: any, index: number) => (
+      render: (_: any, record: any, index: number) => (
         <InputNumber
           min={0}
+          style={{ width: '100%' }}
           value={record.amount}
           onChange={val => {
             const updated = [...previewTransactions]
-            updated[index].amount = val
+            updated[index].amount = val ?? 0
             setPreviewTransactions(updated)
           }}
         />
@@ -596,6 +647,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
       <Helmet>
         <title>Monthly Metrics</title>
       </Helmet>
+
       <Alert
         type='info'
         showIcon
@@ -603,13 +655,10 @@ export const MonthlyPerformanceForm: React.FC = () => {
         message='📈 Monthly Performance Dashboard'
         description='Upload your month-on-month performance data here to keep your progress up to date.'
       />
+
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={8}>
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
             <Card
               hoverable
               style={{
@@ -627,12 +676,9 @@ export const MonthlyPerformanceForm: React.FC = () => {
             </Card>
           </motion.div>
         </Col>
+
         <Col xs={24} sm={8}>
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
             <Card
               hoverable
               style={{
@@ -650,12 +696,9 @@ export const MonthlyPerformanceForm: React.FC = () => {
             </Card>
           </motion.div>
         </Col>
+
         <Col xs={24} sm={8}>
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
             <Card
               hoverable
               style={{
@@ -684,22 +727,38 @@ export const MonthlyPerformanceForm: React.FC = () => {
             label: 'Data',
             children: (
               <>
-                {/* Historical table */}
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4 }}
-                >
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
                   <Card
                     title='📊 Historical Monthly Metrics'
                     extra={
-                      <Button
-                        type='primary'
-                        icon={<PlusOutlined />}
-                        onClick={() => setModalVisible(true)}
-                      >
-                        {`Upload ${thisMonth} Performance`}
-                      </Button>
+                      <Space wrap>
+                        <Button
+                          type='primary'
+                          icon={<PlusOutlined />}
+                          onClick={() => {
+                            const m = dayjs()
+                            setSelectedMonth(m)
+                            form.setFieldsValue({ month: m })
+                            setModalVisible(true)
+                          }}
+                        >
+                          Upload This Month
+                        </Button>
+
+                        {missingMonths.length > 0 && (
+                          <Button
+                            onClick={() => {
+                              const earliest = missingMonths[0]
+                              const m = dayjs(`${earliest.id}-01`)
+                              setSelectedMonth(m)
+                              form.setFieldsValue({ month: m })
+                              setModalVisible(true)
+                            }}
+                          >
+                            Backfill Missing Months
+                          </Button>
+                        )}
+                      </Space>
                     }
                     style={{
                       boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
@@ -708,11 +767,39 @@ export const MonthlyPerformanceForm: React.FC = () => {
                       border: '1px solid #d6e4ff'
                     }}
                   >
-                    <Table
-                      columns={columns}
-                      dataSource={data}
-                      pagination={{ pageSize: 5 }}
-                    />
+                    {missingMonths.length > 0 && (
+                      <Alert
+                        style={{ marginBottom: 12 }}
+                        type='warning'
+                        showIcon
+                        message='You have missing months.'
+                        description={
+                          <Space wrap>
+                            {missingMonths.slice(0, 8).map(m => (
+                              <Button
+                                key={m.id}
+                                size='small'
+                                onClick={() => {
+                                  const d = dayjs(`${m.id}-01`)
+                                  setSelectedMonth(d)
+                                  form.setFieldsValue({ month: d })
+                                  setModalVisible(true)
+                                }}
+                              >
+                                {m.label}
+                              </Button>
+                            ))}
+                            {missingMonths.length > 8 && (
+                              <span style={{ opacity: 0.7 }}>
+                                +{missingMonths.length - 8} more
+                              </span>
+                            )}
+                          </Space>
+                        }
+                      />
+                    )}
+
+                    <Table columns={columns} dataSource={data} pagination={{ pageSize: 5 }} />
                   </Card>
                 </motion.div>
               </>
@@ -729,11 +816,8 @@ export const MonthlyPerformanceForm: React.FC = () => {
                     value={range}
                     onChange={vals => {
                       if (!vals || !vals[0] || !vals[1]) return
-                      // (Optional) keep same-year constraint
                       if (vals[0].year() !== vals[1].year()) {
-                        message.warning(
-                          'Please select months within the same year for now.'
-                        )
+                        message.warning('Please select months within the same year for now.')
                         return
                       }
                       setRange(vals as [Dayjs, Dayjs])
@@ -752,12 +836,10 @@ export const MonthlyPerformanceForm: React.FC = () => {
                         border: '1px solid #d6e4ff'
                       }}
                     >
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={revenueTrendOptions}
-                      />
+                      <HighchartsReact highcharts={Highcharts} options={revenueTrendOptions} />
                     </Card>
                   </Col>
+
                   <Col xs={24} lg={12}>
                     <Card
                       hoverable
@@ -767,12 +849,10 @@ export const MonthlyPerformanceForm: React.FC = () => {
                         border: '1px solid #d6e4ff'
                       }}
                     >
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={employeesStackedOptions}
-                      />
+                      <HighchartsReact highcharts={Highcharts} options={employeesStackedOptions} />
                     </Card>
                   </Col>
+
                   <Col xs={24}>
                     <Card
                       hoverable
@@ -782,10 +862,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
                         border: '1px solid #d6e4ff'
                       }}
                     >
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={ordersCustomersDualAxis}
-                      />
+                      <HighchartsReact highcharts={Highcharts} options={ordersCustomersDualAxis} />
                     </Card>
                   </Col>
                 </Row>
@@ -795,15 +872,41 @@ export const MonthlyPerformanceForm: React.FC = () => {
         ]}
       />
 
+      {/* Upload / Backfill Modal */}
       <Modal
-        title={`Add Monthly Performance — ${thisMonth}`}
+        title={`Add Monthly Performance — ${
+          selectedMonth?.format('MMMM YYYY') || thisMonth
+        }`}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         onOk={() => form.submit()}
         okText='Preview Transactions'
         okButtonProps={{ loading }}
       >
-        <Form layout='vertical' form={form} onFinish={handleSubmit}>
+        <Form
+          layout='vertical'
+          form={form}
+          onFinish={handleSubmit}
+          initialValues={{ month: selectedMonth }}
+        >
+          <Form.Item
+            name='month'
+            label='Month you are uploading for'
+            rules={[{ required: true, message: 'Please select the month' }]}
+          >
+            <DatePicker
+              picker='month'
+              style={{ width: '100%' }}
+              disabledDate={d =>
+                !!d && d.endOf('month').isAfter(dayjs().endOf('month'))
+              }
+              onChange={d => {
+                if (!d) return
+                setSelectedMonth(d)
+              }}
+            />
+          </Form.Item>
+
           <Row gutter={[12, 12]}>
             <Col xs={24}>
               <Form.Item
@@ -819,9 +922,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
               <Form.Item
                 name='revenueProof'
                 label='Bank Statement (Proof of Revenue)'
-                rules={[
-                  { required: true, message: 'Please upload bank statement' }
-                ]}
+                rules={[{ required: true, message: 'Please upload bank statement' }]}
                 valuePropName='fileList'
                 getValueFromEvent={e => (Array.isArray(e) ? e : e?.fileList)}
               >
@@ -840,6 +941,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
+
             <Col xs={24} sm={12}>
               <Form.Item
                 name='headTemporary'
@@ -854,9 +956,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
               <Form.Item
                 name='employeeProof'
                 label='Contracts/Payslips (Employee Proof)'
-                rules={[
-                  { required: true, message: 'Please upload employee proof' }
-                ]}
+                rules={[{ required: true, message: 'Please upload employee proof' }]}
                 valuePropName='fileList'
                 getValueFromEvent={e => (Array.isArray(e) ? e : e?.fileList)}
               >
@@ -871,6 +971,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
+
             <Col xs={24} sm={12}>
               <Form.Item name='customers' label='New Customers'>
                 <InputNumber min={0} style={{ width: '100%' }} />
@@ -882,6 +983,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
+
             <Col xs={24} sm={12}>
               <Form.Item name='networking' label='Networking Events'>
                 <InputNumber min={0} style={{ width: '100%' }} />
@@ -890,27 +992,30 @@ export const MonthlyPerformanceForm: React.FC = () => {
           </Row>
         </Form>
       </Modal>
+
+      {/* Preview Transactions Modal */}
       <Modal
         title='Preview Transactions Before Saving'
         open={previewVisible}
         onCancel={() => setPreviewVisible(false)}
         onOk={finalizeSave}
         okText='Save All'
-        width={800} // optional: make it wider for better readability
+        width={800}
       >
         <Table
           columns={previewColumns}
           dataSource={previewTransactions.map((t, i) => ({ ...t, key: i }))}
           pagination={{
-            pageSize: 5, // ✅ Show 5 transactions per page (change to 10 if preferred)
+            pageSize: 5,
             showSizeChanger: true,
             pageSizeOptions: ['5', '10', '20', '50'],
-            showTotal: (total, range) =>
-              `Showing ${range[0]}-${range[1]} of ${total} transactions`
+            showTotal: (total, r) => `Showing ${r[0]}-${r[1]} of ${total} transactions`
           }}
           scroll={{ y: 300 }}
         />
       </Modal>
+
+      {/* Progress Modal */}
       <Modal
         open={progressVisible}
         footer={null}
@@ -921,10 +1026,7 @@ export const MonthlyPerformanceForm: React.FC = () => {
         <Progress
           type='circle'
           percent={progressPercent}
-          strokeColor={{
-            '0%': '#108ee9',
-            '100%': '#87d068'
-          }}
+          strokeColor={{ '0%': '#108ee9', '100%': '#87d068' }}
         />
         <p style={{ marginTop: 20, fontSize: 16, fontWeight: 500 }}>
           {progressMessage}
