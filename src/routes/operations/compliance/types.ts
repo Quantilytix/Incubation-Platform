@@ -50,6 +50,7 @@ export const documentTypes = [
 
 export const documentStatuses = [
   { value: 'valid', label: 'Valid', color: 'green' },
+  { value: 'invalid', label: 'Invalid', color: 'crimson' },
   { value: 'expiring', label: 'Expiring Soon', color: 'orange' },
   { value: 'expired', label: 'Expired', color: 'red' },
   { value: 'missing', label: 'Missing', color: 'volcano' },

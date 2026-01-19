@@ -28,7 +28,6 @@ import {
     CheckCircleOutlined,
     CloseCircleOutlined,
     EyeOutlined,
-    FileAddOutlined,
     FileProtectOutlined,
     PlusOutlined,
     SafetyCertificateOutlined,
@@ -49,12 +48,10 @@ import {
     EffectiveDocStatus,
     ParticipantComplianceSummary,
     RawComplianceDoc,
-    buildReminderPayloads,
-    isProblematic
+    buildReminderPayloads
 } from '@/modules/compliance/complianceLogic'
 import { useComplianceData } from '@/modules/compliance/useComplianceData'
 
-// If you have these already, reuse them
 import { documentTypes, documentStatuses } from './types'
 import EDAgreementModal from './EDAgreementModal'
 
@@ -80,6 +77,29 @@ const verificationColor = (v: string) => {
 }
 
 const makeStableId = () => `cd_${Date.now()}_${Math.random().toString(16).slice(2)}`
+
+function norm(s: any) {
+    return String(s ?? '').trim().toLowerCase()
+}
+
+/**
+ * Ensure "invalid" exists in status dropdown even if ./types forgot it.
+ * Also dedupe by value.
+ */
+function withInvalidStatusOptions(list: Array<{ value: string; label: string }>) {
+    const base = Array.isArray(list) ? list.slice() : []
+    const hasInvalid = base.some(x => norm(x.value) === 'invalid')
+    if (!hasInvalid) base.push({ value: 'invalid', label: 'Invalid (Queried)' })
+
+    const seen = new Set<string>()
+    return base.filter(x => {
+        const k = norm(x.value)
+        if (!k) return false
+        if (seen.has(k)) return false
+        seen.add(k)
+        return true
+    })
+}
 
 const OperationsCompliance: React.FC = () => {
     const { user, loading: identityLoading } = useFullIdentity()
@@ -133,6 +153,9 @@ const OperationsCompliance: React.FC = () => {
         })
     }, [rows, searchText, filterActionNeeded])
 
+    const isCompliant = (status: EffectiveDocStatus) =>
+        status === 'valid' || status === 'expiring'
+
     const participantColumns: ColumnsType<ParticipantRow> = [
         {
             title: 'Participant',
@@ -142,23 +165,46 @@ const OperationsCompliance: React.FC = () => {
             render: (_, r) => (
                 <Space direction="vertical" size={0}>
                     <Text strong>{r.beneficiaryName}</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{r.email || 'No email'} {r.phone ? `• ${r.phone}` : ''}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        {r.email || 'No email'} {r.phone ? `• ${r.phone}` : ''}
+                    </Text>
                 </Space>
             )
         },
         {
             title: 'Compliance',
             key: 'complianceScore',
-            sorter: (a, b) => a.complianceScore - b.complianceScore,
-            render: (_, r) => (
-                <Space direction="vertical" style={{ width: 180 }}>
-                    <Progress percent={r.complianceScore} size="small" />
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                        {r.counts.valid}/{r.counts.total} compliant
-                    </Text>
-                </Space>
-            )
-        },
+            sorter: (a, b) => (a.complianceScore || 0) - (b.complianceScore || 0),
+            render: (_, r) => {
+                const docs = Array.isArray((r as any).docs) ? (r as any).docs : []
+                const total = docs.length
+
+                const compliantCount = docs.filter((d: any) =>
+                    isCompliant(d.effectiveStatus as EffectiveDocStatus)
+                ).length
+
+                const percent = total > 0 ? Math.round((compliantCount / total) * 100) : 0
+                const fullyCompliant = total > 0 && compliantCount === total
+
+                return (
+                    <Space direction="vertical" style={{ width: 220 }}>
+                        <Space align="center">
+                            <Progress percent={percent} size="small" style={{ width: 170 }} />
+                            {fullyCompliant ? (
+                                <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                            ) : (
+                                <WarningOutlined style={{ color: '#faad14' }} />
+                            )}
+                        </Space>
+
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {compliantCount}/{total} compliant
+                        </Text>
+                    </Space>
+                )
+            }
+        }
+        ,
         {
             title: 'Issues',
             key: 'issues',
@@ -166,7 +212,7 @@ const OperationsCompliance: React.FC = () => {
                 <Space wrap>
                     {r.counts.missing > 0 && <Tag color="volcano">Missing: {r.counts.missing}</Tag>}
                     {r.counts.expired > 0 && <Tag color="red">Expired: {r.counts.expired}</Tag>}
-                    {r.counts.invalid > 0 && <Tag color="magenta">Queried: {r.counts.invalid}</Tag>}
+                    {r.counts.queried > 0 && <Tag color="magenta">Queried: {r.counts.queried}</Tag>}
                     {r.counts.expiring > 0 && <Tag color="orange">Expiring: {r.counts.expiring}</Tag>}
                     {!r.actionNeeded && <Tag color="green">All good</Tag>}
                 </Space>
@@ -212,6 +258,7 @@ const OperationsCompliance: React.FC = () => {
         }
     ]
 
+
     const uploadProps: UploadProps = {
         beforeUpload: file => {
             setUploadingFile(file as any)
@@ -255,10 +302,12 @@ const OperationsCompliance: React.FC = () => {
                         status: values.status,
                         issueDate: values.issueDate ? values.issueDate.format('YYYY-MM-DD') : '',
                         expiryDate: values.expiryDate ? values.expiryDate.format('YYYY-MM-DD') : '',
-                        notes: values.notes,
+                        notes: values.notes ?? '',
                         url,
                         uploadedBy: user?.name || 'Unknown',
                         uploadedAt: new Date().toISOString().split('T')[0],
+
+                        // preserve verification fields on edit
                         lastVerifiedBy: editingDoc?.lastVerifiedBy,
                         lastVerifiedAt: editingDoc?.lastVerifiedAt,
                         verificationStatus: editingDoc?.verificationStatus || 'unverified',
@@ -268,7 +317,6 @@ const OperationsCompliance: React.FC = () => {
                     if (editingDoc?.id) {
                         return docs.map(d => (d.id === editingDoc.id ? next : d))
                     }
-
                     return [...docs, next]
                 })
 
@@ -313,6 +361,7 @@ const OperationsCompliance: React.FC = () => {
         }
     }
 
+
     const openVerify = (docRow: any) => {
         setVerifyDoc(docRow)
         setVerifyOpen(true)
@@ -350,8 +399,6 @@ const OperationsCompliance: React.FC = () => {
             }
 
             const sendReminder = httpsCallable(functions, 'sendComplianceReminderEmail')
-
-            // fire in parallel, but still show progress per recipient
             await Promise.all(
                 payloads.map(async p => {
                     await sendReminder({
@@ -378,15 +425,14 @@ const OperationsCompliance: React.FC = () => {
         {
             title: 'Type',
             dataIndex: 'type',
-            render: (v: string) =>
-                documentTypes.find(t => t.value === v || t.label === v)?.label || v
+            render: (v: string) => documentTypes.find(t => t.value === v || t.label === v)?.label || v
         },
         {
             title: 'Status',
             key: 'status',
             render: (_: any, r: any) => (
                 <Tag color={statusColor(r.effectiveStatus)}>
-                    {r.effectiveStatus.toUpperCase()}
+                    {String(r.effectiveStatus || '').toUpperCase()}
                 </Tag>
             ),
             filters: [
@@ -404,9 +450,27 @@ const OperationsCompliance: React.FC = () => {
             key: 'verification',
             render: (_: any, r: any) => (
                 <Tag color={verificationColor(r.verificationStatusRaw)}>
-                    {r.verificationStatusRaw.toUpperCase()}
+                    {String(r.verificationStatusRaw || 'unverified').toUpperCase()}
                 </Tag>
             )
+        },
+        {
+            title: 'Query message',
+            key: 'queryMessage',
+            render: (_: any, r: any) => {
+                const isQueried = norm(r.verificationStatusRaw) === 'queried'
+                const msg = String(r.verificationComment || r.verificationCommentRaw || '').trim()
+
+                if (!isQueried) return <Text type="secondary">—</Text>
+
+                return msg ? (
+                    <Tooltip title={msg}>
+                        <Tag color="red" style={{ cursor: 'pointer' }}>View</Tag>
+                    </Tooltip>
+                ) : (
+                    <Tag color="red">Queried (no reason)</Tag>
+                )
+            }
         },
         {
             title: 'Expiry',
@@ -429,7 +493,7 @@ const OperationsCompliance: React.FC = () => {
                         <Button onClick={() => openAddDocModal(activeParticipant!, r)}>Edit</Button>
                     </Tooltip>
 
-                    {r.url && r.verificationStatusRaw === 'unverified' && (
+                    {r.url && norm(r.verificationStatusRaw) === 'unverified' && (
                         <Tooltip title="Verify / Query">
                             <Button icon={<FileProtectOutlined />} onClick={() => openVerify(r)} />
                         </Tooltip>
@@ -438,6 +502,11 @@ const OperationsCompliance: React.FC = () => {
             )
         }
     ]
+
+    const statusOptions = useMemo(
+        () => withInvalidStatusOptions(documentStatuses as any),
+        []
+    )
 
     return (
         <div style={{ minHeight: '100vh', padding: 16 }}>
@@ -455,7 +524,7 @@ const OperationsCompliance: React.FC = () => {
                 />
             )}
 
-            {/* Metric cards (importable globalStats) */}
+            {/* Metric cards */}
             <Row gutter={[16, 16]} style={{ marginBottom: 12 }}>
                 {[
                     {
@@ -502,16 +571,27 @@ const OperationsCompliance: React.FC = () => {
                     }
                 ].map((m, idx) => (
                     <Col xs={24} sm={12} md={8} lg={4} key={m.title}>
-                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: idx * 0.05 }}>
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.3, delay: idx * 0.05 }}
+                        >
                             <Card
                                 loading={loading || identityLoading}
-                                style={{
-                                    borderRadius: 10,
-                                    boxShadow: '0 8px 20px rgba(0,0,0,0.08)'
-                                }}
+                                style={{ borderRadius: 10, boxShadow: '0 8px 20px rgba(0,0,0,0.08)' }}
                             >
                                 <Space>
-                                    <div style={{ width: 34, height: 34, borderRadius: 999, background: m.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <div
+                                        style={{
+                                            width: 34,
+                                            height: 34,
+                                            borderRadius: 999,
+                                            background: m.bg,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                        }}
+                                    >
                                         {React.cloneElement(m.icon as any, { style: { color: m.color } })}
                                     </div>
                                     <div>
@@ -607,6 +687,16 @@ const OperationsCompliance: React.FC = () => {
                                     </Tag>
                                 </Col>
                             ))}
+                            <Col>
+                                <Tag color="green" style={{ padding: '4px 10px', fontSize: 12 }}>
+                                    VERIFIED: {activeParticipant.counts.verified}
+                                </Tag>
+                            </Col>
+                            <Col>
+                                <Tag color="red" style={{ padding: '4px 10px', fontSize: 12 }}>
+                                    QUERIED: {activeParticipant.counts.queried}
+                                </Tag>
+                            </Col>
                         </Row>
 
                         <Table
@@ -666,9 +756,10 @@ const OperationsCompliance: React.FC = () => {
                         </Col>
                     </Row>
 
+                    {/* ✅ includes INVALID */}
                     <Form.Item name="status" label="Stored Status" rules={[{ required: true }]}>
                         <Select placeholder="Select status">
-                            {documentStatuses.map(s => (
+                            {statusOptions.map(s => (
                                 <Option key={s.value} value={s.value}>{s.label}</Option>
                             ))}
                         </Select>
@@ -679,9 +770,16 @@ const OperationsCompliance: React.FC = () => {
                     </Form.Item>
 
                     <Form.Item label="Document File">
-                        <Upload {...uploadProps}>
+                        <Upload
+                            beforeUpload={file => {
+                                setUploadingFile(file as any)
+                                return false
+                            }}
+                            showUploadList
+                        >
                             <Button icon={<UploadOutlined />}>Choose file</Button>
                         </Upload>
+
                         {isUploading && (
                             <div style={{ marginTop: 8 }}>
                                 <Progress percent={uploadPercent} />
@@ -711,6 +809,20 @@ const OperationsCompliance: React.FC = () => {
             >
                 {verifyDoc && (
                     <>
+                        {norm(verifyDoc?.verificationStatusRaw) === 'queried' && (
+                            <Alert
+                                type="warning"
+                                showIcon
+                                message="Previously queried"
+                                description={
+                                    String(verifyDoc?.verificationComment || '').trim()
+                                        ? verifyDoc.verificationComment
+                                        : 'No query message saved.'
+                                }
+                                style={{ marginBottom: 12 }}
+                            />
+                        )}
+
                         <Alert
                             type={verifyDoc.effectiveStatus === 'invalid' ? 'warning' : 'info'}
                             showIcon
@@ -727,11 +839,12 @@ const OperationsCompliance: React.FC = () => {
                             </Descriptions.Item>
                         </Descriptions>
 
-                        <Form
-                            layout="vertical"
-                            onFinish={(v) => doVerify('queried', v.reason)}
-                        >
-                            <Form.Item name="reason" label="Reason (required to query)">
+                        <Form layout="vertical" onFinish={(v) => doVerify('queried', v.reason)}>
+                            <Form.Item
+                                name="reason"
+                                label="Reason (required to query)"
+                                rules={[{ required: true, message: 'Please enter a reason for the query.' }]}
+                            >
                                 <TextArea rows={3} placeholder="Why is this document being queried?" />
                             </Form.Item>
 
