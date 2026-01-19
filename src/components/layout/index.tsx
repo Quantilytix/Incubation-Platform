@@ -272,12 +272,12 @@ export const CustomLayout: React.FC = () => {
         label: 'M & E Monitoring',
         icon: <PieChartOutlined />
       },
-      {
-        key: 'impact',
-        to: '/projectadmin/impact',
-        label: 'Impact Analytics',
-        icon: <FundProjectionScreenOutlined />
-      },
+      // {
+      //   key: 'impact',
+      //   to: '/projectadmin/impact',
+      //   label: 'Impact Analytics',
+      //   icon: <FundProjectionScreenOutlined />
+      // },
       {
         key: 'reports',
         to: '/projectadmin/reports',
@@ -467,12 +467,12 @@ export const CustomLayout: React.FC = () => {
           }
         ]
       },
-      {
-        key: 'impact',
-        to: '/projectadmin/impact',
-        label: 'Impact Analytics',
-        icon: <FundProjectionScreenOutlined />
-      },
+      // {
+      //   key: 'impact',
+      //   to: '/projectadmin/impact',
+      //   label: 'Impact Analytics',
+      //   icon: <FundProjectionScreenOutlined />
+      // },
       {
         key: 'consultants',
         to: '/operations/consultants',
