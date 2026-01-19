@@ -151,8 +151,75 @@ export const useComplianceData = (companyCode?: string) => {
    * Writes still target applications.complianceDocuments array (your current model).
    * Later, swap these for subcollection writes without changing the UI.
    */
+  const sanitizeForFirestore = (input: any) => {
+    const bad: Array<{ path: string; reason: string; value: any }> = []
+
+    const isDayjs = (v: any) => !!v && typeof v === 'object' && v.$isDayjsObject
+
+    const walk = (value: any, path: string): any => {
+      if (value === undefined) {
+        bad.push({ path, reason: 'undefined', value })
+        return undefined
+      }
+
+      if (typeof value === 'number' && !Number.isFinite(value)) {
+        bad.push({ path, reason: 'non-finite number', value })
+        return null
+      }
+
+      if (isDayjs(value)) {
+        bad.push({ path, reason: 'dayjs object', value })
+        return value.format?.('YYYY-MM-DD') ?? String(value)
+      }
+
+      if (typeof value === 'function') {
+        bad.push({ path, reason: 'function', value })
+        return undefined
+      }
+
+      if (value instanceof Date) return value
+
+      if (Array.isArray(value)) {
+        const arr = value
+          .map((v, i) => walk(v, `${path}[${i}]`))
+          .filter(v => v !== undefined) // prune undefined array items
+        return arr
+      }
+
+      if (value && typeof value === 'object') {
+        // Firestore hates class instances; try to flatten
+        const proto = Object.getPrototypeOf(value)
+        const isPlain = proto === Object.prototype || proto === null
+        if (!isPlain && typeof (value as any)?.toDate !== 'function') {
+          bad.push({ path, reason: `non-plain object (${proto?.constructor?.name || 'unknown'})`, value })
+          try {
+            value = { ...value }
+          } catch {
+            return undefined
+          }
+        }
+
+        const out: any = {}
+        for (const [k, v] of Object.entries(value)) {
+          const next = walk(v, path ? `${path}.${k}` : k)
+          if (next !== undefined) out[k] = next
+        }
+        return out
+      }
+
+      return value
+    }
+
+    const sanitized = walk(input, '')
+    return { sanitized, bad }
+  }
+
   const updateDocumentInApplication = useCallback(
-    async (participantId: string, updater: (docs: RawComplianceDoc[]) => RawComplianceDoc[]) => {
+    async (
+      participantId: string,
+      updater: (docs: RawComplianceDoc[]) => RawComplianceDoc[],
+      opts?: { prune?: boolean } // default: prune true
+    ) => {
       if (!companyCode) throw new Error('Missing companyCode')
 
       const appSnap = await getDocs(
@@ -164,16 +231,42 @@ export const useComplianceData = (companyCode?: string) => {
       )
       if (appSnap.empty) throw new Error('Application not found')
 
-      const appRef = doc(db, 'applications', appSnap.docs[0].id)
-      const appData = appSnap.docs[0].data() as any
-      const currentDocs = (appData.complianceDocuments || []) as RawComplianceDoc[]
-      const nextDocs = updater(currentDocs)
+      const appDoc = appSnap.docs[0]
+      const appId = appDoc.id
+      const appRef = doc(db, 'applications', appId)
 
-      await updateDoc(appRef, { complianceDocuments: nextDocs })
+      const appData = appDoc.data() as any
+      const currentDocs = (appData.complianceDocuments || []) as RawComplianceDoc[]
+
+      const nextDocsRaw = updater(currentDocs)
+
+      // ✅ validate + sanitize
+      const { sanitized, bad } = sanitizeForFirestore(nextDocsRaw)
+
+      if (bad.length) {
+        console.warn('[Compliance] updateDoc invalid data detected', {
+          appId,
+          participantId,
+          companyCode,
+          bad: bad.slice(0, 80) // show paths
+        })
+      }
+
+      const prune = opts?.prune ?? true
+
+      if (bad.length && !prune) {
+        // strict mode: stop and show the first offending path
+        throw new Error(`Invalid Firestore data at: ${bad[0].path} (${bad[0].reason})`)
+      }
+
+      // ✅ write PRUNED docs if needed (or same docs if clean)
+      await updateDoc(appRef, { complianceDocuments: sanitized })
+
       await refetch()
     },
     [companyCode, refetch]
   )
+
 
   const verifyDocument = useCallback(
     async (participantId: string, docId: string | undefined, composite: { type?: string; documentName?: string; expiryDate?: any }, status: 'verified' | 'queried', comment?: string, userName?: string) => {
@@ -196,9 +289,9 @@ export const useComplianceData = (companyCode?: string) => {
             verificationComment: comment || '',
             lastVerifiedBy: userName || 'Unknown',
             lastVerifiedAt: new Date().toISOString().split('T')[0],
-            // align with your old behavior
-            status: status === 'queried' ? 'invalid' : d.status
+            status: status === 'queried' ? 'invalid' : 'valid',
           }
+
         })
       })
     },
