@@ -488,6 +488,12 @@ export const CustomLayout: React.FC = () => {
           }
         ]
       },
+       {
+                key: 'lms',
+                label: 'LMS',
+                icon: <DiffOutlined />,
+                to: '/lms/operations/courses'
+       },
       {
         key: 'interventions',
         to: '/interventions',
