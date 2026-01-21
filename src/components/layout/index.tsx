@@ -318,18 +318,7 @@ export const CustomLayout: React.FC = () => {
         key: 'allocated',
         label: 'Interventions',
         icon: <FileProtectOutlined />,
-        children: [
-          {
-            key: 'allocated-active',
-            label: 'Active',
-            to: '/consultant/allocated'
-          },
-          {
-            key: 'allocated-history',
-            label: 'History',
-            to: '/consultant/allocated/history'
-          }
-        ]
+      to: '/consultant/allocated'
       },
       {
         key: 'tasksEvents',
