@@ -809,7 +809,7 @@ export const TasksEventsPage: React.FC = () => {
             </Row>
 
             {/* Content (Segmented replaces Tabs) */}
-            <Card style={{ borderRadius: 12 }}>
+            <MotionCard style={{ borderRadius: 12 }}>
                 {viewMode === 'events' ? (
                     filteredEvents.length ? (
                         <Table
@@ -833,7 +833,7 @@ export const TasksEventsPage: React.FC = () => {
                 ) : (
                     <Empty description="No tasks match your filters." />
                 )}
-            </Card>
+            </MotionCard>
 
             {/* Existing modals */}
             <EventModal
