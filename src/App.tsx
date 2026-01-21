@@ -145,6 +145,13 @@ import InterventionDatabaseView from './routes/interventions'
 
 import { TasksEventsPage } from './routes/tasksEvents'
 
+// Courses Routing
+import CoursesManager from './routes/lms/operations/courses'
+import { OperationsEnrollments } from './routes/lms/operations/enrollments'
+import { OperationsGrades } from './routes/lms/operations/grades'
+import CourseBuilder from './routes/lms/operations/courses/[id]'
+import CourseAnalytics from './routes/lms/operations/analytics'
+
 const queryClient = new QueryClient()
 
 const App = () => {
@@ -410,6 +417,15 @@ const App = () => {
                         element={<GenericProgramExpenseForm />}
                       />
                       <Route path='system' element={<SystemSetupForm />} />
+                      
+                       <Route path='lms/operations'>
+                                                <Route index element={<CoursesManager />} />
+                                                <Route path='courses/:id' element={<CourseBuilder />} />
+                                                <Route path='courses' element={<CoursesManager />} />
+                                                <Route path='enrollments' element={<OperationsEnrollments />} />
+                                                <Route path='grades' element={<OperationsGrades />} />
+                                                <Route path='analytics/:id' element={<CourseAnalytics />} />
+                                            </Route>
 
                       <Route
                         path='applications'
