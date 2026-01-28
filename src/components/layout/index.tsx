@@ -315,12 +315,56 @@ export const CustomLayout: React.FC = () => {
         label: 'Dashboard',
         icon: <DashboardOutlined />
       },
-      {
-        key: 'allocated',
-        label: 'Interventions',
-        icon: <FileProtectOutlined />,
-      to: '/consultant/allocated'
-      },
+        {
+                key: 'allocated',
+                label: 'Interventions',
+                icon: <FileProtectOutlined />,
+                children: [
+                    {
+                        key: 'allocated-active',
+                        label: 'Active',
+                        to: '/consultant/allocated',
+                        icon: <BarChartOutlined />
+                    },
+                    {
+                        key: 'interventions-calendar',
+                        to: '/operations/indicative',
+                        label: 'Indicative Calendar',
+                        icon: <CalendarOutlined />
+                    }
+                ]
+            },
+        {
+                key: 'participants',
+                label: 'Incubatees',
+                icon: <TeamOutlined />,
+                children: [
+                    {
+                        key: 'participants-db',
+                        to: '/operations/participants',
+                        label: 'View All',
+                        icon: <DatabaseOutlined />
+                    },
+                    {
+                        key: 'diagnostics',
+                        to: '/operations/diagnostics',
+                        label: 'Growth Plans',
+                        icon: <SolutionOutlined />
+                    },
+                    {
+                        key: 'applications',
+                        to: '/applications',
+                        label: 'Applications',
+                        icon: <FormOutlined />
+                    },
+                    {
+                        key: 'compliance',
+                        to: '/operations/compliance',
+                        label: 'Compliance',
+                        icon: <CheckSquareOutlined />
+                    }
+                ]
+            },
       {
         key: 'tasksEvents',
         to: '/tasksEvents',
