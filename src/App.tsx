@@ -77,6 +77,7 @@ import TemplatesPage from './components/forms'
 import FormBuilderPage from './components/forms/builder/[id]'
 import FormSubmission from './components/form-submission/FormSubmission'
 import IndicativeCalendar from './components/calendar/IndicativeCalendar'
+import ParticipantOnboardingForm from './routes/operations/participants/new/ParticipantOnboardingForm'
 // import from './components/assessments/PostAssessmentBuilder'
 
 // ───────────────────────────────────────────────────────────
