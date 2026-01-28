@@ -60,7 +60,7 @@ type UserRole =
 
 export const CustomLayout: React.FC = () => {
   const storage = getStorage()
-  const { user } = useFullIdentity()
+  const { user, loading: identityLoading } = useFullIdentity()
   const { mutate: logout } = useLogout()
   const { width } = useWindowSize()
   const isMobile = width < 768
@@ -69,19 +69,51 @@ export const CustomLayout: React.FC = () => {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [drawerVisible, setDrawerVisible] = useState(false)
 
-  useEffect(() => {
-    const fetchUserRole = async () => {
-      if (!user?.id) return
-      const docRef = doc(db, 'users', String(user.id))
-      const userSnap = await getDoc(docRef)
-      if (userSnap.exists()) {
-        const userData = userSnap.data()
-        const cleanRole = userData.role?.toLowerCase()?.replace(/\s+/g, '')
-        setRole(cleanRole)
-      }
-    }
-    fetchUserRole()
-  }, [user])
+     // Fetch role
+    useEffect(() => {
+        const run = async () => {
+            // ✅ wait for identity hook to finish
+            if (identityLoading) return
+
+            // ✅ get uid safely (from hook OR firebase auth)
+            const uid = String(user?.id || (user as any)?.uid || auth.currentUser?.uid || '')
+            if (!uid) {
+                console.warn('CustomLayout: missing uid from identity/auth')
+                setRole(null)
+                return
+            }
+
+            // ✅ fastest path: if your hook already provides role, use it
+            const roleFromHook = String((user as any)?.role || '').toLowerCase().replace(/\s+/g, '')
+            if (roleFromHook) {
+                setRole(roleFromHook as any)
+                return
+            }
+
+            try {
+                const snap = await getDoc(doc(db, 'users', uid))
+
+                if (!snap.exists()) {
+                    console.warn('CustomLayout: /users doc missing for uid', uid)
+
+                    // ✅ IMPORTANT: don’t spin forever — send them to login or show error
+                    setRole(null)
+                    return
+                }
+
+                const cleanRole = String(snap.data()?.role || '')
+                    .toLowerCase()
+                    .replace(/\s+/g, '')
+
+                setRole(cleanRole as any)
+            } catch (e) {
+                console.error('CustomLayout: role fetch failed', e)
+                setRole(null)
+            }
+        }
+
+        run()
+    }, [identityLoading, user])
 
   // Close drawer when resizing to desktop
   useEffect(() => {
