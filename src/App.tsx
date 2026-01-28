@@ -362,10 +362,20 @@ const App = () => {
                           path='assessments/post'
                           element={<PostAssessmentBuilder />}
                         /> */}
-                        <Route
-                          path='participants'
-                          element={<OperationsParticipantsManagement />}
-                        />
+                                                                       <Route path='participants'>
+                                                    <Route
+                                                        index
+                                                        element={<OperationsParticipantsManagement />}
+                                                    />
+                                                    <Route
+                                                        path='new'
+                                                        element={<ParticipantOnboardingForm />}
+                                                    />
+                                                    <Route
+                                                        path='success'
+                                                        element={<ParticipantSuccess />}
+                                                    />
+                                                </Route>
                         <Route
                           path='/operations/participants/:participantId/performance'
                           element={<IncubateePerformancePage />}
