@@ -76,6 +76,7 @@ import FormResponseViewer from './components/form-response-viewer/FormResponseVi
 import TemplatesPage from './components/forms'
 import FormBuilderPage from './components/forms/builder/[id]'
 import FormSubmission from './components/form-submission/FormSubmission'
+import PostAssessmentBuilder from './components/assessments/PostAssessmentBuilder'
 import IndicativeCalendar from './components/calendar/IndicativeCalendar'
 import ParticipantOnboardingForm from './routes/operations/participants/new/ParticipantOnboardingForm'
 // import from './components/assessments/PostAssessmentBuilder'
@@ -359,11 +360,16 @@ const App = () => {
                           path='surveys/view'
                           element={<FormResponseViewer />}
                         />
-                        {/* <Route
-                          path='assessments/post'
-                          element={<PostAssessmentBuilder />}
-                        /> */}
-                                                                       <Route path='participants'>
+                           <Route
+                                                    path='assessments/builder/:id'
+                                                    element={<PostAssessmentBuilder />}
+                                                />
+
+                                                <Route
+                                                    path='assessments/post'
+                                                    element={<PostAssessmentBuilder />}
+                                                />
+                                                                                             <Route path='participants'>
                                                     <Route
                                                         index
                                                         element={<OperationsParticipantsManagement />}
