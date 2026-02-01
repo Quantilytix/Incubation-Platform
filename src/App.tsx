@@ -109,6 +109,9 @@ import IncubateeLayout from './components/IncubateeLayout'
 import IncubateeAnalytics from './routes/incubatee/analytics'
 import ProfileForm from './routes/incubatee/profile'
 import GrowthPlanPage from './routes/incubatee/diagnostic'
+import IncubateeFormsInbox from './routes/incubatee/inbox'
+
+
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Consultant Routes
@@ -253,6 +256,10 @@ const App = () => {
                           path='interventions'
                           element={<InterventionsTrackingView />}
                         />
+                        <Route
+                                                    path='forms'
+                                                    element={<IncubateeFormsInbox />}
+                                                />
                         <Route
                           path='/incubatee/diagnostic'
                           element={<GrowthPlanPage />}
