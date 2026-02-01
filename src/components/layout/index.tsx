@@ -37,7 +37,8 @@ import {
   OneToOneOutlined,
   LogoutOutlined,
   EyeOutlined,
-     DiffOutlined
+     DiffOutlined,
+  SearchOutlined
 } from '@ant-design/icons'
 import { getStorage } from 'firebase/storage'
 import { CompanyLogo } from '../CompanyLogo'
