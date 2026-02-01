@@ -469,12 +469,12 @@ export const CustomLayout: React.FC = () => {
         label: 'My Dashboard',
         icon: <DashboardOutlined />
       },
-      //   {
-      //     key: 'surveys',
-      //     to: '/incubatee/surveys',
-      //     label: 'Surveys',
-      //     icon: <FormOutlined />
-      //   },
+     {
+                key: 'forms',
+                to: '/incubatee/forms',
+                label: 'Forms',
+                icon: <SolutionOutlined />
+            },
       {
         key: 'diagnostic',
         to: '/incubatee/diagnostic',
@@ -485,7 +485,7 @@ export const CustomLayout: React.FC = () => {
         key: 'interventions',
         to: '/incubatee/interventions',
         label: 'Tracker',
-        icon: <SolutionOutlined />
+        icon: <SearchOutlined />
       },
       {
         key: 'metrics',
