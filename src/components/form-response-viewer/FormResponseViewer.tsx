@@ -1,3 +1,4 @@
+// src/pages/FormResponseViewer.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import {
     Card,
@@ -33,19 +34,19 @@ import {
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { CSVLink } from 'react-csv'
-
-// If you already have this component in your project (you mentioned it), keep this import.
-// If your path differs, adjust it.
 import { DashboardHeaderCard, MotionCard } from '../shared/Header'
+import { Helmet } from 'react-helmet'
 
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import WordcloudModule from 'highcharts/modules/wordcloud'
 
+// ✅ make sure this path matches your project
+import { useFullIdentity } from '@/hooks/useFullIdentity'
+
 if (typeof WordcloudModule === 'function') {
     WordcloudModule(Highcharts)
 }
-
 
 const { Text } = Typography
 const { Option } = Select
@@ -61,6 +62,9 @@ interface FormField {
     required: boolean
     options?: string[]
     description?: string
+    // assessment templates may include this
+    correctAnswer?: string
+    name?: string
 }
 
 interface FormTemplate {
@@ -69,7 +73,8 @@ interface FormTemplate {
     description: string
     category: string
     fields: FormField[]
-    status: 'draft' | 'published'
+    status?: 'draft' | 'published' | string
+    companyCode?: string
 }
 
 interface FormResponse {
@@ -86,55 +91,51 @@ interface FormResponse {
     submittedAt: any
     status?: string
     notes?: string
+
+    // sometimes present
+    kind?: 'survey' | 'assessment'
+    companyCode?: string
 }
 
 interface Props {
-    formId?: string // optional: preselect a form
+    formId?: string
 }
 
+type KindFilter = 'all' | 'survey' | 'assessment'
+
 const STOP_WORDS = new Set([
-    'the',
-    'and',
-    'a',
-    'an',
-    'to',
-    'of',
-    'in',
-    'for',
-    'on',
-    'with',
-    'is',
-    'are',
-    'was',
-    'were',
-    'be',
-    'been',
-    'it',
-    'this',
-    'that',
-    'i',
-    'we',
-    'you',
-    'they',
-    'he',
-    'she',
-    'them',
-    'us',
-    'our',
-    'your',
-    'as',
-    'at',
-    'by',
-    'from',
-    'or',
-    'but',
-    'not',
-    'so',
-    'if'
+    'the', 'and', 'a', 'an', 'to', 'of', 'in', 'for', 'on', 'with', 'is', 'are', 'was', 'were', 'be', 'been', 'it',
+    'this', 'that', 'i', 'we', 'you', 'they', 'he', 'she', 'them', 'us', 'our', 'your', 'as', 'at', 'by', 'from',
+    'or', 'but', 'not', 'so', 'if'
 ])
+
+// ✅ classify templates/responses
+const ASSESSMENT_CATEGORIES = new Set(['post_intervention', 'general'])
+const isAssessmentCategory = (cat?: string) => ASSESSMENT_CATEGORIES.has(String(cat || ''))
+
+const CHOICE_TYPES = new Set([
+    'radio',
+    'select',
+    'dropdown',
+    'checkbox',
+    'multiselect',
+    'multi_select',
+    'mcq',
+    'multiple_choice'
+])
+
+const chunk = <T,>(arr: T[], size: number) => {
+    const out: T[][] = []
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+    return out
+}
 
 const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     const { message } = App.useApp()
+    const { user } = useFullIdentity() as any
+    const myEmail = String(user?.email || '')
+    const myCompany = String(user?.companyCode || '')
+    const isMainDomain = myEmail.toLowerCase().endsWith('@quantilytix.co.za')
 
     // UI state
     const [loading, setLoading] = useState(true)
@@ -143,6 +144,12 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     const [selectedTemplate, setSelectedTemplate] = useState<string | undefined>(formId)
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
     const [searchText, setSearchText] = useState('')
+    const [kindFilter, setKindFilter] = useState<KindFilter>('all')
+
+    // company filter
+    const [selectedCompany, setSelectedCompany] = useState<string>(
+        isMainDomain ? 'all' : (myCompany || 'all')
+    )
 
     // view modal
     const [viewOpen, setViewOpen] = useState(false)
@@ -161,34 +168,22 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     // -------- date helpers --------
     const toDateSafe = (v: any): Date | null => {
         if (!v) return null
-
-        // Firestore Timestamp
         if (typeof v?.toDate === 'function') {
-            try {
-                return v.toDate()
-            } catch {
-                // ignore
-            }
+            try { return v.toDate() } catch { }
         }
-
-        // Firestore { seconds, nanoseconds }
         if (typeof v?.seconds === 'number') {
             const ms = v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6)
             return new Date(ms)
         }
-
         if (v instanceof Date) return v
-
         if (typeof v === 'number') {
             const ms = v < 10_000_000_000 ? v * 1000 : v
             return new Date(ms)
         }
-
         if (typeof v === 'string') {
             const d = new Date(v)
             return isNaN(d.getTime()) ? null : d
         }
-
         return null
     }
 
@@ -197,15 +192,50 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
         return d ? d.toLocaleString() : '-'
     }
 
-    // -------- answer helpers --------
+    // -------- template index --------
+    const templateById = useMemo(() => {
+        const m = new Map<string, FormTemplate>()
+        templates.forEach(t => m.set(t.id, t))
+        return m
+    }, [templates])
+
     const getAnswers = (r: FormResponse): AnswersMap => (r.answers ?? r.responses ?? {}) as AnswersMap
 
     const getTemplateForResponse = (r: FormResponse) => {
         const id = r.templateId || r.formId
         if (!id) return null
-        return templates.find(t => t.id === id) || null
+        return templateById.get(id) || null
     }
 
+    const getKindForTemplate = (t?: FormTemplate | null): 'survey' | 'assessment' | 'unknown' => {
+        if (!t) return 'unknown'
+        return isAssessmentCategory(t.category) ? 'assessment' : 'survey'
+    }
+
+    const getKindForResponse = (r: FormResponse): 'survey' | 'assessment' | 'unknown' => {
+        if (r.kind === 'survey' || r.kind === 'assessment') return r.kind
+        const t = getTemplateForResponse(r)
+        return getKindForTemplate(t)
+    }
+
+    const getCompanyForResponse = (r: FormResponse): string => {
+        // ✅ prefer response companyCode, else template companyCode
+        if (r.companyCode) return String(r.companyCode)
+        const t = getTemplateForResponse(r)
+        if (t?.companyCode) return String(t.companyCode)
+        return 'UNKNOWN'
+    }
+
+    const companyOptions = useMemo(() => {
+        const s = new Set<string>()
+        templates.forEach(t => t.companyCode && s.add(String(t.companyCode)))
+        // if responses carry companyCode that templates don’t, still include:
+        responses.forEach(r => r.companyCode && s.add(String(r.companyCode)))
+        const arr = Array.from(s).sort()
+        return arr
+    }, [templates, responses])
+
+    // -------- analytics helpers --------
     const tryParseLikert = (v: any): number | null => {
         if (v === null || v === undefined) return null
         const n = typeof v === 'number' ? v : Number(String(v).trim())
@@ -221,16 +251,11 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                 .replace(/[^a-z0-9\s]/g, ' ')
                 .split(/\s+/)
                 .filter(w => w.length >= 3 && !STOP_WORDS.has(w))
-
             for (const w of words) freq.set(w, (freq.get(w) || 0) + 1)
         }
-
-        return Array.from(freq.entries())
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 30) // more words helps the cloud
+        return Array.from(freq.entries()).sort((a, b) => b[1] - a[1]).slice(0, 30)
     }
 
-    // -------- chart option builders --------
     const wordcloudOptions = (title: string, keywords: Array<[string, number]>) => ({
         chart: { height: 320 },
         title: { text: title },
@@ -244,33 +269,28 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
         ]
     })
 
+
     const radarLikertOptions = (title: string, dist: Record<number, number>) => ({
         chart: { polar: true, type: 'column', height: 320 },
         title: { text: title },
         credits: { enabled: false },
-
         xAxis: {
             categories: ['1', '2', '3', '4', '5'],
             tickmarkPlacement: 'on',
             lineWidth: 0
         },
-
         yAxis: {
             gridLineInterpolation: 'polygon',
             min: 0,
             title: { text: '' }
         },
-
         tooltip: { shared: true },
-
         plotOptions: {
             series: {
-                // keeps it looking like a filled “spider”
                 fillOpacity: 0.25,
                 marker: { enabled: true }
             }
         },
-
         series: [
             {
                 name: 'Responses',
@@ -279,63 +299,108 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
         ]
     })
 
+    const choiceColumnOptions = (title: string, dist: Array<{ name: string; y: number }>) => ({
+        chart: { type: 'column', height: 320 },
+        title: { text: title },
+        credits: { enabled: false },
+        xAxis: { type: 'category', labels: { rotation: -20 } },
+        yAxis: { min: 0, title: { text: 'Count' } },
+        tooltip: { pointFormat: '<b>{point.y}</b>' },
+        series: [
+            { name: 'Count', type: 'column' as const, data: dist.map(d => [d.name, d.y]) }
+        ]
+    })
 
-    // -------- load templates (published only) --------
+    // -------- load templates --------
     useEffect(() => {
         ; (async () => {
             try {
-                const tSnap = await getDocs(
-                    query(collection(db, 'formTemplates'), where('status', '==', 'published'))
-                )
-                const t: FormTemplate[] = tSnap.docs.map(d => ({
-                    id: d.id,
-                    ...(d.data() as Omit<FormTemplate, 'id'>)
-                }))
+                const colRef = collection(db, 'formTemplates')
+
+                // ✅ don’t hide templates just because status is not exactly "published"
+                // (your assessment template may be "active" or missing status)
+                let qRef: any
+
+                if (!isMainDomain && myCompany) {
+                    qRef = query(colRef, where('companyCode', '==', myCompany))
+                } else {
+                    qRef = query(colRef)
+                }
+
+                const snap = await getDocs(qRef)
+                const t: FormTemplate[] = snap.docs
+                    .map(d => ({ id: d.id, ...(d.data() as any) }))
+                    .filter(x => x) // keep all; we filter via UI, and via publishedIds for responses display
                 setTemplates(t)
             } catch (e) {
                 console.error(e)
                 message.error('Failed to load form templates')
             }
         })()
-    }, [message])
+    }, [message, isMainDomain, myCompany])
 
-    // -------- load responses (templateId + legacy formId) --------
+    // -------- load responses (respect company via templateId fallback) --------
     useEffect(() => {
         ; (async () => {
             try {
                 setLoading(true)
                 const colRef = collection(db, 'formResponses')
 
-                let primaryQ = selectedTemplate
-                    ? query(colRef, where('templateId', '==', selectedTemplate), orderBy('submittedAt', sortOrder))
-                    : query(colRef, orderBy('submittedAt', sortOrder))
+                const merged = new Map<string, FormResponse>()
 
-                const pSnap = await getDocs(primaryQ)
-                let rows: FormResponse[] = pSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
+                const addRows = (rows: FormResponse[]) => {
+                    rows.forEach(r => merged.set(r.id, r))
+                }
 
+                // If a template is selected, keep it simple (still include legacy formId)
                 if (selectedTemplate) {
-                    const legacyQ = query(colRef, where('formId', '==', selectedTemplate), orderBy('submittedAt', sortOrder))
-                    const lSnap = await getDocs(legacyQ)
-                    const legacyRows: FormResponse[] = lSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
+                    const q1 = query(colRef, where('templateId', '==', selectedTemplate), orderBy('submittedAt', sortOrder))
+                    const s1 = await getDocs(q1)
+                    addRows(s1.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
 
-                    const merged = new Map(rows.map(r => [r.id, r]))
-                    legacyRows.forEach(r => merged.set(r.id, r))
-                    rows = Array.from(merged.values())
+                    const q2 = query(colRef, where('formId', '==', selectedTemplate), orderBy('submittedAt', sortOrder))
+                    const s2 = await getDocs(q2)
+                    addRows(s2.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
+
+                    setResponses(Array.from(merged.values()))
+                    return
                 }
 
-                // ✅ Filter out draft/unknown templates when templates are loaded (published list)
-                if (templates.length > 0) {
-                    const publishedIds = new Set(templates.map(t => t.id))
-                    const allowSelected = selectedTemplate ? new Set([selectedTemplate]) : new Set<string>()
-
-                    rows = rows.filter(r => {
-                        const id = r.templateId || r.formId
-                        if (!id) return false
-                        return publishedIds.has(id) || allowSelected.has(id)
-                    })
+                // No selected template:
+                if (isMainDomain) {
+                    const qAll = query(colRef, orderBy('submittedAt', sortOrder))
+                    const sAll = await getDocs(qAll)
+                    addRows(sAll.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
+                    setResponses(Array.from(merged.values()))
+                    return
                 }
 
-                setResponses(rows)
+                // Non-main domain: pull by companyCode AND by templateId (to catch missing companyCode on responses)
+                const companyTemplates = templates.filter(t => String(t.companyCode || '') === myCompany)
+                const companyTemplateIds = companyTemplates.map(t => t.id)
+
+                // (A) responses that already have companyCode
+                if (myCompany) {
+                    const qByCompany = query(colRef, where('companyCode', '==', myCompany), orderBy('submittedAt', sortOrder))
+                    const sByCompany = await getDocs(qByCompany)
+                    addRows(sByCompany.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
+                }
+
+                // (B) responses missing companyCode but linked to our company templates
+                // Firestore "in" supports up to 10 values
+                for (const ids of chunk(companyTemplateIds, 10)) {
+                    if (!ids.length) continue
+                    const qByTpl = query(colRef, where('templateId', 'in', ids), orderBy('submittedAt', sortOrder))
+                    const sByTpl = await getDocs(qByTpl)
+                    addRows(sByTpl.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
+
+                    // legacy formId too
+                    const qByFormId = query(colRef, where('formId', 'in', ids), orderBy('submittedAt', sortOrder))
+                    const sByFormId = await getDocs(qByFormId)
+                    addRows(sByFormId.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
+                }
+
+                setResponses(Array.from(merged.values()))
             } catch (e) {
                 console.error(e)
                 message.error('Failed to load form responses')
@@ -343,17 +408,51 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                 setLoading(false)
             }
         })()
-    }, [selectedTemplate, sortOrder, message, templates])
+    }, [selectedTemplate, sortOrder, message, templates, isMainDomain, myCompany])
 
-    // -------- search filter --------
+    // -------- template list respects kind + company filters --------
+    const filteredTemplates = useMemo(() => {
+        const base = templates
+
+        const byCompany =
+            selectedCompany === 'all'
+                ? base
+                : base.filter(t => String(t.companyCode || '') === selectedCompany)
+
+        if (kindFilter === 'all') return byCompany
+
+        return byCompany.filter(t =>
+            kindFilter === 'assessment'
+                ? isAssessmentCategory(t.category)
+                : !isAssessmentCategory(t.category)
+        )
+    }, [templates, kindFilter, selectedCompany])
+
+    // -------- response filters (company + kind + search) --------
     const filtered = useMemo(() => {
-        if (!searchText) return responses
-        const s = searchText.toLowerCase()
-        return responses.filter(r => {
-            const who = `${r.submittedBy?.name || ''} ${r.submittedBy?.email || ''}`.toLowerCase()
-            return (r.formTitle || '').toLowerCase().includes(s) || who.includes(s)
-        })
-    }, [responses, searchText])
+        let arr = [...responses]
+
+        // company filter via response.companyCode OR template.companyCode
+        if (selectedCompany !== 'all') {
+            arr = arr.filter(r => getCompanyForResponse(r) === selectedCompany)
+        }
+
+        // kind filter
+        if (kindFilter !== 'all') {
+            arr = arr.filter(r => getKindForResponse(r) === kindFilter)
+        }
+
+        // search filter
+        if (searchText) {
+            const s = searchText.toLowerCase()
+            arr = arr.filter(r => {
+                const who = `${r.submittedBy?.name || ''} ${r.submittedBy?.email || ''}`.toLowerCase()
+                return (r.formTitle || '').toLowerCase().includes(s) || who.includes(s)
+            })
+        }
+
+        return arr
+    }, [responses, searchText, kindFilter, selectedCompany, templateById])
 
     // -------- stable ordering (group by form, then date) --------
     const groupedSorted = useMemo(() => {
@@ -377,94 +476,115 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     // -------- metrics --------
     const metrics = useMemo(() => {
         const total = filtered.length
+        const surveys = filtered.filter(r => getKindForResponse(r) === 'survey').length
+        const assessments = filtered.filter(r => getKindForResponse(r) === 'assessment').length
+
         const uniqueForms = new Set(filtered.map(r => r.formTitle || 'Unknown')).size
-        const uniqueSubmitters = new Set(
-            filtered.map(r => r.submittedBy?.email || r.submittedBy?.id || 'unknown')
-        ).size
+        const uniqueSubmitters = new Set(filtered.map(r => r.submittedBy?.email || r.submittedBy?.id || 'unknown')).size
+
         const latestMs = filtered
             .map(r => toDateSafe(r.submittedAt)?.getTime() ?? 0)
             .reduce((m, v) => Math.max(m, v), 0)
 
         return {
             total,
+            surveys,
+            assessments,
             uniqueForms,
             uniqueSubmitters,
             latest: latestMs ? new Date(latestMs).toLocaleString() : '-'
         }
-    }, [filtered])
+    }, [filtered, templateById])
 
-    // -------- CSV generation based on groupedSorted --------
+    // -------- CSV generation (pivot: one form -> questions as columns) --------
     useEffect(() => {
-        if (!groupedSorted.length) {
+        // We only do pivot export when a template is selected
+        if (!selectedTemplate) {
             setCsvData([])
             setCsvHeaders([])
             return
         }
 
-        const template =
-            templates.find(t => t.id === (selectedTemplate || groupedSorted[0]?.templateId || groupedSorted[0]?.formId)) ||
-            null
+        const template = templates.find(t => t.id === selectedTemplate) || null
+        const rowsForThisForm = groupedSorted.filter(r => {
+            const tid = r.templateId || r.formId
+            return tid === selectedTemplate
+        })
 
-        const baseHeaders: { label: string; key: string }[] = [
-            { label: 'Form', key: 'formTitle' },
-            { label: 'Submitter Name', key: 'submitter_name' },
-            { label: 'Submitter Email', key: 'submitter_email' },
-            { label: 'Submitted At', key: 'submittedAt' },
-            { label: 'Status', key: 'status' }
-        ]
-
-        let fieldHeaders: { label: string; key: string }[] = []
-        if (template) {
-            fieldHeaders = (template.fields || [])
-                .filter(f => f.type !== 'heading')
-                .map(f => ({ label: f.label || 'Field', key: `field__${f.id}` }))
-        } else {
-            const answerKeys = new Set<string>()
-            groupedSorted.forEach(r => Object.keys(getAnswers(r)).forEach(k => answerKeys.add(k)))
-            fieldHeaders = Array.from(answerKeys).map(k => ({ label: k, key: `answer__${k}` }))
+        if (!rowsForThisForm.length) {
+            setCsvData([])
+            setCsvHeaders([])
+            return
         }
 
-        const data = groupedSorted.map(r => {
-            const answers = getAnswers(r)
+        // If template missing, fall back to answer keys (still pivoted)
+        const effectiveFields: Array<{ id: string; label: string; type?: string }> = template
+            ? (template.fields || [])
+                .filter(f => f.type !== 'heading')
+                .map(f => ({ id: f.id, label: f.label || f.id, type: f.type }))
+            : Array.from(
+                rowsForThisForm.reduce((acc, r) => {
+                    Object.keys(getAnswers(r)).forEach(k => acc.add(k))
+                    return acc
+                }, new Set<string>())
+            ).map(k => ({ id: k, label: k }))
 
+        // 1) Headers: respondent first, then each question label
+        // Use stable keys (based on field id) to avoid collisions.
+        const headers: { label: string; key: string }[] = [
+            { label: 'Respondent Name', key: 'respondent_name' },
+            { label: 'Respondent Email', key: 'respondent_email' },
+            { label: 'Submitted At', key: 'submitted_at' },
+            ...effectiveFields.map(f => ({
+                label: f.label,
+                key: `q__${f.id}`
+            }))
+        ]
+
+        // 2) Data: one row per response
+        const data = rowsForThisForm.map(r => {
+            const answers = getAnswers(r)
             const row: Record<string, any> = {
-                formTitle: r.formTitle,
-                submitter_name: r.submittedBy?.name || '',
-                submitter_email: r.submittedBy?.email || '',
-                submittedAt: formatDateTime(r.submittedAt),
-                status: (r.status || 'submitted').toUpperCase()
+                respondent_name: r.submittedBy?.name || '',
+                respondent_email: r.submittedBy?.email || '',
+                submitted_at: formatDateTime(r.submittedAt)
             }
 
-            if (template) {
-                template.fields.forEach(f => {
-                    if (f.type === 'heading') return
-                    const v = answers[f.id]
-                    row[`field__${f.id}`] = Array.isArray(v)
-                        ? v.join(', ')
-                        : typeof v === 'object' && v !== null
-                            ? JSON.stringify(v)
-                            : v ?? ''
-                })
-            } else {
-                Object.entries(answers).forEach(([k, v]) => {
-                    row[`answer__${k}`] = Array.isArray(v)
-                        ? v.join(', ')
-                        : typeof v === 'object' && v !== null
-                            ? JSON.stringify(v)
-                            : v ?? ''
-                })
+            for (const f of effectiveFields) {
+                const v = answers?.[f.id]
+                row[`q__${f.id}`] = Array.isArray(v)
+                    ? v.join(', ')
+                    : typeof v === 'object' && v !== null
+                        ? JSON.stringify(v)
+                        : (v ?? '')
             }
 
             return row
         })
 
-        setCsvHeaders([...baseHeaders, ...fieldHeaders])
+        setCsvHeaders(headers)
         setCsvData(data)
-    }, [groupedSorted, templates, selectedTemplate])
+    }, [selectedTemplate, templates, groupedSorted])
+
 
     // -------- table columns --------
     const columns = [
         { title: 'Form', dataIndex: 'formTitle', key: 'formTitle' },
+        // {
+        //     title: 'Company',
+        //     key: 'company',
+        //     render: (_: any, r: FormResponse) => <Tag>{getCompanyForResponse(r)}</Tag>
+        // },
+        {
+            title: 'Type',
+            key: 'kind',
+            render: (_: any, r: FormResponse) => {
+                const k = getKindForResponse(r)
+                if (k === 'assessment') return <Tag color="geekblue">Assessment</Tag>
+                if (k === 'survey') return <Tag>Survey</Tag>
+                return <Tag>UNKNOWN</Tag>
+            }
+        },
         {
             title: 'Submitted By',
             dataIndex: 'submittedBy',
@@ -514,23 +634,17 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
 
     // -------- modal details --------
     const renderAnswerValue = (v: any) => {
-        const str = Array.isArray(v)
-            ? v.join(', ')
-            : typeof v === 'object' && v !== null
-                ? JSON.stringify(v)
-                : String(v ?? '')
-
+        const str = Array.isArray(v) ? v.join(', ') : typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v ?? '')
         if (!ansFilter) return str
         return str.toLowerCase().includes(ansFilter.toLowerCase()) ? str : null
     }
 
     const renderDetails = () => {
         if (!selectedResponse) return null
-
         const template = getTemplateForResponse(selectedResponse)
         const answers = getAnswers(selectedResponse)
+        const kind = getKindForResponse(selectedResponse)
 
-        // group using headings
         const groups: Record<string, FormField[]> = {}
         let current = 'General'
             ; (template?.fields || []).forEach(f => {
@@ -546,6 +660,10 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                 <Card size="small" style={{ marginBottom: 12, position: 'sticky', top: 0, zIndex: 1 }}>
                     <Descriptions title="Submission" bordered column={1} size="small">
                         <Descriptions.Item label="Form">{selectedResponse.formTitle}</Descriptions.Item>
+                        <Descriptions.Item label="Company">{getCompanyForResponse(selectedResponse)}</Descriptions.Item>
+                        <Descriptions.Item label="Type">
+                            {kind === 'assessment' ? <Tag color="geekblue">ASSESSMENT</Tag> : kind === 'survey' ? <Tag>SURVEY</Tag> : <Tag>UNKNOWN</Tag>}
+                        </Descriptions.Item>
                         <Descriptions.Item label="Submitted By">
                             {selectedResponse.submittedBy?.name || '-'} ({selectedResponse.submittedBy?.email || '-'})
                         </Descriptions.Item>
@@ -577,8 +695,9 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                                     if (v === undefined) return null
                                     const rendered = renderAnswerValue(v)
                                     if (rendered === null) return null
+
                                     return (
-                                        <Descriptions.Item key={f.id} label={f.label}>
+                                        <Descriptions.Item key={f.id} label={f.label || f.id}>
                                             {f.type === 'file' && typeof v === 'string' ? (
                                                 <a href={v} target="_blank" rel="noopener noreferrer">
                                                     View File
@@ -614,56 +733,55 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
         )
     }
 
-    // -------- consolidated summary --------
+    // -------- consolidated summary (fix MCQ vs TEXT + keep polar for likert) --------
     const renderConsolidatedSummary = () => {
         if (!groupedSorted.length) return <Empty description="No responses to summarize" />
 
-        // group by templateId/formId (more reliable than title)
         const byTemplate = new Map<string, { title: string; rows: FormResponse[] }>()
         for (const r of groupedSorted) {
             const tid = r.templateId || r.formId || '__unknown__'
             const existing = byTemplate.get(tid)
-            if (!existing) {
-                byTemplate.set(tid, { title: r.formTitle || 'Unknown Form', rows: [r] })
-            } else {
-                existing.rows.push(r)
-            }
+            if (!existing) byTemplate.set(tid, { title: r.formTitle || 'Unknown Form', rows: [r] })
+            else existing.rows.push(r)
         }
 
         return (
             <div>
                 {Array.from(byTemplate.entries()).map(([tid, { title, rows }]) => {
                     const t = templates.find(x => x.id === tid) || null
+                    const kind = t ? getKindForTemplate(t) : 'unknown'
+                    const company = t?.companyCode || (rows[0] ? getCompanyForResponse(rows[0]) : 'UNKNOWN')
 
-                    // fields excluding headings
                     const fields = (t?.fields || []).filter(f => f.type !== 'heading') as FormField[]
 
-                    // fallback keys if no template
                     const fallbackFields: FormField[] = !fields.length
                         ? Array.from(
                             rows.reduce((acc, r) => {
                                 Object.keys(getAnswers(r)).forEach(k => acc.add(k))
                                 return acc
                             }, new Set<string>())
-                        ).map(k => ({
-                            id: k,
-                            type: 'text',
-                            label: k,
-                            required: false
-                        }))
+                        ).map(k => ({ id: k, type: 'text', label: k, required: false }))
                         : []
 
                     const effectiveFields = fields.length ? fields : fallbackFields
 
                     const fieldBlocks = effectiveFields.map(f => {
-                        const values = rows
+                        const valuesRaw = rows
                             .map(r => getAnswers(r)[f.id])
                             .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
 
-                        if (!values.length) return null
+                        if (!valuesRaw.length) return null
 
-                        const likerts = values.map(tryParseLikert).filter((n): n is number => n !== null)
-                        const isLikert = likerts.length >= Math.max(3, Math.floor(values.length * 0.6))
+                        // normalize values
+                        const flatValues: any[] = []
+                        valuesRaw.forEach(v => {
+                            if (Array.isArray(v)) v.forEach(x => flatValues.push(x))
+                            else flatValues.push(v)
+                        })
+
+                        // Likert detection (even if template says "radio")
+                        const likerts = flatValues.map(tryParseLikert).filter((n): n is number => n !== null)
+                        const isLikert = likerts.length >= Math.max(3, Math.floor(flatValues.length * 0.6))
 
                         if (isLikert) {
                             const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
@@ -675,7 +793,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                                 <Card key={f.id} size="small" style={{ marginBottom: 10 }}>
                                     <Space direction="vertical" style={{ width: '100%' }} size={6}>
                                         <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
-                                            <Text strong>{f.label}</Text>
+                                            <Text strong>{f.label || f.id}</Text>
                                             <Tag color="blue">LIKERT</Tag>
                                         </Space>
 
@@ -703,10 +821,60 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
 
                                         <Collapse style={{ marginTop: 8 }}>
                                             <Panel header="Visual distribution (Spiderweb)" key="radar">
-                                                <HighchartsReact
-                                                    highcharts={Highcharts}
-                                                    options={radarLikertOptions(`Likert Distribution: ${f.label}`, dist)}
-                                                />
+                                                <HighchartsReact highcharts={Highcharts} options={radarLikertOptions(`Likert Distribution: ${f.label || f.id}`, dist)} />
+                                            </Panel>
+                                        </Collapse>
+                                    </Space>
+                                </Card>
+                            )
+                        }
+
+                        // ✅ MCQ / choice detection: template options OR known choice types OR answers look like "A) ...", "B) ..."
+                        const hasOptions = Array.isArray(f.options) && f.options.length > 0
+                        const looksLikeChoice = flatValues.some(v => /^[A-D]\)/.test(String(v).trim()))
+                        const isChoice = hasOptions || CHOICE_TYPES.has(String(f.type || '').toLowerCase()) || looksLikeChoice
+
+                        if (isChoice) {
+                            const freq = new Map<string, number>()
+                            flatValues.forEach(v => {
+                                const s = String(v).trim()
+                                if (!s) return
+                                freq.set(s, (freq.get(s) || 0) + 1)
+                            })
+
+                            // prefer template options order if present
+                            const distArr: Array<{ name: string; y: number }> = hasOptions
+                                ? f.options!.map(opt => ({ name: opt, y: freq.get(opt) || 0 }))
+                                : Array.from(freq.entries())
+                                    .sort((a, b) => b[1] - a[1])
+                                    .slice(0, 12)
+                                    .map(([name, y]) => ({ name, y }))
+
+                            const top = distArr.slice().sort((a, b) => b.y - a.y)[0]
+
+                            return (
+                                <Card key={f.id} size="small" style={{ marginBottom: 10 }}>
+                                    <Space direction="vertical" style={{ width: '100%' }} size={6}>
+                                        <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
+                                            <Text strong>{f.label || f.id}</Text>
+                                            <Tag color="geekblue">CHOICE</Tag>
+                                        </Space>
+
+                                        <Row gutter={12}>
+                                            <Col xs={24} sm={8}>
+                                                <Statistic title="Responses" value={flatValues.length} />
+                                            </Col>
+                                            <Col xs={24} sm={16}>
+                                                <Text type="secondary">Top selection:</Text>
+                                                <div style={{ marginTop: 6 }}>
+                                                    {top ? <Tag>{top.name} ({top.y})</Tag> : <Text type="secondary">-</Text>}
+                                                </div>
+                                            </Col>
+                                        </Row>
+
+                                        <Collapse style={{ marginTop: 8 }}>
+                                            <Panel header="Distribution" key="dist">
+                                                <HighchartsReact highcharts={Highcharts} options={choiceColumnOptions(`Choice Distribution: ${f.label || f.id}`, distArr)} />
                                             </Panel>
                                         </Collapse>
                                     </Space>
@@ -715,7 +883,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                         }
 
                         // text summary
-                        const texts = values.map(v => String(v))
+                        const texts = flatValues.map(v => String(v))
                         const keywords = extractKeywords(texts)
                         const samples = texts.slice(0, 8)
 
@@ -723,7 +891,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                             <Card key={f.id} size="small" style={{ marginBottom: 10 }}>
                                 <Space direction="vertical" style={{ width: '100%' }} size={6}>
                                     <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
-                                        <Text strong>{f.label}</Text>
+                                        <Text strong>{f.label || f.id}</Text>
                                         <Tag color="purple">TEXT</Tag>
                                     </Space>
 
@@ -752,10 +920,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                                     <Collapse style={{ marginTop: 8 }}>
                                         <Panel header="Word cloud" key="wc">
                                             {keywords.length ? (
-                                                <HighchartsReact
-                                                    highcharts={Highcharts}
-                                                    options={wordcloudOptions(`Word Cloud: ${f.label}`, keywords)}
-                                                />
+                                                <HighchartsReact highcharts={Highcharts} options={wordcloudOptions(`Word Cloud: ${f.label || f.id}`, keywords)} />
                                             ) : (
                                                 <Empty description="Not enough text to build a word cloud" />
                                             )}
@@ -781,6 +946,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                                     <Space>
                                         <FileTextOutlined />
                                         <span>{title}</span>
+                                        {kind === 'assessment' ? <Tag color="geekblue">Assessment</Tag> : kind === 'survey' ? <Tag color='cyan'>Survey</Tag> : <Tag>UNKNOWN</Tag>}
                                         <Tag color="geekblue">{rows.length} submissions</Tag>
                                         {!t && <Tag color="warning">Template missing</Tag>}
                                     </Space>
@@ -798,9 +964,13 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
 
     return (
         <div style={{ minHeight: '100vh', padding: 24 }}>
+            <Helmet>
+                <title>Responses Viewer | Smart Incubation</title>
+            </Helmet>
+
             <DashboardHeaderCard
                 title="Form Responses"
-                subtitle="Browse submissions, export CSV, and view a consolidated summary with visuals."
+                subtitle="Browse survey + assessment submissions, export CSV, and view consolidated summary with visuals."
             />
 
             <Row gutter={[16, 16]} style={{ marginBottom: 12 }}>
@@ -811,12 +981,12 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                 </Col>
                 <Col xs={24} sm={6}>
                     <MotionCard>
-                        <Statistic title="Unique Forms" value={metrics.uniqueForms} prefix={<FileTextOutlined />} />
+                        <Statistic title="Surveys" value={metrics.surveys} prefix={<FileTextOutlined />} />
                     </MotionCard>
                 </Col>
                 <Col xs={24} sm={6}>
                     <MotionCard>
-                        <Statistic title="Unique Submitters" value={metrics.uniqueSubmitters} prefix={<TeamOutlined />} />
+                        <Statistic title="Assessments" value={metrics.assessments} prefix={<FileTextOutlined />} />
                     </MotionCard>
                 </Col>
                 <Col xs={24} sm={6}>
@@ -826,7 +996,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                 </Col>
             </Row>
 
-            <Card
+            <MotionCard
                 title="Submissions"
                 extra={
                     <Space>
@@ -843,20 +1013,45 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                             </Button>
                         </Tooltip>
 
-                        {csvData.length > 0 && (
-                            <CSVLink
-                                data={csvData}
-                                headers={csvHeaders}
-                                filename={`form-responses-${new Date().toISOString().slice(0, 10)}.csv`}
-                            >
-                                <Button icon={<DownloadOutlined />}>Export CSV</Button>
-                            </CSVLink>
+                        {!selectedTemplate ? (
+                            <Tooltip title="Select a form template first to export question-column CSV">
+                                <Button icon={<DownloadOutlined />} disabled>
+                                    Export CSV
+                                </Button>
+                            </Tooltip>
+                        ) : (
+                            csvData.length > 0 && (
+                                <CSVLink
+                                    data={csvData}
+                                    headers={csvHeaders}
+                                    filename={`form-${selectedTemplate}-responses-${new Date().toISOString().slice(0, 10)}.csv`}
+                                >
+                                    <Button icon={<DownloadOutlined />}>Export CSV</Button>
+                                </CSVLink>
+                            )
                         )}
+
                     </Space>
                 }
             >
                 <Row gutter={[16, 16]}>
-                    <Col xs={24} sm={12} md={10}>
+                    <Col xs={24} sm={12} md={6}>
+                        <Select
+                            placeholder="Filter: Survey / Assessment"
+                            style={{ width: '100%' }}
+                            value={kindFilter}
+                            onChange={v => {
+                                setKindFilter(v as KindFilter)
+                                setSelectedTemplate(undefined)
+                            }}
+                        >
+                            <Option value="all">All</Option>
+                            <Option value="survey">Surveys</Option>
+                            <Option value="assessment">Assessments</Option>
+                        </Select>
+                    </Col>
+
+                    <Col xs={24} sm={12} md={6}>
                         <Select
                             placeholder="Select Form Template"
                             style={{ width: '100%' }}
@@ -866,7 +1061,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                             showSearch
                             optionFilterProp="children"
                         >
-                            {templates.map(t => (
+                            {filteredTemplates.map(t => (
                                 <Option key={t.id} value={t.id}>
                                     {t.title}
                                 </Option>
@@ -874,7 +1069,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                         </Select>
                     </Col>
 
-                    <Col xs={24} sm={12} md={14}>
+                    <Col xs={24} sm={24} md={6}>
                         <Search
                             placeholder="Search by form or submitter"
                             onSearch={setSearchText}
@@ -895,7 +1090,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                     pagination={{ pageSize: 10, showSizeChanger: true }}
                     locale={{ emptyText: <Empty description="No form responses found" /> }}
                 />
-            </Card>
+            </MotionCard>
 
             {/* View single response */}
             <Modal
