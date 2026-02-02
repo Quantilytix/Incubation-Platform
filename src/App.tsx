@@ -257,9 +257,9 @@ const App = () => {
                           element={<InterventionsTrackingView />}
                         />
                         <Route
-                                                    path='forms'
-                                                    element={<IncubateeFormsInbox />}
-                                                />
+                          path='forms'
+                          element={<IncubateeFormsInbox />}
+                        />
                         <Route
                           path='/incubatee/diagnostic'
                           element={<GrowthPlanPage />}
@@ -373,7 +373,7 @@ const App = () => {
                                                 />
 
                                                 <Route
-                                                    path='assessments/post'
+                                                    path='assessments/builder'
                                                     element={<PostAssessmentBuilder />}
                                                 />
                                                                                              <Route path='participants'>
