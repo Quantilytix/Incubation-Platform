@@ -1,4 +1,3 @@
-// src/pages/FormResponseViewer.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import {
     Card,
@@ -19,7 +18,8 @@ import {
     Spin,
     Collapse,
     Statistic,
-    Tooltip
+    Tooltip,
+    Progress as AntProgress
 } from 'antd'
 import {
     EyeOutlined,
@@ -28,8 +28,8 @@ import {
     SortDescendingOutlined,
     BarChartOutlined,
     FileTextOutlined,
-    TeamOutlined,
-    ClockCircleOutlined
+    ClockCircleOutlined,
+    TrophyOutlined
 } from '@ant-design/icons'
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/firebase'
@@ -40,15 +40,16 @@ import { Helmet } from 'react-helmet'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import WordcloudModule from 'highcharts/modules/wordcloud'
+import HeatmapModule from 'highcharts/modules/heatmap'
+import HighchartsMore from 'highcharts/highcharts-more'
 
-// ✅ make sure this path matches your project
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 
-if (typeof WordcloudModule === 'function') {
-    WordcloudModule(Highcharts)
-}
+if (typeof WordcloudModule === 'function') WordcloudModule(Highcharts)
+if (typeof HeatmapModule === 'function') HeatmapModule(Highcharts)
+if (typeof HighchartsMore === 'function') HighchartsMore(Highcharts)
 
-const { Text } = Typography
+const { Text, Title } = Typography
 const { Option } = Select
 const { Search } = Input
 const { Panel } = Collapse
@@ -62,9 +63,8 @@ interface FormField {
     required: boolean
     options?: string[]
     description?: string
-    // assessment templates may include this
-    correctAnswer?: string
-    name?: string
+    correctAnswer?: any
+    points?: number
 }
 
 interface FormTemplate {
@@ -75,26 +75,23 @@ interface FormTemplate {
     fields: FormField[]
     status?: 'draft' | 'published' | string
     companyCode?: string
+    assessmentMeta?: any
 }
 
 interface FormResponse {
     id: string
     templateId?: string
     answers?: AnswersMap
-
-    // legacy/alt shape
     formId?: string
     responses?: AnswersMap
-
     formTitle: string
     submittedBy: { id?: string; name?: string; email?: string }
     submittedAt: any
     status?: string
     notes?: string
-
-    // sometimes present
     kind?: 'survey' | 'assessment'
     companyCode?: string
+    timing?: any
 }
 
 interface Props {
@@ -109,26 +106,187 @@ const STOP_WORDS = new Set([
     'or', 'but', 'not', 'so', 'if'
 ])
 
-// ✅ classify templates/responses
 const ASSESSMENT_CATEGORIES = new Set(['post_intervention', 'general'])
 const isAssessmentCategory = (cat?: string) => ASSESSMENT_CATEGORIES.has(String(cat || ''))
 
 const CHOICE_TYPES = new Set([
-    'radio',
-    'select',
-    'dropdown',
-    'checkbox',
-    'multiselect',
-    'multi_select',
-    'mcq',
-    'multiple_choice'
+    'radio', 'select', 'dropdown', 'checkbox', 'multiselect', 'multi_select', 'mcq', 'multiple_choice'
 ])
+
+const isTextType = (t?: string) => {
+    const x = String(t || '').toLowerCase()
+    return x === 'short' || x === 'long' || x === 'text' || x === 'textarea'
+}
+
+const isChoiceType = (t?: string) => {
+    const x = String(t || '').toLowerCase()
+    return CHOICE_TYPES.has(x)
+}
+
+const isGradableType = (t?: string) => {
+    const x = String(t || '').toLowerCase()
+    // grade only if it has correctAnswer and is choice/number/rating
+    return isChoiceType(x) || x === 'number' || x === 'rating'
+}
 
 const chunk = <T,>(arr: T[], size: number) => {
     const out: T[][] = []
     for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
     return out
 }
+
+function toDateSafe(v: any): Date | null {
+    if (!v) return null
+    if (typeof v?.toDate === 'function') {
+        try { return v.toDate() } catch { /* ignore */ }
+    }
+    if (typeof v?.seconds === 'number') {
+        const ms = v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6)
+        return new Date(ms)
+    }
+    if (v instanceof Date) return v
+    if (typeof v === 'number') {
+        const ms = v < 10_000_000_000 ? v * 1000 : v
+        return new Date(ms)
+    }
+    if (typeof v === 'string') {
+        const d = new Date(v)
+        return isNaN(d.getTime()) ? null : d
+    }
+    return null
+}
+
+function formatDateTime(v: any) {
+    const d = toDateSafe(v)
+    return d ? d.toLocaleString() : '-'
+}
+
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n))
+
+const tryParseLikert = (v: any): number | null => {
+    if (v === null || v === undefined) return null
+    const n = typeof v === 'number' ? v : Number(String(v).trim())
+    if (!Number.isFinite(n)) return null
+    return n >= 1 && n <= 5 ? n : null
+}
+
+const extractKeywords = (texts: string[]) => {
+    const freq = new Map<string, number>()
+    for (const t of texts) {
+        const words = (t || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter(w => w.length >= 3 && !STOP_WORDS.has(w))
+        for (const w of words) freq.set(w, (freq.get(w) || 0) + 1)
+    }
+    return Array.from(freq.entries()).sort((a, b) => b[1] - a[1]).slice(0, 30)
+}
+
+const wordcloudOptions = (title: string, keywords: Array<[string, number]>) => ({
+    chart: { height: 320 },
+    title: { text: title },
+    credits: { enabled: false },
+    series: [
+        {
+            type: 'wordcloud' as any,
+            name: 'Occurrences',
+            data: keywords.map(([name, weight]) => ({ name, weight }))
+        }
+    ]
+})
+
+const radarLikertOptions = (title: string, dist: Record<number, number>) => ({
+    chart: { polar: true, type: 'column', height: 320 },
+    title: { text: title },
+    credits: { enabled: false },
+    xAxis: {
+        categories: ['1', '2', '3', '4', '5'],
+        tickmarkPlacement: 'on',
+        lineWidth: 0
+    },
+    yAxis: {
+        gridLineInterpolation: 'polygon',
+        min: 0,
+        title: { text: '' }
+    },
+    tooltip: { shared: true },
+    series: [
+        {
+            name: 'Responses',
+            data: [dist[1] || 0, dist[2] || 0, dist[3] || 0, dist[4] || 0, dist[5] || 0]
+        }
+    ]
+})
+
+const radarChoiceOptions = (title: string, cats: string[], counts: number[]) => ({
+    chart: { polar: true, type: 'column', height: 320 },
+    title: { text: title },
+    credits: { enabled: false },
+    xAxis: {
+        categories: cats,
+        tickmarkPlacement: 'on',
+        lineWidth: 0
+    },
+    yAxis: {
+        gridLineInterpolation: 'polygon',
+        min: 0,
+        title: { text: '' }
+    },
+    tooltip: { shared: true },
+    series: [{ name: 'Count', data: counts }]
+})
+
+const choiceHeatmapOptions = (title: string, xCats: string[], yCats: string[], data: Array<[number, number, number]>) => {
+    const maxV = data.reduce((m, p) => Math.max(m, p[2]), 0)
+    return {
+        chart: { type: 'heatmap', height: Math.max(360, 28 * yCats.length + 120) },
+        title: { text: title },
+        credits: { enabled: false },
+        xAxis: { categories: xCats, title: { text: 'Options' } },
+        yAxis: { categories: yCats, title: { text: 'Questions' }, reversed: true },
+        colorAxis: {
+            min: 0,
+            max: Math.max(1, maxV),
+            stops: [
+                [0, '#f7fbff'],
+                [0.4, '#c6dbef'],
+                [0.7, '#6baed6'],
+                [1, '#08519c']
+            ]
+        },
+        tooltip: {
+            pointFormat: '<b>{point.value}</b> selections'
+        },
+        series: [
+            {
+                type: 'heatmap' as const,
+                borderWidth: 1,
+                data,
+                dataLabels: { enabled: true, format: '{point.value}' }
+            }
+        ]
+    }
+}
+
+const normalizeForCompare = (v: any) => {
+    if (Array.isArray(v)) return v.map(x => String(x).trim()).sort()
+    if (v === null || v === undefined) return null
+    return String(v).trim()
+}
+
+const isCorrect = (answer: any, correct: any) => {
+    const a = normalizeForCompare(answer)
+    const c = normalizeForCompare(correct)
+    if (a === null || c === null) return false
+    if (Array.isArray(a) && Array.isArray(c)) {
+        if (a.length !== c.length) return false
+        return a.every((x, i) => x === c[i])
+    }
+    return String(a) === String(c)
+}
+
+const letter = (i: number) => String.fromCharCode('A'.charCodeAt(0) + i)
 
 const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     const { message } = App.useApp()
@@ -137,7 +295,6 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     const myCompany = String(user?.companyCode || '')
     const isMainDomain = myEmail.toLowerCase().endsWith('@quantilytix.co.za')
 
-    // UI state
     const [loading, setLoading] = useState(true)
     const [templates, setTemplates] = useState<FormTemplate[]>([])
     const [responses, setResponses] = useState<FormResponse[]>([])
@@ -146,53 +303,21 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     const [searchText, setSearchText] = useState('')
     const [kindFilter, setKindFilter] = useState<KindFilter>('all')
 
-    // company filter
     const [selectedCompany, setSelectedCompany] = useState<string>(
         isMainDomain ? 'all' : (myCompany || 'all')
     )
 
-    // view modal
     const [viewOpen, setViewOpen] = useState(false)
     const [selectedResponse, setSelectedResponse] = useState<FormResponse | null>(null)
     const [fs, setFs] = useState(false)
     const [ansFilter, setAnsFilter] = useState('')
 
-    // summary modal
     const [summaryOpen, setSummaryOpen] = useState(false)
     const [summaryFs, setSummaryFs] = useState(false)
 
-    // csv
     const [csvData, setCsvData] = useState<any[]>([])
     const [csvHeaders, setCsvHeaders] = useState<{ label: string; key: string }[]>([])
 
-    // -------- date helpers --------
-    const toDateSafe = (v: any): Date | null => {
-        if (!v) return null
-        if (typeof v?.toDate === 'function') {
-            try { return v.toDate() } catch { }
-        }
-        if (typeof v?.seconds === 'number') {
-            const ms = v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6)
-            return new Date(ms)
-        }
-        if (v instanceof Date) return v
-        if (typeof v === 'number') {
-            const ms = v < 10_000_000_000 ? v * 1000 : v
-            return new Date(ms)
-        }
-        if (typeof v === 'string') {
-            const d = new Date(v)
-            return isNaN(d.getTime()) ? null : d
-        }
-        return null
-    }
-
-    const formatDateTime = (v: any) => {
-        const d = toDateSafe(v)
-        return d ? d.toLocaleString() : '-'
-    }
-
-    // -------- template index --------
     const templateById = useMemo(() => {
         const m = new Map<string, FormTemplate>()
         templates.forEach(t => m.set(t.id, t))
@@ -215,11 +340,12 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     const getKindForResponse = (r: FormResponse): 'survey' | 'assessment' | 'unknown' => {
         if (r.kind === 'survey' || r.kind === 'assessment') return r.kind
         const t = getTemplateForResponse(r)
-        return getKindForTemplate(t)
+        if (!t) return 'unknown'
+        return isAssessmentCategory(t.category) ? 'assessment' : 'survey'
     }
 
+
     const getCompanyForResponse = (r: FormResponse): string => {
-        // ✅ prefer response companyCode, else template companyCode
         if (r.companyCode) return String(r.companyCode)
         const t = getTemplateForResponse(r)
         if (t?.companyCode) return String(t.companyCode)
@@ -229,108 +355,21 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
     const companyOptions = useMemo(() => {
         const s = new Set<string>()
         templates.forEach(t => t.companyCode && s.add(String(t.companyCode)))
-        // if responses carry companyCode that templates don’t, still include:
         responses.forEach(r => r.companyCode && s.add(String(r.companyCode)))
-        const arr = Array.from(s).sort()
-        return arr
+        return Array.from(s).sort()
     }, [templates, responses])
-
-    // -------- analytics helpers --------
-    const tryParseLikert = (v: any): number | null => {
-        if (v === null || v === undefined) return null
-        const n = typeof v === 'number' ? v : Number(String(v).trim())
-        if (!Number.isFinite(n)) return null
-        return n >= 1 && n <= 5 ? n : null
-    }
-
-    const extractKeywords = (texts: string[]) => {
-        const freq = new Map<string, number>()
-        for (const t of texts) {
-            const words = (t || '')
-                .toLowerCase()
-                .replace(/[^a-z0-9\s]/g, ' ')
-                .split(/\s+/)
-                .filter(w => w.length >= 3 && !STOP_WORDS.has(w))
-            for (const w of words) freq.set(w, (freq.get(w) || 0) + 1)
-        }
-        return Array.from(freq.entries()).sort((a, b) => b[1] - a[1]).slice(0, 30)
-    }
-
-    const wordcloudOptions = (title: string, keywords: Array<[string, number]>) => ({
-        chart: { height: 320 },
-        title: { text: title },
-        credits: { enabled: false },
-        series: [
-            {
-                type: 'wordcloud' as any,
-                name: 'Occurrences',
-                data: keywords.map(([name, weight]) => ({ name, weight }))
-            }
-        ]
-    })
-
-
-    const radarLikertOptions = (title: string, dist: Record<number, number>) => ({
-        chart: { polar: true, type: 'column', height: 320 },
-        title: { text: title },
-        credits: { enabled: false },
-        xAxis: {
-            categories: ['1', '2', '3', '4', '5'],
-            tickmarkPlacement: 'on',
-            lineWidth: 0
-        },
-        yAxis: {
-            gridLineInterpolation: 'polygon',
-            min: 0,
-            title: { text: '' }
-        },
-        tooltip: { shared: true },
-        plotOptions: {
-            series: {
-                fillOpacity: 0.25,
-                marker: { enabled: true }
-            }
-        },
-        series: [
-            {
-                name: 'Responses',
-                data: [dist[1] || 0, dist[2] || 0, dist[3] || 0, dist[4] || 0, dist[5] || 0]
-            }
-        ]
-    })
-
-    const choiceColumnOptions = (title: string, dist: Array<{ name: string; y: number }>) => ({
-        chart: { type: 'column', height: 320 },
-        title: { text: title },
-        credits: { enabled: false },
-        xAxis: { type: 'category', labels: { rotation: -20 } },
-        yAxis: { min: 0, title: { text: 'Count' } },
-        tooltip: { pointFormat: '<b>{point.y}</b>' },
-        series: [
-            { name: 'Count', type: 'column' as const, data: dist.map(d => [d.name, d.y]) }
-        ]
-    })
 
     // -------- load templates --------
     useEffect(() => {
         ; (async () => {
             try {
                 const colRef = collection(db, 'formTemplates')
-
-                // ✅ don’t hide templates just because status is not exactly "published"
-                // (your assessment template may be "active" or missing status)
-                let qRef: any
-
-                if (!isMainDomain && myCompany) {
-                    qRef = query(colRef, where('companyCode', '==', myCompany))
-                } else {
-                    qRef = query(colRef)
-                }
+                const qRef = (!isMainDomain && myCompany)
+                    ? query(colRef, where('companyCode', '==', myCompany))
+                    : query(colRef)
 
                 const snap = await getDocs(qRef)
-                const t: FormTemplate[] = snap.docs
-                    .map(d => ({ id: d.id, ...(d.data() as any) }))
-                    .filter(x => x) // keep all; we filter via UI, and via publishedIds for responses display
+                const t: FormTemplate[] = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
                 setTemplates(t)
             } catch (e) {
                 console.error(e)
@@ -339,34 +378,37 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
         })()
     }, [message, isMainDomain, myCompany])
 
-    // -------- load responses (respect company via templateId fallback) --------
+    // -------- load responses --------
     useEffect(() => {
         ; (async () => {
             try {
                 setLoading(true)
                 const colRef = collection(db, 'formResponses')
-
                 const merged = new Map<string, FormResponse>()
 
-                const addRows = (rows: FormResponse[]) => {
-                    rows.forEach(r => merged.set(r.id, r))
-                }
+                const addRows = (rows: FormResponse[]) => rows.forEach(r => merged.set(r.id, r))
 
-                // If a template is selected, keep it simple (still include legacy formId)
                 if (selectedTemplate) {
                     const q1 = query(colRef, where('templateId', '==', selectedTemplate), orderBy('submittedAt', sortOrder))
                     const s1 = await getDocs(q1)
+
+
                     addRows(s1.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
 
                     const q2 = query(colRef, where('formId', '==', selectedTemplate), orderBy('submittedAt', sortOrder))
                     const s2 = await getDocs(q2)
                     addRows(s2.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
 
+                    if (s1) {
+                        console.log('S1:', s1)
+                    } else {
+                        console.log('S2:', s2)
+                    }
+
                     setResponses(Array.from(merged.values()))
                     return
                 }
 
-                // No selected template:
                 if (isMainDomain) {
                     const qAll = query(colRef, orderBy('submittedAt', sortOrder))
                     const sAll = await getDocs(qAll)
@@ -375,26 +417,22 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                     return
                 }
 
-                // Non-main domain: pull by companyCode AND by templateId (to catch missing companyCode on responses)
                 const companyTemplates = templates.filter(t => String(t.companyCode || '') === myCompany)
                 const companyTemplateIds = companyTemplates.map(t => t.id)
 
-                // (A) responses that already have companyCode
+
                 if (myCompany) {
                     const qByCompany = query(colRef, where('companyCode', '==', myCompany), orderBy('submittedAt', sortOrder))
                     const sByCompany = await getDocs(qByCompany)
                     addRows(sByCompany.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
                 }
 
-                // (B) responses missing companyCode but linked to our company templates
-                // Firestore "in" supports up to 10 values
                 for (const ids of chunk(companyTemplateIds, 10)) {
                     if (!ids.length) continue
                     const qByTpl = query(colRef, where('templateId', 'in', ids), orderBy('submittedAt', sortOrder))
                     const sByTpl = await getDocs(qByTpl)
                     addRows(sByTpl.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
 
-                    // legacy formId too
                     const qByFormId = query(colRef, where('formId', 'in', ids), orderBy('submittedAt', sortOrder))
                     const sByFormId = await getDocs(qByFormId)
                     addRows(sByFormId.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
@@ -410,39 +448,25 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
         })()
     }, [selectedTemplate, sortOrder, message, templates, isMainDomain, myCompany])
 
-    // -------- template list respects kind + company filters --------
+    // templates filter
     const filteredTemplates = useMemo(() => {
         const base = templates
-
         const byCompany =
-            selectedCompany === 'all'
-                ? base
-                : base.filter(t => String(t.companyCode || '') === selectedCompany)
+            selectedCompany === 'all' ? base : base.filter(t => String(t.companyCode || '') === selectedCompany)
 
         if (kindFilter === 'all') return byCompany
-
         return byCompany.filter(t =>
-            kindFilter === 'assessment'
-                ? isAssessmentCategory(t.category)
-                : !isAssessmentCategory(t.category)
+            kindFilter === 'assessment' ? isAssessmentCategory(t.category) : !isAssessmentCategory(t.category)
         )
     }, [templates, kindFilter, selectedCompany])
 
-    // -------- response filters (company + kind + search) --------
+    // response filter
     const filtered = useMemo(() => {
         let arr = [...responses]
 
-        // company filter via response.companyCode OR template.companyCode
-        if (selectedCompany !== 'all') {
-            arr = arr.filter(r => getCompanyForResponse(r) === selectedCompany)
-        }
+        if (selectedCompany !== 'all') arr = arr.filter(r => getCompanyForResponse(r) === selectedCompany)
+        if (kindFilter !== 'all') arr = arr.filter(r => getKindForResponse(r) === kindFilter)
 
-        // kind filter
-        if (kindFilter !== 'all') {
-            arr = arr.filter(r => getKindForResponse(r) === kindFilter)
-        }
-
-        // search filter
         if (searchText) {
             const s = searchText.toLowerCase()
             arr = arr.filter(r => {
@@ -452,53 +476,41 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
         }
 
         return arr
-    }, [responses, searchText, kindFilter, selectedCompany, templateById])
+    }, [responses, searchText, kindFilter, selectedCompany])
 
-    // -------- stable ordering (group by form, then date) --------
     const groupedSorted = useMemo(() => {
         const arr = [...filtered]
         const dir = sortOrder === 'asc' ? 1 : -1
-
         arr.sort((a, b) => {
             const fa = (a.formTitle || '').toLowerCase()
             const fb = (b.formTitle || '').toLowerCase()
             if (fa < fb) return -1
             if (fa > fb) return 1
-
             const da = toDateSafe(a.submittedAt)?.getTime() ?? 0
             const dbt = toDateSafe(b.submittedAt)?.getTime() ?? 0
             return dir * (da - dbt)
         })
-
         return arr
     }, [filtered, sortOrder])
 
-    // -------- metrics --------
     const metrics = useMemo(() => {
         const total = filtered.length
         const surveys = filtered.filter(r => getKindForResponse(r) === 'survey').length
         const assessments = filtered.filter(r => getKindForResponse(r) === 'assessment').length
-
         const uniqueForms = new Set(filtered.map(r => r.formTitle || 'Unknown')).size
         const uniqueSubmitters = new Set(filtered.map(r => r.submittedBy?.email || r.submittedBy?.id || 'unknown')).size
-
         const latestMs = filtered
             .map(r => toDateSafe(r.submittedAt)?.getTime() ?? 0)
             .reduce((m, v) => Math.max(m, v), 0)
 
         return {
-            total,
-            surveys,
-            assessments,
-            uniqueForms,
-            uniqueSubmitters,
+            total, surveys, assessments, uniqueForms, uniqueSubmitters,
             latest: latestMs ? new Date(latestMs).toLocaleString() : '-'
         }
-    }, [filtered, templateById])
+    }, [filtered])
 
-    // -------- CSV generation (pivot: one form -> questions as columns) --------
+    // -------- CSV pivot (unchanged) --------
     useEffect(() => {
-        // We only do pivot export when a template is selected
         if (!selectedTemplate) {
             setCsvData([])
             setCsvHeaders([])
@@ -506,10 +518,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
         }
 
         const template = templates.find(t => t.id === selectedTemplate) || null
-        const rowsForThisForm = groupedSorted.filter(r => {
-            const tid = r.templateId || r.formId
-            return tid === selectedTemplate
-        })
+        const rowsForThisForm = groupedSorted.filter(r => (r.templateId || r.formId) === selectedTemplate)
 
         if (!rowsForThisForm.length) {
             setCsvData([])
@@ -517,7 +526,6 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
             return
         }
 
-        // If template missing, fall back to answer keys (still pivoted)
         const effectiveFields: Array<{ id: string; label: string; type?: string }> = template
             ? (template.fields || [])
                 .filter(f => f.type !== 'heading')
@@ -529,19 +537,13 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                 }, new Set<string>())
             ).map(k => ({ id: k, label: k }))
 
-        // 1) Headers: respondent first, then each question label
-        // Use stable keys (based on field id) to avoid collisions.
         const headers: { label: string; key: string }[] = [
             { label: 'Respondent Name', key: 'respondent_name' },
             { label: 'Respondent Email', key: 'respondent_email' },
             { label: 'Submitted At', key: 'submitted_at' },
-            ...effectiveFields.map(f => ({
-                label: f.label,
-                key: `q__${f.id}`
-            }))
+            ...effectiveFields.map(f => ({ label: f.label, key: `q__${f.id}` }))
         ]
 
-        // 2) Data: one row per response
         const data = rowsForThisForm.map(r => {
             const answers = getAnswers(r)
             const row: Record<string, any> = {
@@ -558,7 +560,6 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                         ? JSON.stringify(v)
                         : (v ?? '')
             }
-
             return row
         })
 
@@ -566,15 +567,9 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
         setCsvData(data)
     }, [selectedTemplate, templates, groupedSorted])
 
-
     // -------- table columns --------
     const columns = [
         { title: 'Form', dataIndex: 'formTitle', key: 'formTitle' },
-        // {
-        //     title: 'Company',
-        //     key: 'company',
-        //     render: (_: any, r: FormResponse) => <Tag>{getCompanyForResponse(r)}</Tag>
-        // },
         {
             title: 'Type',
             key: 'kind',
@@ -632,108 +627,474 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
         }
     ]
 
-    // -------- modal details --------
+    // -------- render helpers --------
     const renderAnswerValue = (v: any) => {
-        const str = Array.isArray(v) ? v.join(', ') : typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v ?? '')
+        const str = Array.isArray(v) ? v.join(', ')
+            : typeof v === 'object' && v !== null ? JSON.stringify(v)
+                : String(v ?? '')
+
         if (!ansFilter) return str
         return str.toLowerCase().includes(ansFilter.toLowerCase()) ? str : null
     }
 
+    const computeScoreForResponse = (tpl: FormTemplate, r: FormResponse) => {
+        const answers = getAnswers(r)
+        const fields = (tpl.fields || []).filter(f => f.type !== 'heading')
+        const gradable = fields.filter(f => f.correctAnswer !== undefined && f.correctAnswer !== null && isGradableType(f.type))
+        if (!gradable.length) return null
+
+        let earned = 0
+        let total = 0
+        let gradedCount = 0
+
+        for (const f of gradable) {
+            const pts = typeof f.points === 'number' && f.points > 0 ? f.points : 1
+            total += pts
+            const ok = isCorrect(answers[f.id], f.correctAnswer)
+            if (ok) earned += pts
+            gradedCount += 1
+        }
+
+        const pct = total > 0 ? (earned / total) * 100 : 0
+        return { earned, total, pct, gradedCount, totalGradable: gradable.length }
+    }
+
+    // -------- VIEW MODAL (fix duplication + remove sticky + show assessment grading) --------
+
     const renderDetails = () => {
         if (!selectedResponse) return null
+
         const template = getTemplateForResponse(selectedResponse)
         const answers = getAnswers(selectedResponse)
         const kind = getKindForResponse(selectedResponse)
+        const isAssessment = kind === 'assessment'
 
-        const groups: Record<string, FormField[]> = {}
-        let current = 'General'
-            ; (template?.fields || []).forEach(f => {
+        const tplFields = (template?.fields || []) as FormField[]
+        const hasHeadings = tplFields.some(f => f.type === 'heading')
+        const fieldsNoHeadings = tplFields.filter(f => f.type !== 'heading')
+
+        const score = template && isAssessment ? computeScoreForResponse(template, selectedResponse) : null
+
+        const gradableKeyFields =
+            template && isAssessment
+                ? fieldsNoHeadings.filter(
+                    f => f.correctAnswer !== undefined && f.correctAnswer !== null && isGradableType(f.type)
+                )
+                : []
+
+        // Anything NOT in auto-graded key fields is treated as “ungraded / extra responses”
+        const ungradedFields =
+            template && isAssessment
+                ? fieldsNoHeadings.filter(f => !gradableKeyFields.some(g => g.id === f.id))
+                : fieldsNoHeadings
+
+        // ---- Grouping helpers (respect headings) ----
+        const groupByHeadings = (list: FormField[]) => {
+            const groups: Array<{ title: string; fields: FormField[] }> = []
+            if (!template) return groups
+
+            if (!hasHeadings) {
+                groups.push({ title: 'Responses', fields: list })
+                return groups
+            }
+
+            let currentTitle = 'Section'
+            let bucket: FormField[] = []
+
+            const flush = () => {
+                if (bucket.length) groups.push({ title: currentTitle, fields: bucket })
+                bucket = []
+            }
+
+            for (const f of tplFields) {
                 if (f.type === 'heading') {
-                    current = f.label || 'Section'
-                    return
+                    flush()
+                    currentTitle = f.label || 'Section'
+                    continue
                 }
-                ; (groups[current] ||= []).push(f)
-            })
+                if (list.some(x => x.id === f.id)) bucket.push(f)
+            }
+            flush()
+            return groups
+        }
 
-        return (
-            <div>
-                <Card size="small" style={{ marginBottom: 12, position: 'sticky', top: 0, zIndex: 1 }}>
-                    <Descriptions title="Submission" bordered column={1} size="small">
-                        <Descriptions.Item label="Form">{selectedResponse.formTitle}</Descriptions.Item>
-                        <Descriptions.Item label="Company">{getCompanyForResponse(selectedResponse)}</Descriptions.Item>
-                        <Descriptions.Item label="Type">
-                            {kind === 'assessment' ? <Tag color="geekblue">ASSESSMENT</Tag> : kind === 'survey' ? <Tag>SURVEY</Tag> : <Tag>UNKNOWN</Tag>}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Submitted By">
-                            {selectedResponse.submittedBy?.name || '-'} ({selectedResponse.submittedBy?.email || '-'})
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Submitted At">{formatDateTime(selectedResponse.submittedAt)}</Descriptions.Item>
-                        <Descriptions.Item label="Status">
-                            <Tag color="processing">{(selectedResponse.status || 'submitted').toUpperCase()}</Tag>
-                        </Descriptions.Item>
-                    </Descriptions>
+        const responseGroups = groupByHeadings(ungradedFields)
+
+        const headerCard = (
+            <Card
+                size="small"
+                style={{ borderRadius: 14, marginBottom: 12 }}
+                bodyStyle={{ padding: 14 }}
+            >
+                <Typography.Title level={5} style={{ margin: 0, marginBottom: 10 }}>
+                    Submission
+                </Typography.Title>
+
+                <Descriptions bordered size="small" column={1}>
+                    <Descriptions.Item label="Form">{selectedResponse.formTitle}</Descriptions.Item>
+                    <Descriptions.Item label="Type">
+                        {kind === 'assessment' ? (
+                            <Tag color="geekblue">ASSESSMENT</Tag>
+                        ) : kind === 'survey' ? (
+                            <Tag color="cyan">SURVEY</Tag>
+                        ) : (
+                            <Tag>UNKNOWN</Tag>
+                        )}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Submitted By">
+                        {selectedResponse.submittedBy?.name || '-'}{' '}
+                        <Text type="secondary">({selectedResponse.submittedBy?.email || '-'})</Text>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Submitted At">{formatDateTime(selectedResponse.submittedAt)}</Descriptions.Item>
+                    <Descriptions.Item label="Status">
+                        <Tag color="processing">{String(selectedResponse.status || 'submitted').toUpperCase()}</Tag>
+                    </Descriptions.Item>
+                </Descriptions>
+            </Card>
+        )
+
+        const scoreCard =
+            isAssessment && score ? (
+                <Card
+                    size="small"
+                    style={{ borderRadius: 14, marginBottom: 12 }}
+                    bodyStyle={{ padding: 14 }}
+                >
+                    <Space align="start" style={{ width: '100%', justifyContent: 'space-between' }}>
+                        <Space direction="vertical" size={2}>
+                            <Space align="center" wrap>
+                                <TrophyOutlined />
+                                <Text strong style={{ fontSize: 16 }}>
+                                    Score
+                                </Text>
+
+                                <Tag
+                                    color={score.pct >= 70 ? 'success' : score.pct >= 50 ? 'warning' : 'error'}
+                                    style={{ marginInlineStart: 6 }}
+                                >
+                                    {Math.round(score.pct)}%
+                                </Tag>
+                            </Space>
+
+                            <Text type="secondary">
+                                Points: <Text strong>{score.earned}</Text> / <Text strong>{score.total}</Text>
+                                {'  '}•{'  '}
+                                Auto-graded: <Text strong>{score.gradedCount}</Text>
+                            </Text>
+                        </Space>
+
+                        <div style={{ minWidth: 220 }}>
+                            <AntProgress
+                                percent={Math.round(score.pct)}
+                                showInfo={false}
+                            />
+                        </div>
+                    </Space>
                 </Card>
+            ) : null
 
-                <Divider orientation="left" style={{ marginTop: 8, marginBottom: 8 }}>
-                    Responses
-                </Divider>
+        // ---- Answer key comparison rows (auto-graded) ----
+        const renderAnswerKey = () => {
+            if (!isAssessment) return null
+            if (!template) return <Empty description="Template missing — cannot compute answer key." />
+            if (!gradableKeyFields.length) return <Empty description="No auto-graded questions (missing correctAnswer / unsupported types)." />
 
-                <Input
-                    allowClear
-                    placeholder="Search within responses"
-                    value={ansFilter}
-                    onChange={e => setAnsFilter(e.target.value)}
-                    style={{ marginBottom: 8 }}
-                />
+            return (
+                <Space direction="vertical" style={{ width: '100%' }} size={10}>
+                    {gradableKeyFields.map((f, idx) => {
+                        const userAns = answers[f.id]
+                        const correct = f.correctAnswer
+                        const ok = isCorrect(userAns, correct)
 
+                        const userStr = Array.isArray(userAns) ? userAns.join(', ') : String(userAns ?? '')
+                        const correctStr = Array.isArray(correct) ? correct.join(', ') : String(correct ?? '')
+
+                        return (
+                            <Card key={f.id} size="small" style={{ borderRadius: 12 }}>
+                                <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                                    <Space align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
+                                        <Text strong>{`Q${idx + 1}. ${f.label || f.id}`}</Text>
+                                        {ok ? <Tag color="success">Correct</Tag> : <Tag color="error">Incorrect</Tag>}
+                                    </Space>
+
+                                    <Row gutter={[12, 8]}>
+                                        <Col xs={24} md={12}>
+                                            <Text type="secondary">User answer</Text>
+                                            <div style={{ marginTop: 6 }}>
+                                                <Tag color={ok ? 'success' : 'default'}>{userStr || '-'}</Tag>
+                                            </div>
+                                        </Col>
+
+                                        <Col xs={24} md={12}>
+                                            <Text type="secondary">Correct answer</Text>
+                                            <div style={{ marginTop: 6 }}>
+                                                <Tag color="geekblue">{correctStr || '-'}</Tag>
+                                            </div>
+                                        </Col>
+                                    </Row>
+                                </Space>
+                            </Card>
+                        )
+                    })}
+                </Space>
+            )
+        }
+
+        // ---- Responses (survey OR ungraded-only for assessment) ----
+        const renderResponses = () => {
+            if (!template) {
+                // raw fallback
+                const rows = Object.entries(answers)
+                if (!rows.length) return <Empty description="No responses to show." />
+
+                return (
+                    <Descriptions bordered column={1} size="small">
+                        {rows.map(([k, v]) => {
+                            const rendered = renderAnswerValue(v)
+                            if (rendered === null) return null
+                            return (
+                                <Descriptions.Item key={k} label={k}>
+                                    {rendered}
+                                </Descriptions.Item>
+                            )
+                        })}
+                    </Descriptions>
+                )
+            }
+
+            const any = responseGroups.some(g => g.fields.some(f => answers[f.id] !== undefined))
+            if (!any) {
+                return (
+                    <Empty
+                        description={
+                            isAssessment
+                                ? 'No additional (ungraded) responses to show.'
+                                : 'No responses to show.'
+                        }
+                    />
+                )
+            }
+
+            return (
                 <Collapse accordion>
-                    {Object.entries(groups).map(([section, fields]) => (
-                        <Panel header={section} key={section}>
+                    {responseGroups.map(g => (
+                        <Collapse.Panel header={g.title} key={g.title}>
                             <Descriptions bordered column={1} size="small">
-                                {fields.map(f => {
+                                {g.fields.map(f => {
                                     const v = answers[f.id]
                                     if (v === undefined) return null
                                     const rendered = renderAnswerValue(v)
                                     if (rendered === null) return null
-
                                     return (
                                         <Descriptions.Item key={f.id} label={f.label || f.id}>
-                                            {f.type === 'file' && typeof v === 'string' ? (
-                                                <a href={v} target="_blank" rel="noopener noreferrer">
-                                                    View File
-                                                </a>
-                                            ) : (
-                                                rendered
-                                            )}
-                                        </Descriptions.Item>
-                                    )
-                                })}
-                            </Descriptions>
-                        </Panel>
-                    ))}
-
-                    {/* fallback if template missing */}
-                    {!template && (
-                        <Panel header="Responses (raw)" key="__all__">
-                            <Descriptions bordered column={1} size="small">
-                                {Object.entries(answers).map(([k, v]) => {
-                                    const rendered = renderAnswerValue(v)
-                                    if (rendered === null) return null
-                                    return (
-                                        <Descriptions.Item key={k} label={k}>
                                             {rendered}
                                         </Descriptions.Item>
                                     )
                                 })}
                             </Descriptions>
-                        </Panel>
-                    )}
+                        </Collapse.Panel>
+                    ))}
                 </Collapse>
+            )
+        }
+
+        return (
+            <div>
+                {headerCard}
+
+                {/* Score always visible for assessments */}
+                {scoreCard}
+
+                {/* Search inside answers */}
+                <Card size="small" style={{ borderRadius: 14, marginBottom: 12 }} bodyStyle={{ padding: 14 }}>
+                    <Space direction="vertical" style={{ width: '100%' }} size={10}>
+                        <Space align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
+                            <Text strong style={{ fontSize: 15 }}>
+                                {isAssessment ? 'Answers' : 'Responses'}
+                            </Text>
+                            <Tag>{isAssessment ? 'Assessment View' : 'Survey View'}</Tag>
+                        </Space>
+
+                        <Input
+                            allowClear
+                            placeholder={isAssessment ? 'Search within answers (auto + ungraded)' : 'Search within responses'}
+                            value={ansFilter}
+                            onChange={e => setAnsFilter(e.target.value)}
+                        />
+
+                        {/* ONE conditional flow:
+                - Survey: just responses
+                - Assessment: collapse with 2 panels (auto-graded + ungraded) */}
+                        {isAssessment ? (
+                            <Collapse defaultActiveKey={['ak']} style={{ borderRadius: 12 }}>
+                                <Collapse.Panel
+                                    key="ak"
+                                    header={
+                                        <Space>
+                                            <TrophyOutlined />
+                                            <span>Auto-graded (Answer Key)</span>
+                                            <Tag color="geekblue">{gradableKeyFields.length}</Tag>
+                                        </Space>
+                                    }
+                                >
+                                    {renderAnswerKey()}
+                                </Collapse.Panel>
+
+                                <Collapse.Panel
+                                    key="ur"
+                                    header={
+                                        <Space>
+                                            <FileTextOutlined />
+                                            <span>Ungraded / Extra Responses</span>
+                                            <Tag>{ungradedFields.length}</Tag>
+                                        </Space>
+                                    }
+                                >
+                                    {renderResponses()}
+                                </Collapse.Panel>
+                            </Collapse>
+                        ) : (
+                            renderResponses()
+                        )}
+                    </Space>
+                </Card>
             </div>
         )
     }
 
-    // -------- consolidated summary (fix MCQ vs TEXT + keep polar for likert) --------
+
+    // -------- Consolidated Summary (add leaderboard per assessment + better choice charting) --------
+    const renderLeaderboardBoard = (tpl: FormTemplate, rows: FormResponse[]) => {
+        // compute scores for each response
+        const scored = rows
+            .map(r => {
+                const s = computeScoreForResponse(tpl, r)
+                if (!s) return null
+                return {
+                    id: r.id,
+                    name: r.submittedBy?.name || r.submittedBy?.email || 'Unknown',
+                    email: r.submittedBy?.email || '',
+                    pct: s.pct,
+                    earned: s.earned,
+                    total: s.total,
+                    submittedAt: r.submittedAt
+                }
+            })
+            .filter(Boolean) as Array<any>
+
+        if (!scored.length) return <Empty description="No gradable scores found for leaderboard." />
+
+        scored.sort((a, b) => b.pct - a.pct)
+
+        const top = scored.slice(0, 15)
+        const maxPct = Math.max(...top.map(x => x.pct))
+
+        return (
+            <Card size="small" style={{ borderRadius: 12 }}>
+                <Space direction="vertical" style={{ width: '100%' }} size={10}>
+                    {top.map((x, idx) => (
+                        <div key={x.id} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                            <div style={{ width: 34, textAlign: 'center' }}>
+                                <Tag color={idx === 0 ? 'gold' : idx === 1 ? 'geekblue' : idx === 2 ? 'cyan' : 'default'}>
+                                    {idx + 1}
+                                </Tag>
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                                    <div style={{ minWidth: 0 }}>
+                                        <Text strong style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {x.name}
+                                        </Text>
+                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                            {x.email || '-'}
+                                        </Text>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <Text strong>{Math.round(x.pct)}%</Text>
+                                        <div>
+                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                {x.earned}/{x.total}
+                                            </Text>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <AntProgress
+                                    percent={Math.round(x.pct)}
+                                    strokeColor={x.pct >= 70 ? '#52c41a' : x.pct >= 50 ? '#faad14' : '#ff4d4f'}
+                                    showInfo={false}
+                                />
+                            </div>
+                        </div>
+                    ))}
+                </Space>
+            </Card>
+        )
+    }
+
+    const buildChoiceOverallHeatmap = (tpl: FormTemplate, rows: FormResponse[]) => {
+        // Only choice questions with options
+        const choiceFields = (tpl.fields || [])
+            .filter(f => f.type !== 'heading')
+            .filter(f => (isChoiceType(f.type) && Array.isArray(f.options) && f.options.length >= 2))
+
+        if (!choiceFields.length) return null
+
+        // Keep it readable: top 25 questions by response count
+        const withCounts = choiceFields.map(f => {
+            let c = 0
+            for (const r of rows) {
+                const v = getAnswers(r)[f.id]
+                if (v === undefined || v === null || String(v).trim() === '') continue
+                c += Array.isArray(v) ? v.length : 1
+            }
+            return { f, c }
+        }).sort((a, b) => b.c - a.c).slice(0, 25)
+
+        const picked = withCounts.map(x => x.f)
+        const maxOptions = Math.max(...picked.map(f => (f.options || []).length))
+
+        const xCats = Array.from({ length: maxOptions }, (_, i) => letter(i)) // A..N
+        const yCats = picked.map((_, i) => `Q${i + 1}`)
+
+        const data: Array<[number, number, number]> = []
+        picked.forEach((f, qi) => {
+            const opts = f.options || []
+            // map option text -> index
+            const optIndex = new Map<string, number>()
+            opts.forEach((o, i) => optIndex.set(String(o), i))
+
+            const counts = new Array(maxOptions).fill(0)
+            rows.forEach(r => {
+                const v = getAnswers(r)[f.id]
+                if (v === undefined || v === null) return
+                const add = (val: any) => {
+                    const idx = optIndex.get(String(val))
+                    if (typeof idx === 'number') counts[idx] += 1
+                }
+                if (Array.isArray(v)) v.forEach(add)
+                else add(v)
+            })
+
+            counts.forEach((cnt, oi) => {
+                if (cnt > 0) data.push([oi, qi, cnt])
+                else data.push([oi, qi, 0])
+            })
+        })
+
+        return {
+            xCats,
+            yCats,
+            data,
+            mapQuestionLabel: (qIdx: number) => {
+                const f = picked[qIdx]
+                return f?.label || `Q${qIdx + 1}`
+            },
+            pickedFields: picked
+        }
+    }
+
     const renderConsolidatedSummary = () => {
         if (!groupedSorted.length) return <Empty description="No responses to summarize" />
 
@@ -750,8 +1111,6 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                 {Array.from(byTemplate.entries()).map(([tid, { title, rows }]) => {
                     const t = templates.find(x => x.id === tid) || null
                     const kind = t ? getKindForTemplate(t) : 'unknown'
-                    const company = t?.companyCode || (rows[0] ? getCompanyForResponse(rows[0]) : 'UNKNOWN')
-
                     const fields = (t?.fields || []).filter(f => f.type !== 'heading') as FormField[]
 
                     const fallbackFields: FormField[] = !fields.length
@@ -765,24 +1124,18 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
 
                     const effectiveFields = fields.length ? fields : fallbackFields
 
-                    const fieldBlocks = effectiveFields.map(f => {
-                        const valuesRaw = rows
-                            .map(r => getAnswers(r)[f.id])
-                            .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
+                    const choiceOverall = (t && kind === 'assessment') ? buildChoiceOverallHeatmap(t, rows) : null
 
+                    const fieldBlocks = effectiveFields.map((f, fieldIdx) => {
+                        const valuesRaw = rows.map(r => getAnswers(r)[f.id]).filter(v => v !== undefined && v !== null && String(v).trim() !== '')
                         if (!valuesRaw.length) return null
 
-                        // normalize values
                         const flatValues: any[] = []
-                        valuesRaw.forEach(v => {
-                            if (Array.isArray(v)) v.forEach(x => flatValues.push(x))
-                            else flatValues.push(v)
-                        })
+                        valuesRaw.forEach(v => Array.isArray(v) ? v.forEach(x => flatValues.push(x)) : flatValues.push(v))
 
-                        // Likert detection (even if template says "radio")
+                        // Likert detection
                         const likerts = flatValues.map(tryParseLikert).filter((n): n is number => n !== null)
                         const isLikert = likerts.length >= Math.max(3, Math.floor(flatValues.length * 0.6))
-
                         if (isLikert) {
                             const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
                             likerts.forEach(n => (dist[n] += 1))
@@ -809,19 +1162,12 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                                             </Col>
                                         </Row>
 
-                                        <Divider style={{ margin: '8px 0' }} />
-
-                                        <Space wrap>
-                                            {[1, 2, 3, 4, 5].map(n => (
-                                                <Tag key={n}>
-                                                    {n}: {dist[n]}
-                                                </Tag>
-                                            ))}
-                                        </Space>
-
                                         <Collapse style={{ marginTop: 8 }}>
-                                            <Panel header="Visual distribution (Spiderweb)" key="radar">
-                                                <HighchartsReact highcharts={Highcharts} options={radarLikertOptions(`Likert Distribution: ${f.label || f.id}`, dist)} />
+                                            <Panel header="Distribution (Spiderweb)" key="radar">
+                                                <HighchartsReact
+                                                    highcharts={Highcharts}
+                                                    options={radarLikertOptions(`Likert Distribution: ${f.label || f.id}`, dist)}
+                                                />
                                             </Panel>
                                         </Collapse>
                                     </Space>
@@ -829,28 +1175,23 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                             )
                         }
 
-                        // ✅ MCQ / choice detection: template options OR known choice types OR answers look like "A) ...", "B) ..."
+                        // Choice detection
                         const hasOptions = Array.isArray(f.options) && f.options.length > 0
-                        const looksLikeChoice = flatValues.some(v => /^[A-D]\)/.test(String(v).trim()))
-                        const isChoice = hasOptions || CHOICE_TYPES.has(String(f.type || '').toLowerCase()) || looksLikeChoice
+                        const isChoice = hasOptions || isChoiceType(f.type)
 
-                        if (isChoice) {
-                            const freq = new Map<string, number>()
+                        if (isChoice && hasOptions) {
+                            const opts = f.options || []
+                            const counts = opts.map(() => 0)
+                            const optIndex = new Map<string, number>()
+                            opts.forEach((o, i) => optIndex.set(String(o), i))
+
                             flatValues.forEach(v => {
-                                const s = String(v).trim()
-                                if (!s) return
-                                freq.set(s, (freq.get(s) || 0) + 1)
+                                const idx = optIndex.get(String(v))
+                                if (typeof idx === 'number') counts[idx] += 1
                             })
 
-                            // prefer template options order if present
-                            const distArr: Array<{ name: string; y: number }> = hasOptions
-                                ? f.options!.map(opt => ({ name: opt, y: freq.get(opt) || 0 }))
-                                : Array.from(freq.entries())
-                                    .sort((a, b) => b[1] - a[1])
-                                    .slice(0, 12)
-                                    .map(([name, y]) => ({ name, y }))
-
-                            const top = distArr.slice().sort((a, b) => b.y - a.y)[0]
+                            const cats = opts.map((_, i) => letter(i))
+                            const titleShort = `Q${fieldIdx + 1} Choice Breakdown (A–${letter(Math.max(0, cats.length - 1))})`
 
                             return (
                                 <Card key={f.id} size="small" style={{ marginBottom: 10 }}>
@@ -860,21 +1201,28 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                                             <Tag color="geekblue">CHOICE</Tag>
                                         </Space>
 
-                                        <Row gutter={12}>
-                                            <Col xs={24} sm={8}>
-                                                <Statistic title="Responses" value={flatValues.length} />
-                                            </Col>
-                                            <Col xs={24} sm={16}>
-                                                <Text type="secondary">Top selection:</Text>
-                                                <div style={{ marginTop: 6 }}>
-                                                    {top ? <Tag>{top.name} ({top.y})</Tag> : <Text type="secondary">-</Text>}
-                                                </div>
-                                            </Col>
-                                        </Row>
+                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                            Options mapped as A–{letter(opts.length - 1)} for distribution consistency.
+                                        </Text>
 
                                         <Collapse style={{ marginTop: 8 }}>
-                                            <Panel header="Distribution" key="dist">
-                                                <HighchartsReact highcharts={Highcharts} options={choiceColumnOptions(`Choice Distribution: ${f.label || f.id}`, distArr)} />
+                                            <Panel header="Distribution (Spiderweb)" key="spider">
+                                                <HighchartsReact
+                                                    highcharts={Highcharts}
+                                                    options={radarChoiceOptions(titleShort, cats, counts)}
+                                                />
+                                            </Panel>
+
+                                            <Panel header="Option legend" key="legend">
+                                                <div style={{ display: 'grid', gap: 6 }}>
+                                                    {opts.map((o, i) => (
+                                                        <div key={o} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                                                            <Tag style={{ width: 40, textAlign: 'center' }}>{letter(i)}</Tag>
+                                                            <Text>{o}</Text>
+                                                            <Text type="secondary">({counts[i]})</Text>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </Panel>
                                         </Collapse>
                                     </Space>
@@ -882,7 +1230,7 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                             )
                         }
 
-                        // text summary
+                        // Text summary
                         const texts = flatValues.map(v => String(v))
                         const keywords = extractKeywords(texts)
                         const samples = texts.slice(0, 8)
@@ -920,7 +1268,10 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                                     <Collapse style={{ marginTop: 8 }}>
                                         <Panel header="Word cloud" key="wc">
                                             {keywords.length ? (
-                                                <HighchartsReact highcharts={Highcharts} options={wordcloudOptions(`Word Cloud: ${f.label || f.id}`, keywords)} />
+                                                <HighchartsReact
+                                                    highcharts={Highcharts}
+                                                    options={wordcloudOptions(`Word Cloud: ${f.label || f.id}`, keywords)}
+                                                />
                                             ) : (
                                                 <Empty description="Not enough text to build a word cloud" />
                                             )}
@@ -946,13 +1297,61 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                                     <Space>
                                         <FileTextOutlined />
                                         <span>{title}</span>
-                                        {kind === 'assessment' ? <Tag color="geekblue">Assessment</Tag> : kind === 'survey' ? <Tag color='cyan'>Survey</Tag> : <Tag>UNKNOWN</Tag>}
+                                        {kind === 'assessment'
+                                            ? <Tag color="geekblue">Assessment</Tag>
+                                            : kind === 'survey'
+                                                ? <Tag color="cyan">Survey</Tag>
+                                                : <Tag>UNKNOWN</Tag>}
                                         <Tag color="geekblue">{rows.length} submissions</Tag>
                                         {!t && <Tag color="warning">Template missing</Tag>}
                                     </Space>
                                 }
                                 key={tid}
                             >
+                                {/* Leaderboard under assessment (folded) */}
+                                {t && kind === 'assessment' && (
+                                    <Collapse style={{ marginBottom: 12 }}>
+                                        <Panel header={<Space><TrophyOutlined />Leaderboard</Space>} key="lb">
+                                            {renderLeaderboardBoard(t, rows)}
+                                        </Panel>
+                                    </Collapse>
+                                )}
+
+                                {/* Overall choice distribution heatmap */}
+                                {t && kind === 'assessment' && choiceOverall && (
+                                    <Card size="small" style={{ marginBottom: 12 }}>
+                                        <Space direction="vertical" style={{ width: '100%' }} size={6}>
+                                            <Text strong>Overall choice distribution (Q1–Qn vs A–N)</Text>
+                                            <Text type="secondary">
+                                                Each cell is how many times an option letter was selected for that question.
+                                            </Text>
+
+                                            <HighchartsReact
+                                                highcharts={Highcharts}
+                                                options={choiceHeatmapOptions(
+                                                    `Choice Heatmap: ${t.title}`,
+                                                    choiceOverall.xCats,
+                                                    choiceOverall.yCats,
+                                                    choiceOverall.data
+                                                )}
+                                            />
+
+                                            <Collapse style={{ marginTop: 8 }}>
+                                                <Panel header="Question mapping" key="qm">
+                                                    <div style={{ display: 'grid', gap: 6 }}>
+                                                        {choiceOverall.yCats.map((q, idx) => (
+                                                            <div key={q} style={{ display: 'flex', gap: 10 }}>
+                                                                <Tag style={{ width: 50, textAlign: 'center' }}>{q}</Tag>
+                                                                <Text>{choiceOverall.mapQuestionLabel(idx)}</Text>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </Panel>
+                                            </Collapse>
+                                        </Space>
+                                    </Card>
+                                )}
+
                                 {fieldBlocks.filter(Boolean).length ? fieldBlocks : <Empty description="Nothing to summarize for this form" />}
                             </Panel>
                         </Collapse>
@@ -1030,7 +1429,6 @@ const FormResponseViewer: React.FC<Props> = ({ formId }) => {
                                 </CSVLink>
                             )
                         )}
-
                     </Space>
                 }
             >
