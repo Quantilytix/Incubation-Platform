@@ -1,3 +1,14 @@
+// =============================================
+// components/assessments/AssessmentBuilder.tsx
+// Adds: AI document extraction → populate Title/Description/Fields/Meta
+// Endpoint: https://yoursdvniel-smart-incubation.hf.space/extract-assessment
+//
+// What this does:
+// - Upload a document (PDF/DOCX/TXT) to the endpoint
+// - Endpoint returns a "draft" (title, description, fields, assessmentMeta)
+// - We normalize + clamp + auto-fix missing ids/options and populate the builder
+// - You can choose: Replace current questions OR Append to existing
+// =============================================
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     Card,
