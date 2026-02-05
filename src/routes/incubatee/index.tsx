@@ -12,7 +12,6 @@ import {
     message,
     Badge,
     Select,
-    Spin,
     Tag,
     Rate,
     Table
@@ -44,8 +43,8 @@ import { db, auth } from '@/firebase'
 import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
-import { motion } from 'framer-motion'
 import { MotionCard } from '@/components/shared/Header'
+import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 
 const { Title } = Typography
 const { Option } = Select
@@ -824,6 +823,16 @@ export const IncubateeDashboard: React.FC = () => {
     }
 
     const openMyForm = (row: MyFormRow) => {
+        const norm = String(row.status || '').toLowerCase()
+        const done = norm === 'submitted' || norm === 'completed'
+
+        // After submission: go to inbox/results page (NOT the runner)
+        if (done) {
+            navigate('/incubatee/forms')
+            return
+        }
+
+        // Otherwise continue/start in runner
         if (row.kind === 'survey') {
             const q = row.linkToken ? `?token=${row.linkToken}` : ''
             navigate(`/incubatee/surveys/${row.id}${q}`)
@@ -831,6 +840,7 @@ export const IncubateeDashboard: React.FC = () => {
             navigate(`/incubatee/assessments/${row.id}`)
         }
     }
+
 
 
 
@@ -884,7 +894,7 @@ export const IncubateeDashboard: React.FC = () => {
                 const norm = String(row.status || '').toLowerCase()
                 const label =
                     norm === 'submitted' || norm === 'completed'
-                        ? 'View'
+                        ? 'View Results'
                         : norm === 'in_progress' || norm === 'in-progress'
                             ? 'Continue'
                             : 'Start'
@@ -901,257 +911,211 @@ export const IncubateeDashboard: React.FC = () => {
         }
     ]
 
-
+    if (loading) {
+        return <LoadingOverlay tip="Loading Dashboard" />
+    }
 
     return (
-        <Spin spinning={loading} tip='Loading...'>
-            <div style={{ padding: '24px', minHeight: '100vh' }}>
-                <Helmet>
-                    <title>Smart Incubation | Incubatee Dashboard</title>
-                </Helmet>
+        <div style={{ padding: '24px', minHeight: '100vh' }}>
+            <Helmet>
+                <title>Smart Incubation | Incubatee Dashboard</title>
+            </Helmet>
 
-                <Row gutter={[16, 16]}>
-                    <Row gutter={[16, 16]} style={{ width: '100%' }}>
-                        <Col xs={24} md={8}>
-                            <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.4 }}
-                            >
-                                <MotionCard>
-                                    <Statistic
-                                        title='Participation Rate'
-                                        value={`${participation}%`}
-                                        prefix={<CheckCircleOutlined />}
-                                    />
-                                </MotionCard>
-                            </motion.div>
-                        </Col>
+            <Row gutter={[16, 16]}>
+                <Col xs={24} md={8}>
+                    <MotionCard>
+                        <MotionCard.Metric
+                            icon={<CheckCircleOutlined style={{ fontSize: 20, color: '#52c41a' }} />}
+                            iconBg="rgba(82,196,26,.14)"
+                            title="Participation Rate"
+                            value={`${participation}%`}
+                        />
+                    </MotionCard>
+                </Col>
 
-                        <Col xs={24} md={8}>
-                            <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.4 }}
-                            >
-                                <MotionCard>
-                                    <Statistic
-                                        title='Outstanding Documents'
-                                        value={outstandingDocs}
-                                        prefix={<FileTextOutlined />}
-                                    />
-                                </MotionCard>
-                            </motion.div>
-                        </Col>
+                <Col xs={24} md={8}>
+                    <MotionCard>
+                        <MotionCard.Metric
+                            icon={<FileTextOutlined style={{ fontSize: 20, color: '#1677ff' }} />}
+                            iconBg="rgba(22,119,255,.12)"
+                            title="Outstanding Documents"
+                            value={outstandingDocs}
+                        />
+                    </MotionCard>
+                </Col>
 
-                        <Col xs={24} md={8}>
-                            <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.4 }}
-                            >
-                                <MotionCard>
-                                    <Statistic
-                                        title='Total Workers'
-                                        value={
-                                            permHeadcount.reduce((a, b) => a + b, 0) +
-                                            tempHeadcount.reduce((a, b) => a + b, 0)
-                                        }
-                                        prefix={<TeamOutlined />}
-                                    />
-                                </MotionCard>
-                            </motion.div>
-                        </Col>
-                    </Row>
+                <Col xs={24} md={8}>
+                    <MotionCard>
+                        <MotionCard.Metric
+                            icon={<TeamOutlined style={{ fontSize: 20, color: '#722ed1' }} />}
+                            iconBg="rgba(114,46,209,.12)"
+                            title="Total Workers"
+                            value={
+                                permHeadcount.reduce((a, b) => a + b, 0) +
+                                tempHeadcount.reduce((a, b) => a + b, 0)
+                            }
+                        />
+                    </MotionCard>
+                </Col>
+            </Row>
 
-                    <Col xs={24}>
-                        <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.4 }}
+            <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+                <Col xs={24}>
+                    <MotionCard title="Pending Interventions">
+                        <List
+                            itemLayout="horizontal"
+                            dataSource={pendingInterventions}
+                            renderItem={item => (
+                                <List.Item
+                                    actions={
+                                        item.type === 'assignment'
+                                            ? [
+                                                <Button type="link" onClick={() => handleAccept(item.id)}>Accept</Button>,
+                                                <Button
+                                                    danger
+                                                    type="link"
+                                                    onClick={() => {
+                                                        setSelectedInterventionId(item.id)
+                                                        setDeclineModalVisible(true)
+                                                    }}
+                                                >
+                                                    Decline
+                                                </Button>,
+                                            ]
+                                            : [
+                                                <Button
+                                                    type="link"
+                                                    onClick={() => {
+                                                        setSelectedIntervention(item.full)
+                                                        setConfirmModalVisible(true)
+                                                    }}
+                                                >
+                                                    Confirm
+                                                </Button>,
+                                                <Button
+                                                    danger
+                                                    type="link"
+                                                    onClick={() => {
+                                                        setSelectedIntervention(item.full)
+                                                        setIsRejectModalVisible(true)
+                                                    }}
+                                                >
+                                                    Reject
+                                                </Button>,
+                                            ]
+                                    }
+                                >
+                                    <List.Item.Meta title={item.title} description={`Due: ${item.date}`} />
+                                </List.Item>
+                            )}
+                        />
+                    </MotionCard>
+                </Col>
+
+                <Col xs={24}>
+                    <MotionCard title="Action Centre">
+                        <Table
+                            rowKey={(r: MyFormRow) => `${r.kind}:${r.id}`}
+                            dataSource={myForms}
+                            columns={myFormsColumns as any}
+                            pagination={{ pageSize: 8 }}
+                            locale={{ emptyText: 'No forms assigned yet.' }}
+                        />
+                    </MotionCard>
+                </Col>
+            </Row>
+
+
+            <Modal
+                title='Notifications'
+                open={notificationsModalVisible}
+                footer={null}
+                onCancel={() => setNotificationsModalVisible(false)}
+                width={700}
+            >
+                <Select
+                    placeholder='Filter by Type'
+                    allowClear
+                    style={{ marginBottom: 16, width: 300 }}
+                    onChange={val => setFilterType(val)}
+                >
+                    <Option value='intervention-accepted'>Accepted</Option>
+                    <Option value='intervention-declined'>Declined</Option>
+                    <Option value='intervention-assigned'>Assigned</Option>
+                    <Option value='intervention-requested'>Requested</Option>
+                    <Option value='requested-intervention-accepted'>
+                        Req. Approved
+                    </Option>
+                    <Option value='requested-intervention-rejected'>
+                        Req. Rejected
+                    </Option>
+                    <Option value='consultant-assigned'>Consultant Assigned</Option>
+                </Select>
+
+                <List
+                    dataSource={filteredNotifications}
+                    renderItem={item => (
+                        <List.Item
+                            actions={[
+                                item.readBy?.[userRole] ? (
+                                    <Button
+                                        size='small'
+                                        onClick={() => handleMarkAsUnread(item.id)}
+                                    >
+                                        Mark Unread
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        size='small'
+                                        onClick={() => handleMarkAsRead(item.id)}
+                                    >
+                                        Mark Read
+                                    </Button>
+                                )
+                            ]}
                         >
-                            <MotionCard title='Pending Interventions'>
-                                <List
-                                    itemLayout='horizontal'
-                                    dataSource={pendingInterventions}
-                                    renderItem={item => (
-                                        <List.Item
-                                            actions={
-                                                item.type === 'assignment'
-                                                    ? [
-                                                        <Button
-                                                            type='link'
-                                                            onClick={() => handleAccept(item.id)}
-                                                        >
-                                                            Accept
-                                                        </Button>,
-                                                        <Button
-                                                            danger
-                                                            type='link'
-                                                            onClick={() => {
-                                                                setSelectedInterventionId(item.id)
-                                                                setDeclineModalVisible(true)
-                                                            }}
-                                                        >
-                                                            Decline
-                                                        </Button>
-                                                    ]
-                                                    : [
-                                                        <Button
-                                                            type='link'
-                                                            onClick={() => {
-                                                                setSelectedIntervention(item.full)
-                                                                setConfirmModalVisible(true)
-                                                            }}
-                                                        >
-                                                            Confirm
-                                                        </Button>,
-                                                        <Button
-                                                            danger
-                                                            type='link'
-                                                            onClick={() => {
-                                                                setSelectedIntervention(item.full)
-                                                                setIsRejectModalVisible(true)
-                                                            }}
-                                                        >
-                                                            Reject
-                                                        </Button>
-                                                    ]
-                                            }
-                                        >
-                                            <List.Item.Meta
-                                                title={item.title}
-                                                description={`Due: ${item.date}`}
-                                            />
-                                        </List.Item>
-                                    )}
-                                />
-                            </MotionCard>
-                        </motion.div>
-                    </Col>
-
-                    <Col xs={24}>
-                        <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.4 }}
-                        >
-                            <MotionCard title="My Forms">
-                                <Table
-                                    rowKey={(r: MyFormRow) => `${r.kind}:${r.id}`}
-                                    loading={loadingForms}
-                                    dataSource={myForms}
-                                    columns={myFormsColumns as any}
-                                    pagination={{ pageSize: 8 }}
-                                    locale={{ emptyText: 'No forms assigned yet.' }}
-                                />
-                            </MotionCard>
-                        </motion.div>
-                    </Col>
-                </Row>
-
-                <Modal
-                    title='Notifications'
-                    open={notificationsModalVisible}
-                    footer={null}
-                    onCancel={() => setNotificationsModalVisible(false)}
-                    width={700}
-                >
-                    <Select
-                        placeholder='Filter by Type'
-                        allowClear
-                        style={{ marginBottom: 16, width: 300 }}
-                        onChange={val => setFilterType(val)}
-                    >
-                        <Option value='intervention-accepted'>Accepted</Option>
-                        <Option value='intervention-declined'>Declined</Option>
-                        <Option value='intervention-assigned'>Assigned</Option>
-                        <Option value='intervention-requested'>Requested</Option>
-                        <Option value='requested-intervention-accepted'>
-                            Req. Approved
-                        </Option>
-                        <Option value='requested-intervention-rejected'>
-                            Req. Rejected
-                        </Option>
-                        <Option value='consultant-assigned'>Consultant Assigned</Option>
-                    </Select>
-
-                    <List
-                        dataSource={filteredNotifications}
-                        renderItem={item => (
-                            <List.Item
-                                actions={[
-                                    item.readBy?.[userRole] ? (
-                                        <Button
-                                            size='small'
-                                            onClick={() => handleMarkAsUnread(item.id)}
-                                        >
-                                            Mark Unread
-                                        </Button>
-                                    ) : (
-                                        <Button
-                                            size='small'
-                                            onClick={() => handleMarkAsRead(item.id)}
-                                        >
-                                            Mark Read
-                                        </Button>
-                                    )
-                                ]}
-                            >
-                                <List.Item.Meta
-                                    title={item.message?.[userRole] || 'No message available'}
-                                    description={item.type}
-                                />
-                            </List.Item>
-                        )}
-                    />
-                </Modal>
-
-                <Modal
-                    title='Decline Intervention'
-                    open={declineModalVisible}
-                    onOk={handleDecline}
-                    onCancel={() => setDeclineModalVisible(false)}
-                >
-                    <Input.TextArea
-                        rows={4}
-                        value={declineReason}
-                        onChange={e => setDeclineReason(e.target.value)}
-                        placeholder='Enter reason...'
-                    />
-                </Modal>
-
-                <Modal
-                    title='Reject Completion'
-                    open={isRejectModalVisible}
-                    onCancel={() => {
-                        setIsRejectModalVisible(false)
-                        setRejectReason('')
-                    }}
-                    onOk={handleRejectCompletion}
-                    okButtonProps={{ danger: true }}
-                    okText='Submit Rejection'
-                >
-                    <Input.TextArea
-                        rows={4}
-                        value={rejectReason}
-                        onChange={e => setRejectReason(e.target.value)}
-                        placeholder='Please explain why you’re rejecting this intervention’s completion...'
-                    />
-                </Modal>
-
-                <Button
-                    type='primary'
-                    shape='circle'
-                    icon={
-                        <Badge count={unreadCount}>
-                            <BellOutlined />
-                        </Badge>
-                    }
-                    style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1000 }}
-                    onClick={() => setNotificationsModalVisible(true)}
+                            <List.Item.Meta
+                                title={item.message?.[userRole] || 'No message available'}
+                                description={item.type}
+                            />
+                        </List.Item>
+                    )}
                 />
-            </div>
+            </Modal>
+
+            <Modal
+                title='Decline Intervention'
+                open={declineModalVisible}
+                onOk={handleDecline}
+                onCancel={() => setDeclineModalVisible(false)}
+            >
+                <Input.TextArea
+                    rows={4}
+                    value={declineReason}
+                    onChange={e => setDeclineReason(e.target.value)}
+                    placeholder='Enter reason...'
+                />
+            </Modal>
+
+            <Modal
+                title='Reject Completion'
+                open={isRejectModalVisible}
+                onCancel={() => {
+                    setIsRejectModalVisible(false)
+                    setRejectReason('')
+                }}
+                onOk={handleRejectCompletion}
+                okButtonProps={{ danger: true }}
+                okText='Submit Rejection'
+            >
+                <Input.TextArea
+                    rows={4}
+                    value={rejectReason}
+                    onChange={e => setRejectReason(e.target.value)}
+                    placeholder='Please explain why you’re rejecting this intervention’s completion...'
+                />
+            </Modal>
+
             <Modal
                 title='Confirm Intervention Completion'
                 open={confirmModalVisible}
@@ -1189,6 +1153,17 @@ export const IncubateeDashboard: React.FC = () => {
                     style={{ marginBottom: 8 }}
                 />
             </Modal>
-        </Spin>
+            <Button
+                type='primary'
+                shape='circle'
+                icon={
+                    <Badge count={unreadCount}>
+                        <BellOutlined />
+                    </Badge>
+                }
+                style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1000 }}
+                onClick={() => setNotificationsModalVisible(true)}
+            />
+        </div>
     )
 }
