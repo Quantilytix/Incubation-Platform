@@ -1,35 +1,4 @@
-// =============================================
 // src/pages/TimedAssessmentRunner.tsx
-// UPDATED to align with your NEW AssessmentBuilder schema, while still supporting legacy fields.
-//
-// ✅ Supports NEW schema (from your AssessmentBuilder):
-// - template.assessmentMeta.timingMode: 'none' | 'overall' | 'per_question'
-// - template.assessmentMeta.overallTimeSeconds
-// - template.assessmentMeta.maxAttempts
-// - per-question time is stored per field: field.timeLimitSeconds
-// - request denormalized fields (preferred for enforcement): formRequests.{timingMode, overallTimeSeconds, maxAttempts}
-//
-// ✅ Still supports LEGACY schema (your older runner):
-// - template.assessmentMeta.timePerQuestionSec
-// - template.assessmentMeta.totalTimeSec
-//
-// ✅ Fixes attempt enforcement:
-// - attemptCount increments on START (first session creation), not only on submit.
-// - prevents infinite restarts before submit.
-//
-// ✅ Fixes timer correctness:
-// - Uses wall-clock (Date.now) deltas so refresh/exit doesn't "pause" time.
-// - Session persisted in localStorage with lastTickAtMs.
-//
-// ✅ Runner behavior:
-// - One question at a time
-// - Auto-advance on per-question time up
-// - Auto-submit on overall time up OR last-question time up
-// - No back navigation
-// - Required questions enforced on Next (but time expiry still records unanswered)
-// - MCQ starts with no selection (value undefined) -> enforced
-// =============================================
-
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     App,
@@ -47,7 +16,7 @@ import {
     Rate,
     Alert,
     Modal,
-    Spin
+    Result
 } from 'antd'
 import { Helmet } from 'react-helmet'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -58,15 +27,16 @@ import {
     collection,
     updateDoc,
     increment,
-    serverTimestamp
+    serverTimestamp,
+    runTransaction
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { LoadingOverlay } from '../shared/LoadingOverlay'
 
 const { Title, Text } = Typography
 
 type AnswersMap = Record<string, any>
-
 type TimingMode = 'none' | 'overall' | 'per_question'
 
 type FormField = {
@@ -78,8 +48,6 @@ type FormField = {
     options?: string[]
     correctAnswer?: any
     points?: number
-
-    // ✅ NEW (builder): per-question time
     timeLimitSeconds?: number | null
 }
 
@@ -91,19 +59,16 @@ type FormTemplate = {
     companyCode?: string
     fields: FormField[]
     assessmentMeta?: {
-        // existing
         timeWindowEnabled?: boolean
         startAt?: any
         endAt?: any
         dueAt?: any
         autoGrade?: boolean
 
-        // ✅ NEW builder fields:
         timingMode?: TimingMode
         overallTimeSeconds?: number | null
         maxAttempts?: number | null
 
-        // ✅ LEGACY fields (still supported):
         timePerQuestionSec?: number | null
         totalTimeSec?: number | null
     }
@@ -120,13 +85,11 @@ type FormRequest = {
 
     attemptCount?: number
 
-    // optional time window denormalized:
     startAt?: any
     endAt?: any
     dueAt?: any
     timeWindowEnabled?: boolean
 
-    // ✅ NEW denormalized (preferred):
     timingMode?: TimingMode
     overallTimeSeconds?: number | null
     maxAttempts?: number | null
@@ -135,16 +98,23 @@ type FormRequest = {
 function toDateSafe(v: any): Date | null {
     if (!v) return null
     if (typeof v?.toDate === 'function') {
-        try { return v.toDate() } catch { }
+        try {
+            const d = v.toDate()
+            return d instanceof Date && !isNaN(d.getTime()) ? d : null
+        } catch {
+            return null
+        }
     }
     if (typeof v?.seconds === 'number') {
         const ms = v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6)
-        return new Date(ms)
+        const d = new Date(ms)
+        return isNaN(d.getTime()) ? null : d
     }
-    if (v instanceof Date) return v
+    if (v instanceof Date) return isNaN(v.getTime()) ? null : v
     if (typeof v === 'number') {
         const ms = v < 10_000_000_000 ? v * 1000 : v
-        return new Date(ms)
+        const d = new Date(ms)
+        return isNaN(d.getTime()) ? null : d
     }
     if (typeof v === 'string') {
         const d = new Date(v)
@@ -171,26 +141,25 @@ const lsKey = (requestId: string) => `timed_assessment_session__${requestId}`
 type SessionState = {
     startedAtMs: number
     lastTickAtMs: number
-
     currentIndex: number
     lockedIndexMax: number
-
     answers: AnswersMap
     unanswered: string[]
     questionTimeSpentSec: Record<string, number>
-
     remainingOverallSec: number | null
     remainingQuestionSec: number | null
-
-    // ✅ prevent attemptCount double increment on refresh
     attemptStarted: boolean
 }
+
+type SubmitTrigger = 'manual_submit' | 'overall_timeout' | 'per_question_timeout' | 'user_exit'
 
 export default function TimedAssessmentRunner() {
     const { message } = App.useApp()
     const { user } = useFullIdentity() as any
     const navigate = useNavigate()
-    const { requestId } = useParams<{ requestId: string }>()
+
+    const params = useParams()
+    const requestId = (params as any).requestId || (params as any).id || (params as any).assignmentId || ''
 
     const [loading, setLoading] = useState(true)
     const [submitting, setSubmitting] = useState(false)
@@ -203,16 +172,53 @@ export default function TimedAssessmentRunner() {
 
     const tickRef = useRef<any>(null)
 
+    // guards
+    const attemptRegisteringRef = useRef(false)
+    const attemptStartLockRef = useRef(false)
+
+    // FINALIZATION HARD-LOCKS (fixes modal looping + glitch)
+    const finalizingRef = useRef(false)
+    const finalizedRef = useRef(false)
+
+    const [showSubmittedResult, setShowSubmittedResult] = useState(false)
+    const [submittedTrigger, setSubmittedTrigger] = useState<SubmitTrigger>('manual_submit')
+
+    useEffect(() => {
+        attemptStartLockRef.current = false
+        finalizingRef.current = false
+        finalizedRef.current = false
+        Modal.destroyAll()
+    }, [requestId])
+
+    // ensure cleanup
+    useEffect(() => {
+        return () => {
+            if (tickRef.current) {
+                clearInterval(tickRef.current)
+                tickRef.current = null
+            }
+            Modal.destroyAll()
+        }
+    }, [])
+
     // -----------------------------
     // Load request + template
     // -----------------------------
     useEffect(() => {
         ; (async () => {
-            if (!requestId) return
+            if (!requestId) {
+                setBlockedReason('Missing assessment request id in the URL.')
+                setLoading(false)
+                return
+            }
+
             setLoading(true)
+            setBlockedReason(null)
+
             try {
                 const rRef = doc(db, 'formRequests', requestId)
                 const rSnap = await getDoc(rRef)
+
                 if (!rSnap.exists()) {
                     setBlockedReason('Assessment request not found.')
                     setLoading(false)
@@ -256,17 +262,16 @@ export default function TimedAssessmentRunner() {
                     }
                 }
 
-                // attempts enforcement (request overrides template)
-                const maxAttemptsRaw =
-                    r.maxAttempts ?? meta.maxAttempts
-
-                const maxAttempts =
-                    typeof maxAttemptsRaw === 'number' && maxAttemptsRaw > 0
-                        ? Math.floor(maxAttemptsRaw)
-                        : null
+                // attempts enforcement (IMPORTANT: allow resume when status is in_progress)
+                const maxAttemptsRaw = r.maxAttempts ?? meta.maxAttempts
+                const maxAttempts = typeof maxAttemptsRaw === 'number' && maxAttemptsRaw > 0 ? Math.floor(maxAttemptsRaw) : null
 
                 const attemptCount = Number(r.attemptCount || 0)
-                if (maxAttempts !== null && attemptCount >= maxAttempts) {
+                const status = String(r.status || '').toLowerCase()
+                const isInProgress = status === 'in_progress'
+
+                // block only if not in progress
+                if (maxAttempts !== null && attemptCount >= maxAttempts && !isInProgress) {
                     setBlockedReason(`Maximum attempts reached (${attemptCount}/${maxAttempts}).`)
                     setLoading(false)
                     return
@@ -286,9 +291,7 @@ export default function TimedAssessmentRunner() {
     // -----------------------------
     // Questions (exclude headings)
     // -----------------------------
-    const questions = useMemo(() => {
-        return (tpl?.fields || []).filter(f => f.type !== 'heading')
-    }, [tpl])
+    const questions = useMemo(() => (tpl?.fields || []).filter(f => f.type !== 'heading'), [tpl])
 
     // -----------------------------
     // Resolve timing mode + limits
@@ -296,13 +299,13 @@ export default function TimedAssessmentRunner() {
     const resolvedTiming = useMemo(() => {
         const meta = tpl?.assessmentMeta || {}
 
-        // prefer request denormalized fields
         const mode: TimingMode =
             (reqDoc?.timingMode as any) ||
             (meta.timingMode as any) ||
-            // legacy fallback: if old fields exist, infer mode
-            ((typeof meta.totalTimeSec === 'number' && meta.totalTimeSec > 0) ? 'overall'
-                : (typeof meta.timePerQuestionSec === 'number' && meta.timePerQuestionSec > 0) ? 'per_question'
+            (typeof meta.totalTimeSec === 'number' && meta.totalTimeSec > 0
+                ? 'overall'
+                : typeof meta.timePerQuestionSec === 'number' && meta.timePerQuestionSec > 0
+                    ? 'per_question'
                     : 'none')
 
         const overallSeconds =
@@ -314,12 +317,10 @@ export default function TimedAssessmentRunner() {
                         ? clampInt(meta.totalTimeSec, 0, 24 * 60 * 60)
                         : 0
 
-        const legacyPerQ =
-            typeof meta.timePerQuestionSec === 'number' ? clampInt(meta.timePerQuestionSec, 0, 60 * 60) : 0
+        const legacyPerQ = typeof meta.timePerQuestionSec === 'number' ? clampInt(meta.timePerQuestionSec, 0, 60 * 60) : 0
 
         const maxAttemptsRaw = reqDoc?.maxAttempts ?? meta.maxAttempts
-        const maxAttempts =
-            typeof maxAttemptsRaw === 'number' && maxAttemptsRaw > 0 ? Math.floor(maxAttemptsRaw) : null
+        const maxAttempts = typeof maxAttemptsRaw === 'number' && maxAttemptsRaw > 0 ? Math.floor(maxAttemptsRaw) : null
 
         return { mode, overallSeconds, legacyPerQ, maxAttempts }
     }, [tpl, reqDoc])
@@ -344,20 +345,14 @@ export default function TimedAssessmentRunner() {
 
         const now = Date.now()
 
-        // initial remaining timers based on mode
-        const initialOverall =
-            resolvedTiming.mode === 'overall' && resolvedTiming.overallSeconds > 0
-                ? resolvedTiming.overallSeconds
-                : null
+        const initialOverall = resolvedTiming.mode === 'overall' && resolvedTiming.overallSeconds > 0 ? resolvedTiming.overallSeconds : null
 
         const firstQ = questions[0]
         const initialPerQ =
             resolvedTiming.mode === 'per_question'
                 ? (() => {
-                    // NEW: per-field timeLimitSeconds wins
                     const sec = clampInt(firstQ?.timeLimitSeconds ?? 0, 0, 60 * 60)
                     if (sec > 0) return sec
-                    // LEGACY: fallback to meta.timePerQuestionSec
                     return resolvedTiming.legacyPerQ > 0 ? resolvedTiming.legacyPerQ : null
                 })()
                 : null
@@ -365,23 +360,19 @@ export default function TimedAssessmentRunner() {
         const initial: SessionState = {
             startedAtMs: now,
             lastTickAtMs: now,
-
             currentIndex: 0,
             lockedIndexMax: 0,
-
             answers: {},
             unanswered: [],
             questionTimeSpentSec: {},
-
             remainingOverallSec: initialOverall,
             remainingQuestionSec: initialPerQ,
-
             attemptStarted: false
         }
 
         setSession(initial)
         localStorage.setItem(lsKey(requestId), JSON.stringify(initial))
-    }, [requestId, tpl, reqDoc, questions.length, resolvedTiming.mode, resolvedTiming.overallSeconds, resolvedTiming.legacyPerQ])
+    }, [requestId, tpl, reqDoc, questions, resolvedTiming.mode, resolvedTiming.overallSeconds, resolvedTiming.legacyPerQ])
 
     // -----------------------------
     // Persist session
@@ -392,31 +383,45 @@ export default function TimedAssessmentRunner() {
     }, [requestId, session])
 
     // -----------------------------
-    // Increment attemptCount ON START (once)
+    // Mark in_progress + increment attemptCount ON FIRST OPEN (once)
     // -----------------------------
     useEffect(() => {
         ; (async () => {
-            if (!requestId || !session || !reqDoc) return
+            if (!requestId || !reqDoc) return
+            if (!session) return
+            if (attemptStartLockRef.current) return
             if (session.attemptStarted) return
+            if (finalizingRef.current || finalizedRef.current) return
+
+            attemptStartLockRef.current = true
+
+            setSession(prev => (prev ? { ...prev, attemptStarted: true } : prev))
 
             try {
                 const rRef = doc(db, 'formRequests', requestId)
                 await updateDoc(rRef, {
+                    status: 'in_progress',
                     attemptCount: increment(1),
                     attemptStartedAt: serverTimestamp(),
-                    status: reqDoc.status || 'in_progress'
+                    updatedAt: serverTimestamp()
                 })
 
-                // update local + state so we don’t double increment
-                setReqDoc(prev => prev ? { ...prev, attemptCount: Number(prev.attemptCount || 0) + 1 } : prev)
-                setSession(prev => prev ? { ...prev, attemptStarted: true } : prev)
+                setReqDoc(prev =>
+                    prev
+                        ? {
+                            ...prev,
+                            status: 'in_progress',
+                            attemptCount: Number(prev.attemptCount || 0) + 1
+                        }
+                        : prev
+                )
             } catch (e) {
                 console.error(e)
-                // If this fails, do NOT block the user, but warn.
                 message.warning('Could not register attempt start. Please check connectivity.')
             }
         })()
-    }, [requestId, session?.attemptStarted, reqDoc?.id])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requestId, reqDoc?.templateId, session?.startedAtMs])
 
     // -----------------------------
     // Helpers
@@ -426,6 +431,14 @@ export default function TimedAssessmentRunner() {
         return questions[session.currentIndex] || null
     }, [session, questions])
 
+    const computePerQLimitForIndex = (index: number) => {
+        const q = questions[index]
+        if (!q) return null
+        const secField = clampInt(q.timeLimitSeconds ?? 0, 0, 60 * 60)
+        if (secField > 0) return secField
+        return resolvedTiming.legacyPerQ > 0 ? resolvedTiming.legacyPerQ : null
+    }
+
     const effectiveQuestionRemaining = useMemo(() => {
         if (!session) return null
         const q = session.remainingQuestionSec
@@ -434,17 +447,17 @@ export default function TimedAssessmentRunner() {
         if (typeof q === 'number') return Math.max(0, q)
         if (typeof o === 'number') return Math.max(0, o)
         return null
-    }, [session?.remainingQuestionSec, session?.remainingOverallSec])
+    }, [session])
 
     const overallRemaining = useMemo(() => {
         if (!session) return null
         return typeof session.remainingOverallSec === 'number' ? Math.max(0, session.remainingOverallSec) : null
-    }, [session?.remainingOverallSec])
+    }, [session])
 
     const progressPct = useMemo(() => {
         if (!session || questions.length === 0) return 0
         return Math.round(((session.currentIndex + 1) / questions.length) * 100)
-    }, [session?.currentIndex, questions.length])
+    }, [session, questions.length])
 
     const requiredUnansweredWarning = useMemo(() => {
         if (!session || !currentQ) return false
@@ -456,27 +469,192 @@ export default function TimedAssessmentRunner() {
         return false
     }, [session, currentQ])
 
-    const computePerQLimitForIndex = (index: number) => {
-        const q = questions[index]
-        if (!q) return null
-        // NEW: field.timeLimitSeconds
-        const secField = clampInt(q.timeLimitSeconds ?? 0, 0, 60 * 60)
-        if (secField > 0) return secField
-        // LEGACY fallback:
-        return resolvedTiming.legacyPerQ > 0 ? resolvedTiming.legacyPerQ : null
+    const isAnswered = (val: any) => {
+        if (val === undefined || val === null) return false
+        if (typeof val === 'string' && val.trim() === '') return false
+        if (Array.isArray(val) && val.length === 0) return false
+        return true
     }
+
+    // -----------------------------
+    // Submit / finalize (single-fire)
+    // -----------------------------
+    const ensureAttemptRegistered = async (): Promise<number | null> => {
+        if (!requestId) return null
+        if (!reqDoc) return null
+        if (!session) return null
+
+        if (finalizedRef.current) return Number(reqDoc.attemptCount || 0)
+
+        // If UI already knows attempt was registered AND reqDoc shows it, skip.
+        if (session.attemptStarted && Number(reqDoc.attemptCount || 0) > 0) return Number(reqDoc.attemptCount || 0)
+
+        if (attemptRegisteringRef.current) return Number(reqDoc.attemptCount || 0)
+        attemptRegisteringRef.current = true
+
+        try {
+            const rRef = doc(db, 'formRequests', requestId)
+
+            const nextCount = await runTransaction(db, async tx => {
+                const snap = await tx.get(rRef)
+                if (!snap.exists()) throw new Error('Request no longer exists')
+
+                const data = snap.data() as any
+                const status = String(data.status || '').toLowerCase()
+
+                // If already submitted, do not consume/modify attempts
+                if (status === 'submitted') return Number(data.attemptCount || 0)
+
+                const current = Number(data.attemptCount || 0)
+                const updated = current + 1
+
+                tx.update(rRef, {
+                    status: 'in_progress',
+                    attemptCount: updated,
+                    attemptStartedAt: data.attemptStartedAt || serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                })
+
+                return updated
+            })
+
+            setSession(prev => (prev ? { ...prev, attemptStarted: true } : prev))
+            setReqDoc(prev => (prev ? { ...prev, status: 'in_progress', attemptCount: nextCount } : prev))
+
+            return nextCount
+        } catch (e) {
+            console.error('[ensureAttemptRegistered] failed:', e)
+            message.error('Could not register attempt. Check permissions / connectivity.')
+            return null
+        } finally {
+            attemptRegisteringRef.current = false
+        }
+    }
+
+    const submitResponse = async (s: SessionState, trigger: SubmitTrigger) => {
+        if (!tpl || !reqDoc || !requestId) return
+
+        const unanswered = new Set<string>(s.unanswered || [])
+        for (const q of questions) {
+            if (!isAnswered(s.answers[q.id])) unanswered.add(q.id)
+        }
+
+        const durationSec = Math.max(1, Math.floor((Date.now() - s.startedAtMs) / 1000))
+
+        const atEnd = s.currentIndex >= questions.length - 1
+        const leftMidway =
+            trigger === 'user_exit'
+                ? true
+                : trigger === 'overall_timeout' || trigger === 'per_question_timeout'
+                    ? !atEnd || unanswered.size > 0
+                    : unanswered.size > 0
+
+        await addDoc(collection(db, 'formResponses'), {
+            templateId: reqDoc.templateId,
+            formId: reqDoc.templateId,
+            requestId,
+            formTitle: tpl.title || 'Assessment',
+            kind: 'assessment',
+            companyCode: reqDoc.companyCode || tpl.companyCode || user?.companyCode || '',
+            participantId: reqDoc.participantId,
+            submittedBy: {
+                id: user?.uid || user?.id || '',
+                name: user?.name || user?.displayName || reqDoc.participantName || '',
+                email: user?.email || reqDoc.participantEmail || ''
+            },
+            submittedAt: serverTimestamp(),
+            status: 'submitted',
+            answers: s.answers,
+            completion: {
+                leftMidway,
+                trigger,
+                completedQuestions: Object.keys(s.answers || {}).filter(k => isAnswered((s.answers as any)[k])).length,
+                totalQuestions: questions.length,
+                lastQuestionIndex: s.currentIndex
+            },
+            timing: {
+                startedAtMs: s.startedAtMs,
+                durationSec,
+                perQuestionTimeSpentSec: s.questionTimeSpentSec || {},
+                unansweredIds: Array.from(unanswered),
+                timingMode: resolvedTiming.mode,
+                overallTimeSeconds: resolvedTiming.mode === 'overall' ? resolvedTiming.overallSeconds || null : null,
+                perQuestionLimits:
+                    resolvedTiming.mode === 'per_question'
+                        ? questions.reduce((acc: any, q) => {
+                            const lim = clampInt(q.timeLimitSeconds ?? 0, 0, 60 * 60)
+                            if (lim > 0) acc[q.id] = lim
+                            return acc
+                        }, {})
+                        : {}
+            }
+        })
+
+        await updateDoc(doc(db, 'formRequests', requestId), {
+            status: 'submitted',
+            submittedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            leftMidway
+        })
+
+        localStorage.removeItem(lsKey(requestId))
+    }
+
+    const finalize = async (stateOverride?: SessionState, trigger: SubmitTrigger = 'manual_submit') => {
+        const s = stateOverride || session
+        if (!s || !tpl || !reqDoc || !requestId) return
+
+        if (finalizingRef.current || finalizedRef.current) return
+        finalizingRef.current = true
+
+        // stop timers + kill any modals
+        if (tickRef.current) {
+            clearInterval(tickRef.current)
+            tickRef.current = null
+        }
+        Modal.destroyAll()
+
+        setSubmitting(true)
+        try {
+            await ensureAttemptRegistered()
+            await submitResponse(s, trigger)
+
+            finalizedRef.current = true
+            Modal.destroyAll()
+
+            // If user EXITED, don't show Result screen — just leave (or toast)
+            if (trigger === 'user_exit') {
+                message.info('Saved & submitted (incomplete).')
+                navigate(-1)
+                return
+            }
+
+            // If actually submitted/completed, show Result screen
+            setSubmittedTrigger(trigger)
+            setShowSubmittedResult(true)
+        } catch (e) {
+            console.error(e)
+            message.error('Failed to submit assessment.')
+            finalizingRef.current = false // allow retry only on failure
+        } finally {
+            setSubmitting(false)
+        }
+    }
+
 
     // -----------------------------
     // Timers (wall clock)
     // -----------------------------
     useEffect(() => {
         if (!session || !currentQ) return
+        if (finalizingRef.current || finalizedRef.current) return
 
         if (tickRef.current) clearInterval(tickRef.current)
 
         tickRef.current = setInterval(() => {
             setSession(prev => {
                 if (!prev) return prev
+                if (finalizingRef.current || finalizedRef.current) return prev
 
                 const now = Date.now()
                 const dtSec = Math.max(1, Math.floor((now - (prev.lastTickAtMs || now)) / 1000))
@@ -484,7 +662,6 @@ export default function TimedAssessmentRunner() {
                 const q = questions[prev.currentIndex]
                 if (!q) return { ...prev, lastTickAtMs: now }
 
-                // Update time spent for current question
                 const spent = { ...(prev.questionTimeSpentSec || {}) }
                 spent[q.id] = (spent[q.id] || 0) + dtSec
 
@@ -502,49 +679,33 @@ export default function TimedAssessmentRunner() {
                     remainingQuestionSec: nextQ
                 }
 
-                // helper to check answered
-                const isAnswered = (val: any) => {
-                    if (val === undefined || val === null) return false
-                    if (typeof val === 'string' && val.trim() === '') return false
-                    if (Array.isArray(val) && val.length === 0) return false
-                    return true
-                }
-
                 // Overall time up => force submit
                 if (typeof nextOverall === 'number' && nextOverall <= 0) {
-                    const unanswered = new Set(updated.unanswered || [])
-                    if (!isAnswered(updated.answers[q.id])) unanswered.add(q.id)
-
-                    const finalState: SessionState = {
-                        ...updated,
-                        unanswered: Array.from(unanswered),
-                        remainingOverallSec: 0
-                    }
-
-                    setTimeout(() => { handleSubmit(finalState).catch(() => { }) }, 0)
+                    const finalState: SessionState = { ...updated, remainingOverallSec: 0 }
+                    setTimeout(() => {
+                        if (!finalizingRef.current && !finalizedRef.current) {
+                            finalize(finalState, 'overall_timeout').catch(() => { })
+                        }
+                    }, 0)
                     return finalState
                 }
 
                 // Per-question time up => auto-advance or submit on last
                 if (typeof nextQ === 'number' && nextQ <= 0) {
-                    const unanswered = new Set(updated.unanswered || [])
-                    if (!isAnswered(updated.answers[q.id])) unanswered.add(q.id)
-
                     const isLast = updated.currentIndex >= questions.length - 1
                     if (isLast) {
-                        const finalState: SessionState = {
-                            ...updated,
-                            unanswered: Array.from(unanswered),
-                            remainingQuestionSec: 0
-                        }
-                        setTimeout(() => { handleSubmit(finalState).catch(() => { }) }, 0)
+                        const finalState: SessionState = { ...updated, remainingQuestionSec: 0 }
+                        setTimeout(() => {
+                            if (!finalizingRef.current && !finalizedRef.current) {
+                                finalize(finalState, 'per_question_timeout').catch(() => { })
+                            }
+                        }, 0)
                         return finalState
                     }
 
                     const nextIndex = updated.currentIndex + 1
                     return {
                         ...updated,
-                        unanswered: Array.from(unanswered),
                         currentIndex: nextIndex,
                         lockedIndexMax: Math.max(updated.lockedIndexMax, nextIndex),
                         remainingQuestionSec: computePerQLimitForIndex(nextIndex)
@@ -562,7 +723,7 @@ export default function TimedAssessmentRunner() {
     }, [session?.currentIndex, questions.length, currentQ?.id])
 
     // -----------------------------
-    // Answer setter (MCQ starts undefined)
+    // Answer setter
     // -----------------------------
     const setAnswer = (fieldId: string, value: any) => {
         setSession(prev => {
@@ -572,18 +733,15 @@ export default function TimedAssessmentRunner() {
     }
 
     // -----------------------------
-    // Navigation (no back)
+    // Navigation
     // -----------------------------
     const handleNext = () => {
         if (!session || !currentQ) return
+        if (finalizingRef.current || finalizedRef.current) return
 
         if (currentQ.required) {
             const v = session.answers[currentQ.id]
-            const missing =
-                v === undefined ||
-                v === null ||
-                (typeof v === 'string' && v.trim() === '') ||
-                (Array.isArray(v) && v.length === 0)
+            const missing = !isAnswered(v)
             if (missing) {
                 message.warning('This question is required.')
                 return
@@ -592,7 +750,7 @@ export default function TimedAssessmentRunner() {
 
         const isLast = session.currentIndex >= questions.length - 1
         if (isLast) {
-            handleSubmit(session).catch(() => { })
+            finalize(session, 'manual_submit').catch(() => { })
             return
         }
 
@@ -610,108 +768,87 @@ export default function TimedAssessmentRunner() {
     }
 
     // -----------------------------
-    // Submit
+    // Exit behaviour (resume vs forced submit)
     // -----------------------------
-    const handleSubmit = async (stateOverride?: SessionState) => {
-        const s = stateOverride || session
-        if (!s || !tpl || !reqDoc || !requestId) return
-        if (submitting) return
-
-        setSubmitting(true)
-        try {
-            // Compute unanswered: any still empty
-            const unanswered = new Set<string>(s.unanswered || [])
-            for (const q of questions) {
-                const v = s.answers[q.id]
-                const isAnswered =
-                    v !== undefined &&
-                    v !== null &&
-                    !(
-                        (typeof v === 'string' && v.trim() === '') ||
-                        (Array.isArray(v) && v.length === 0)
-                    )
-                if (!isAnswered) unanswered.add(q.id)
-            }
-
-            const durationSec = Math.max(1, Math.floor((Date.now() - s.startedAtMs) / 1000))
-
-            // Write response
-            await addDoc(collection(db, 'formResponses'), {
-                templateId: reqDoc.templateId,
-                formId: reqDoc.templateId, // legacy
-                requestId,
-                formTitle: tpl.title || 'Assessment',
-                kind: 'assessment',
-                companyCode: reqDoc.companyCode || tpl.companyCode || user?.companyCode || '',
-                participantId: reqDoc.participantId,
-                submittedBy: {
-                    id: user?.uid || user?.id || '',
-                    name: user?.name || user?.displayName || reqDoc.participantName || '',
-                    email: user?.email || reqDoc.participantEmail || ''
-                },
-                submittedAt: serverTimestamp(),
-                status: 'submitted',
-                answers: s.answers,
-                timing: {
-                    startedAtMs: s.startedAtMs,
-                    durationSec,
-                    perQuestionTimeSpentSec: s.questionTimeSpentSec || {},
-                    unansweredIds: Array.from(unanswered),
-
-                    // record resolved timing for auditing
-                    timingMode: resolvedTiming.mode,
-                    overallTimeSeconds:
-                        resolvedTiming.mode === 'overall'
-                            ? (resolvedTiming.overallSeconds || null)
-                            : null,
-                    // for per-question, store per-field map (best)
-                    perQuestionLimits: resolvedTiming.mode === 'per_question'
-                        ? questions.reduce((acc: any, q) => {
-                            const lim = clampInt(q.timeLimitSeconds ?? 0, 0, 60 * 60)
-                            if (lim > 0) acc[q.id] = lim
-                            return acc
-                        }, {})
-                        : {}
-                }
-            })
-
-            // Update request
-            const rRef = doc(db, 'formRequests', requestId)
-            await updateDoc(rRef, {
-                status: 'submitted',
-                submittedAt: serverTimestamp()
-            })
-
-            // Clear local session
-            localStorage.removeItem(lsKey(requestId))
-
-            Modal.success({
-                title: 'Submitted',
-                content: 'Your assessment has been submitted.',
-                onOk: () => navigate(-1)
-            })
-        } catch (e) {
-            console.error(e)
-            message.error('Failed to submit assessment.')
-        } finally {
-            setSubmitting(false)
+    const handleExit = () => {
+        if (!reqDoc || !session) {
+            navigate(-1)
+            return
         }
+        if (finalizingRef.current || finalizedRef.current) return
+
+        const maxAttempts = resolvedTiming.maxAttempts
+        const attemptCountDb = Number(reqDoc.attemptCount || 0)
+
+        // If maxAttempts exists, exiting should ALWAYS submit (since attempts are limited)
+        // so user can't "pause" a 1-attempt assessment and come back later.
+        const mustFinalizeOnExit = maxAttempts !== null
+
+        Modal.confirm({
+            title: 'Exit assessment?',
+            width: 620,
+            icon: null,
+            okText: mustFinalizeOnExit ? 'Exit & Submit' : 'Exit',
+            cancelText: 'Continue',
+            okButtonProps: mustFinalizeOnExit ? { danger: true } : undefined,
+            content: (
+                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="Progress saved"
+                        description="Your progress is saved on this device."
+                        style={{ width: '100%', margin: 0 }}
+                    />
+
+                    {mustFinalizeOnExit ? (
+                        <Alert
+                            type="warning"
+                            showIcon
+                            message="Limited attempts — exiting will submit"
+                            description={
+                                <span style={{ display: 'block', lineHeight: 1.45 }}>
+                                    This assessment has limited attempts ({Math.min(attemptCountDb + (session.attemptStarted ? 0 : 1), maxAttempts)}/{maxAttempts}).
+                                    If you exit now, your current answers will be <b>submitted automatically</b> and marked as <b>left mid-way</b>.
+                                    You may not be able to reopen it.
+                                </span>
+                            }
+                            style={{ width: '100%', margin: 0 }}
+                        />
+                    ) : (
+                        <Alert
+                            type="success"
+                            showIcon
+                            message="You can continue later"
+                            description={
+                                <span style={{ display: 'block', lineHeight: 1.45 }}>
+                                    You can exit now and return later to continue, as long as the assessment remains open and unsubmitted.
+                                </span>
+                            }
+                            style={{ width: '100%', margin: 0 }}
+                        />
+                    )}
+                </Space>
+            ),
+            onOk: () => {
+                if (!mustFinalizeOnExit) {
+                    navigate(-1)
+                    return
+                }
+                return finalize(session, 'user_exit')
+            }
+        })
     }
 
     // -----------------------------
-    // Render input by type
+    // Render by type
     // -----------------------------
     const renderQuestionInput = (q: FormField) => {
         const v = session?.answers?.[q.id]
-
         switch (q.type) {
             case 'radio':
                 return (
-                    <Radio.Group
-                        value={v} // ✅ undefined by default => nothing selected
-                        onChange={e => setAnswer(q.id, e.target.value)}
-                        style={{ display: 'grid', gap: 8 }}
-                    >
+                    <Radio.Group value={v} onChange={e => setAnswer(q.id, e.target.value)} style={{ display: 'grid', gap: 8 }}>
                         {(q.options || []).map(opt => (
                             <Radio key={opt} value={opt}>
                                 {opt}
@@ -733,13 +870,7 @@ export default function TimedAssessmentRunner() {
             }
 
             case 'short':
-                return (
-                    <Input
-                        value={typeof v === 'string' ? v : ''}
-                        onChange={e => setAnswer(q.id, e.target.value)}
-                        placeholder="Type your answer…"
-                    />
-                )
+                return <Input value={typeof v === 'string' ? v : ''} onChange={e => setAnswer(q.id, e.target.value)} placeholder="Type your answer…" />
 
             case 'long':
                 return (
@@ -762,12 +893,7 @@ export default function TimedAssessmentRunner() {
                 )
 
             case 'rating':
-                return (
-                    <Rate
-                        value={typeof v === 'number' ? v : 0}
-                        onChange={val => setAnswer(q.id, val)}
-                    />
-                )
+                return <Rate value={typeof v === 'number' ? v : 0} onChange={val => setAnswer(q.id, val)} />
 
             default:
                 return <Alert type="warning" showIcon message={`Unsupported question type: ${q.type}`} />
@@ -777,15 +903,7 @@ export default function TimedAssessmentRunner() {
     // -----------------------------
     // UI states
     // -----------------------------
-    if (loading) {
-        return (
-            <div style={{ minHeight: '100vh', padding: 24 }}>
-                <Card style={{ borderRadius: 16 }}>
-                    <Spin />
-                </Card>
-            </div>
-        )
-    }
+    if (loading) return <LoadingOverlay tip="Getting questions ready..." />
 
     if (blockedReason) {
         return (
@@ -822,25 +940,45 @@ export default function TimedAssessmentRunner() {
     const showOverall = typeof overallRemaining === 'number'
     const showPerQ = typeof effectiveQuestionRemaining === 'number'
 
-    const overallPct = useMemo(() => {
-        if (!showOverall) return null
-        const total = resolvedTiming.overallSeconds
-        if (!total || total <= 0) return null
-        return Math.round((Math.max(0, overallRemaining!) / total) * 100)
-    }, [showOverall, overallRemaining, resolvedTiming.overallSeconds])
+    const overallPct =
+        showOverall && resolvedTiming.overallSeconds > 0 && typeof overallRemaining === 'number'
+            ? Math.round((Math.max(0, overallRemaining) / resolvedTiming.overallSeconds) * 100)
+            : null
 
-    const perQPct = useMemo(() => {
-        if (!showPerQ) return null
-        const lim = computePerQLimitForIndex(session.currentIndex)
-        if (!lim || lim <= 0) return null
-        return Math.round((Math.max(0, effectiveQuestionRemaining!) / lim) * 100)
-    }, [showPerQ, effectiveQuestionRemaining, session.currentIndex])
+    const perQPct =
+        showPerQ && typeof effectiveQuestionRemaining === 'number'
+            ? (() => {
+                const lim = computePerQLimitForIndex(session.currentIndex)
+                if (!lim || lim <= 0) return null
+                return Math.round((Math.max(0, effectiveQuestionRemaining) / lim) * 100)
+            })()
+            : null
+
+    if (showSubmittedResult) {
+        return (
+            <div style={{ padding: 24, minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+                <Result
+                    status="success"
+                    title="Submitted"
+                    subTitle="Your assessment has been submitted."
+                    extra={[
+                        <Button type="primary" key="back" onClick={() => navigate(-1)}>
+                            Back
+                        </Button>
+                    ]}
+                />
+            </div>
+        )
+    }
+
 
     return (
         <div style={{ minHeight: '100vh', padding: 24 }}>
             <Helmet>
                 <title>{tpl.title || 'Assessment'} | Smart Incubation</title>
             </Helmet>
+
+
 
             <Card style={{ borderRadius: 16 }} bodyStyle={{ padding: 18 }}>
                 <Space direction="vertical" style={{ width: '100%' }} size={10}>
@@ -849,11 +987,7 @@ export default function TimedAssessmentRunner() {
                             <Title level={4} style={{ margin: 0 }}>
                                 {tpl.title || 'Assessment'}
                             </Title>
-                            {tpl.description ? (
-                                <Text type="secondary">{tpl.description}</Text>
-                            ) : (
-                                <Text type="secondary">Answer each question before time runs out.</Text>
-                            )}
+                            <Text type="secondary">{tpl.description || 'Answer each question before time runs out.'}</Text>
                         </div>
 
                         <Space wrap>
@@ -863,7 +997,8 @@ export default function TimedAssessmentRunner() {
                             </Tag>
                             <Tag color="geekblue">Progress: {progressPct}%</Tag>
                             <Tag>
-                                Timer: {resolvedTiming.mode === 'none' ? 'Off' : resolvedTiming.mode === 'overall' ? 'Overall' : 'Per Question'}
+                                Timer:{' '}
+                                {resolvedTiming.mode === 'none' ? 'Off' : resolvedTiming.mode === 'overall' ? 'Overall' : 'Per Question'}
                             </Tag>
                         </Space>
                     </Space>
@@ -875,9 +1010,7 @@ export default function TimedAssessmentRunner() {
                                     <div>
                                         <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
                                             <Text strong>Overall time left</Text>
-                                            <Tag color={overallRemaining! <= 30 ? 'red' : 'default'}>
-                                                {secondsToClock(overallRemaining!)}
-                                            </Tag>
+                                            <Tag color={overallRemaining! <= 30 ? 'red' : 'default'}>{secondsToClock(overallRemaining!)}</Tag>
                                         </Space>
                                         {overallPct !== null && <Progress percent={overallPct} showInfo={false} />}
                                     </div>
@@ -919,7 +1052,8 @@ export default function TimedAssessmentRunner() {
                                     <Tag>{String(currentQ.type).toUpperCase()}</Tag>
                                     {resolvedTiming.mode === 'per_question' && (
                                         <Tag>
-                                            Limit: {computePerQLimitForIndex(session.currentIndex) ? `${computePerQLimitForIndex(session.currentIndex)}s` : '—'}
+                                            Limit:{' '}
+                                            {computePerQLimitForIndex(session.currentIndex) ? `${computePerQLimitForIndex(session.currentIndex)}s` : '—'}
                                         </Tag>
                                     )}
                                 </Space>
@@ -940,25 +1074,20 @@ export default function TimedAssessmentRunner() {
 
                             <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
                                 <Text type="secondary">
-                                    No back navigation. Timing is enforced using real elapsed time.
+                                    No back navigation. {resolvedTiming.mode === 'overall' ? 'Overall timing is enforced.' : 'You can finish all questions without being “logged out”.'}
                                 </Text>
 
                                 <Space>
-                                    <Button
-                                        onClick={() => {
-                                            Modal.confirm({
-                                                title: 'Exit assessment?',
-                                                content:
-                                                    'If you exit now, your progress is saved on this device. When you return, elapsed time is still counted.',
-                                                okText: 'Exit',
-                                                onOk: () => navigate(-1)
-                                            })
-                                        }}
-                                    >
+                                    <Button disabled={submitting || finalizingRef.current || finalizedRef.current} onClick={handleExit}>
                                         Exit
                                     </Button>
 
-                                    <Button type="primary" loading={submitting} onClick={handleNext}>
+                                    <Button
+                                        type="primary"
+                                        loading={submitting}
+                                        disabled={submitting || finalizingRef.current || finalizedRef.current}
+                                        onClick={handleNext}
+                                    >
                                         {session.currentIndex >= questions.length - 1 ? 'Submit' : 'Next'}
                                     </Button>
                                 </Space>
