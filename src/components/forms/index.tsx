@@ -246,15 +246,25 @@ export default function TemplatesPage() {
         try {
             setTemplateLoading(true)
 
-            // Optional company scoping (if you store companyCode on templates)
-            // If you DON'T store companyCode on formTemplates, leave as-is:
-            const snap = await getDocs(collection(db, 'formTemplates'))
+            const q = query(
+                collection(db, 'formTemplates'),
+                where('companyCode', '==', user?.companyCode)
+            )
+
+            const snap = await getDocs(q)
 
             const templates: FormTemplate[] = []
-            snap.forEach(d => templates.push({ id: d.id, ...(d.data() as FormTemplate) }))
+            snap.forEach(d => {
+                templates.push({
+                    id: d.id,
+                    ...(d.data() as FormTemplate)
+                })
+            })
 
             // sort newest updated first
-            templates.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+            templates.sort(
+                (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+            )
 
             const total = templates.length
             const drafts = templates.filter(t => t.status === 'draft').length
@@ -272,6 +282,7 @@ export default function TemplatesPage() {
             setTemplateLoading(false)
         }
     }
+
 
     useEffect(() => {
         fetchTemplates()
