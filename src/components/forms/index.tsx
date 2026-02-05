@@ -27,7 +27,9 @@ import {
     FileTextOutlined,
     CheckCircleOutlined,
     PaperClipOutlined,
-    InfoCircleOutlined
+    InfoCircleOutlined,
+    AppstoreOutlined,
+    FormOutlined
 } from '@ant-design/icons'
 import {
     collection,
@@ -515,13 +517,45 @@ export default function TemplatesPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '12px 0' }}>
                 <Segmented
                     value={view}
+                    size="large"
                     onChange={v => setView(v as any)}
                     options={[
-                        { label: 'All', value: 'all' },
-                        { label: 'Surveys', value: 'survey' },
-                        { label: 'Assessments', value: 'assessment' }
+                        {
+                            value: 'all',
+                            label: (
+                                <Space>
+                                    <AppstoreOutlined />
+                                    <span>All</span>
+                                </Space>
+                            )
+                        },
+                        {
+                            value: 'survey',
+                            label: (
+                                <Space>
+                                    <FormOutlined />
+                                    <span>Surveys</span>
+                                </Space>
+                            )
+                        },
+                        {
+                            value: 'assessment',
+                            label: (
+                                <Space>
+                                    <CheckCircleOutlined />
+                                    <span>Assessments</span>
+                                </Space>
+                            )
+                        }
                     ]}
+                    style={{
+                        borderRadius: 999,
+                        padding: 4,
+                        background: '#f5f7fa',
+                        boxShadow: 'inset 0 0 0 1px #e5e7eb'
+                    }}
                 />
+
             </div>
 
             {/* Templates list */}
