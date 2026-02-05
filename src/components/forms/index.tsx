@@ -44,6 +44,8 @@ import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { useNavigate } from 'react-router-dom'
 import { DashboardHeaderCard, MotionCard } from '@/components/shared/Header'
 import { Helmet } from 'react-helmet'
+import dayjs from 'dayjs'
+
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -109,6 +111,72 @@ const smartCut = (text: string, max = 220) => {
     const cut = lastSpace > 80 ? slice.slice(0, lastSpace) : slice
     return cut.replace(/[.,;:\-–—\s]+$/, '') + '…'
 }
+
+const categoryLabel = (cat?: string) => {
+    const v = String(cat || '').toLowerCase()
+
+    if (v === 'general') return 'General'
+    if (v === 'post_intervention') return 'Post-Intervention'
+
+    // fallback for legacy/typos
+    if (v === 'post-intervention') return 'Post-Intervention'
+    if (v === 'postintervention') return 'Post-Intervention'
+
+    // default: title case anything else
+    return v
+        ? v.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+        : '—'
+}
+
+
+const toDateSafe = (v: any): Date | null => {
+  if (!v) return null
+
+  // Firestore Timestamp (has toDate)
+  if (typeof v?.toDate === 'function') {
+    const d = v.toDate()
+    return d instanceof Date && !isNaN(d.getTime()) ? d : null
+  }
+
+  // Firestore-like { seconds, nanoseconds }
+  if (typeof v?.seconds === 'number') {
+    const ms = v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6)
+    const d = new Date(ms)
+    return !isNaN(d.getTime()) ? d : null
+  }
+
+  // number (ms epoch)
+  if (typeof v === 'number') {
+    const d = new Date(v)
+    return !isNaN(d.getTime()) ? d : null
+  }
+
+  // string (ISO or date string)
+  if (typeof v === 'string') {
+    const dj = dayjs(v)
+    if (dj.isValid()) return dj.toDate()
+
+    const d2 = new Date(v)
+    return !isNaN(d2.getTime()) ? d2 : null
+  }
+
+  // Date object
+  if (v instanceof Date) {
+    return !isNaN(v.getTime()) ? v : null
+  }
+
+  // last resort
+  const d = new Date(v)
+  return !isNaN(d.getTime()) ? d : null
+}
+
+const formatDateSafe = (v: any, fallback = '—') => {
+  const d = toDateSafe(v)
+  if (!d) return fallback
+  return d.toLocaleDateString()
+}
+
+
 
 
 const FieldPreview: React.FC<{ field: FormField }> = ({ field }) => {
@@ -528,7 +596,6 @@ export default function TemplatesPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '12px 0' }}>
                 <Segmented
                     value={view}
-                    size="large"
                     onChange={v => setView(v as any)}
                     options={[
                         {
@@ -563,7 +630,7 @@ export default function TemplatesPage() {
                         borderRadius: 999,
                         padding: 4,
                         background: '#f5f7fa',
-                        boxShadow: 'inset 0 0 0 1px #e5e7eb'
+
                     }}
                 />
 
@@ -651,8 +718,7 @@ export default function TemplatesPage() {
 
 
                                         <div style={{ marginTop: 8, color: 'rgba(0,0,0,.45)' }}>
-                                            Category: {tpl.category} • Fields: {tpl.fields.length} • Updated:{' '}
-                                            {new Date(tpl.updatedAt).toLocaleDateString()}
+                                            Category: {categoryLabel(tpl.category)} • Fields: {tpl.fields.length} • Updated: {formatDateSafe(tpl.updatedAt)}
                                         </div>
                                     </div>
 
