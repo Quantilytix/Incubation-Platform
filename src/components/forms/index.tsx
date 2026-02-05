@@ -130,50 +130,50 @@ const categoryLabel = (cat?: string) => {
 
 
 const toDateSafe = (v: any): Date | null => {
-  if (!v) return null
+    if (!v) return null
 
-  // Firestore Timestamp (has toDate)
-  if (typeof v?.toDate === 'function') {
-    const d = v.toDate()
-    return d instanceof Date && !isNaN(d.getTime()) ? d : null
-  }
+    // Firestore Timestamp (has toDate)
+    if (typeof v?.toDate === 'function') {
+        const d = v.toDate()
+        return d instanceof Date && !isNaN(d.getTime()) ? d : null
+    }
 
-  // Firestore-like { seconds, nanoseconds }
-  if (typeof v?.seconds === 'number') {
-    const ms = v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6)
-    const d = new Date(ms)
-    return !isNaN(d.getTime()) ? d : null
-  }
+    // Firestore-like { seconds, nanoseconds }
+    if (typeof v?.seconds === 'number') {
+        const ms = v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6)
+        const d = new Date(ms)
+        return !isNaN(d.getTime()) ? d : null
+    }
 
-  // number (ms epoch)
-  if (typeof v === 'number') {
+    // number (ms epoch)
+    if (typeof v === 'number') {
+        const d = new Date(v)
+        return !isNaN(d.getTime()) ? d : null
+    }
+
+    // string (ISO or date string)
+    if (typeof v === 'string') {
+        const dj = dayjs(v)
+        if (dj.isValid()) return dj.toDate()
+
+        const d2 = new Date(v)
+        return !isNaN(d2.getTime()) ? d2 : null
+    }
+
+    // Date object
+    if (v instanceof Date) {
+        return !isNaN(v.getTime()) ? v : null
+    }
+
+    // last resort
     const d = new Date(v)
     return !isNaN(d.getTime()) ? d : null
-  }
-
-  // string (ISO or date string)
-  if (typeof v === 'string') {
-    const dj = dayjs(v)
-    if (dj.isValid()) return dj.toDate()
-
-    const d2 = new Date(v)
-    return !isNaN(d2.getTime()) ? d2 : null
-  }
-
-  // Date object
-  if (v instanceof Date) {
-    return !isNaN(v.getTime()) ? v : null
-  }
-
-  // last resort
-  const d = new Date(v)
-  return !isNaN(d.getTime()) ? d : null
 }
 
 const formatDateSafe = (v: any, fallback = '—') => {
-  const d = toDateSafe(v)
-  if (!d) return fallback
-  return d.toLocaleDateString()
+    const d = toDateSafe(v)
+    if (!d) return fallback
+    return d.toLocaleDateString()
 }
 
 
@@ -311,34 +311,37 @@ export default function TemplatesPage() {
 
     // data load
     const fetchTemplates = async () => {
-        try {
-            setTemplateLoading(true)
+        // guard BEFORE setting loading true (prevents infinite spinner)
+        if (!user?.companyCode) {
+            setTemplateList([])
+            setMetrics({ total: 0, drafts: 0, published: 0, sentOut: 0 })
+            return
+        }
 
+        setTemplateLoading(true)
+        try {
             const q = query(
                 collection(db, 'formTemplates'),
-                where('companyCode', '==', user?.companyCode)
+                where('companyCode', '==', user.companyCode)
             )
 
             const snap = await getDocs(q)
 
-            const templates: FormTemplate[] = []
-            snap.forEach(d => {
-                templates.push({
-                    id: d.id,
-                    ...(d.data() as FormTemplate)
-                })
-            })
+            const templates: FormTemplate[] = snap.docs.map(d => ({
+                id: d.id,
+                ...(d.data() as any),
+            }))
 
-            // sort newest updated first
-            templates.sort(
-                (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-            )
+            const toMs = (v: any) => (v?.toMillis ? v.toMillis() : (v ? new Date(v).getTime() : 0))
+            templates.sort((a, b) => toMs(b.updatedAt) - toMs(a.updatedAt))
 
             const total = templates.length
             const drafts = templates.filter(t => t.status === 'draft').length
             const published = templates.filter(t => t.status === 'published').length
 
-            const assignmentsSnap = await getDocs(collection(db, 'formAssignments'))
+            const assignmentsSnap = await getDocs(
+                query(collection(db, 'formAssignments'), where('companyCode', '==', user.companyCode))
+            )
             const sentOut = assignmentsSnap.size
 
             setTemplateList(templates)
@@ -350,6 +353,7 @@ export default function TemplatesPage() {
             setTemplateLoading(false)
         }
     }
+
 
 
     useEffect(() => {
@@ -849,7 +853,7 @@ export default function TemplatesPage() {
                 </Space>
             </Modal>
 
-            {/* ✅ Preview Modal (now collapsible, not endless scrolling) */}
+            {/* Preview Modal (now collapsible, not endless scrolling) */}
             <Modal
                 title='Form Preview'
                 open={!!previewTemplate}
