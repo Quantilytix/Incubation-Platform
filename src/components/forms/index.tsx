@@ -236,11 +236,11 @@ const FieldPreview: React.FC<{ field: FormField }> = ({ field }) => {
     }
 }
 
-// ✅ Surveys vs Assessments
+// Surveys vs Assessments
 const ASSESSMENT_CATEGORIES = new Set(['post_intervention', 'general'])
 const isAssessmentCategory = (cat?: string) => ASSESSMENT_CATEGORIES.has(String(cat || ''))
 
-// ✅ group fields by heading into sections for preview collapsibles
+// group fields by heading into sections for preview collapsibles
 function groupFieldsForPreview(fields: FormField[]) {
     const sections: Array<{ title: string; items: FormField[] }> = []
     let current = { title: 'Questions', items: [] as FormField[] }
@@ -276,7 +276,7 @@ export default function TemplatesPage() {
     const [descModal, setDescModal] = useState<{ title: string; desc: string } | null>(null)
 
 
-    // ✅ Switch view (now: assessments not “assignment”)
+    // Switch view (now: assessments not “assignment”)
     const [view, setView] = useState<'all' | 'survey' | 'assessment'>('all')
 
     const filtered = useMemo(() => {
@@ -390,7 +390,7 @@ export default function TemplatesPage() {
             const list: Array<{ id: string; name: string; email: string }> = []
             appsSnap.forEach(d => {
                 const data = d.data() as any
-                // ✅ Use participantId if present, else fallback to app doc id
+                // Use participantId if present, else fallback to app doc id
                 const recipientId = String(data.participantId || d.id)
                 list.push({
                     id: recipientId,
@@ -401,33 +401,60 @@ export default function TemplatesPage() {
             setApplicants(list)
 
             // assignments already created
-            let assDocs: Array<any> = []
-            if (companyCode && !isSuper) {
-                const qScoped = query(
-                    collection(db, 'formAssignments'),
-                    where('templateId', '==', template.id),
-                    where('companyCode', '==', companyCode)
-                )
-                const scoped = await getDocs(qScoped)
-                assDocs = [...scoped.docs]
-            }
-
-            if (assDocs.length === 0) {
-                const qLegacy = query(collection(db, 'formAssignments'), where('templateId', '==', template.id))
-                const legacy = await getDocs(qLegacy)
-                assDocs = [...legacy.docs]
-            }
+            // already sent bookkeeping (split by template type)
+            const isAssessment = isAssessmentCategory(template.category)
 
             const takenIds = new Set<string>()
             const takenEmails = new Set<string>()
-            assDocs.forEach(d => {
-                const a = d.data() as any
-                // ✅ support both legacy keys
-                if (a.recipientId) takenIds.add(String(a.recipientId))
-                if (a.applicationId) takenIds.add(String(a.applicationId))
-                if (a.participantId) takenIds.add(String(a.participantId))
-                if (a.recipientEmail) takenEmails.add(String(a.recipientEmail).toLowerCase())
-            })
+
+            if (isAssessment) {
+                // ✅ Assessments: check formRequests
+                let reqSnap: any
+
+                if (companyCode && !isSuper) {
+                    reqSnap = await getDocs(
+                        query(
+                            collection(db, 'formRequests'),
+                            where('templateId', '==', template.id),
+                            where('companyCode', '==', companyCode)
+                        )
+                    )
+                } else {
+                    reqSnap = await getDocs(query(collection(db, 'formRequests'), where('templateId', '==', template.id)))
+                }
+
+                reqSnap.forEach((d: any) => {
+                    const r = d.data() as any
+                    if (r.participantId) takenIds.add(String(r.participantId))
+                    if (r.participantEmail) takenEmails.add(String(r.participantEmail).toLowerCase())
+                })
+            } else {
+                // ✅ Surveys: check formAssignments (existing)
+                let assDocs: Array<any> = []
+                if (companyCode && !isSuper) {
+                    const qScoped = query(
+                        collection(db, 'formAssignments'),
+                        where('templateId', '==', template.id),
+                        where('companyCode', '==', companyCode)
+                    )
+                    const scoped = await getDocs(qScoped)
+                    assDocs = [...scoped.docs]
+                }
+
+                if (assDocs.length === 0) {
+                    const qLegacy = query(collection(db, 'formAssignments'), where('templateId', '==', template.id))
+                    const legacy = await getDocs(qLegacy)
+                    assDocs = [...legacy.docs]
+                }
+
+                assDocs.forEach(d => {
+                    const a = d.data() as any
+                    if (a.recipientId) takenIds.add(String(a.recipientId))
+                    if (a.applicationId) takenIds.add(String(a.applicationId))
+                    if (a.participantId) takenIds.add(String(a.participantId))
+                    if (a.recipientEmail) takenEmails.add(String(a.recipientEmail).toLowerCase())
+                })
+            }
 
             setAlreadyAssignedIds(takenIds)
             setAlreadyAssignedEmails(takenEmails)
@@ -439,6 +466,7 @@ export default function TemplatesPage() {
             setSelectedIds(selectable)
             setSelectAll(selectable.length > 0 && selectable.length === list.length)
             setAllAlreadyAssigned(selectable.length === 0 && list.length > 0)
+
         } catch (e) {
             console.error(e)
             message.error('Failed to load recipients')
@@ -446,47 +474,91 @@ export default function TemplatesPage() {
     }
 
     // Transactional send
+    // Transactional send
     const sendAssignments = async () => {
-        if (!sendTemplate) return
+        if (!sendTemplate?.id) return
         if (selectedIds.length === 0) return message.error('Select at least one recipient')
+
+        const isAssessment = isAssessmentCategory(sendTemplate.category)
 
         try {
             setSending(true)
-            const now = new Date().toISOString()
+            const nowIso = new Date().toISOString()
             const selected = applicants.filter(a => selectedIds.includes(a.id))
 
             const results = await Promise.all(
                 selected.map(async a => {
-                    const assignmentId = makeAssignmentId(sendTemplate.id!, a.id)
-                    const ref = doc(db, 'formAssignments', assignmentId)
-
                     try {
-                        await runTransaction(db, async tx => {
-                            const snap = await tx.get(ref)
-                            if (snap.exists()) throw new Error('ALREADY_EXISTS')
+                        if (isAssessment) {
+                            // ✅ ASSESSMENT => formRequests (NOT formAssignments)
+                            // You can keep deterministic id per (templateId + participantId) so resend becomes a no-op
+                            const requestId = `${sendTemplate.id}__${a.id}`
+                            const ref = doc(db, 'formRequests', requestId)
 
-                            const linkToken = generateToken()
-                            const payload = pruneUndefinedDeep({
-                                templateId: sendTemplate.id,
-                                // ✅ always store recipientId (don’t confuse with applicationId)
-                                recipientId: a.id,
-                                recipientEmail: a.email,
-                                status: 'pending',
-                                deliveryMethod: 'in_app',
-                                linkToken,
-                                createdAt: now,
-                                createdBy: user?.email || '',
-                                companyCode: user?.companyCode || '',
-                                category: sendTemplate.category || ''
+                            await runTransaction(db, async tx => {
+                                const snap = await tx.get(ref)
+                                if (snap.exists()) throw new Error('ALREADY_EXISTS')
+
+                                const payload = pruneUndefinedDeep({
+                                    templateId: sendTemplate.id,
+                                    participantId: a.id,
+                                    participantEmail: a.email,
+                                    participantName: a.name,
+
+                                    formTitle: sendTemplate.title,
+                                    category: sendTemplate.category || 'general',
+                                    companyCode: user?.companyCode || '',
+
+                                    status: 'sent',
+                                    deliveryMethod: 'in_app',
+                                    sentAt: nowIso,
+                                    createdAt: nowIso,
+                                    updatedAt: nowIso,
+                                    createdBy: user?.email || '',
+
+                                    // optional: time window + attempts can be copied from template meta if you store it there
+                                    // timeWindowEnabled: true,
+                                    // startAt: ...,
+                                    // endAt: ...,
+                                    // maxAttempts: ...
+                                    attemptCount: 0
+                                })
+
+                                tx.set(ref, payload as any)
                             })
-                            tx.set(ref, payload as any)
-                        })
-                        return { ok: true }
-                    } catch (err: any) {
-                        return {
-                            ok: false,
-                            reason: err?.message === 'ALREADY_EXISTS' ? 'already' : 'error'
+
+                            return { ok: true }
+                        } else {
+                            // ✅ SURVEY => formAssignments (existing behavior)
+                            const assignmentId = makeAssignmentId(sendTemplate.id!, a.id)
+                            const ref = doc(db, 'formAssignments', assignmentId)
+
+                            await runTransaction(db, async tx => {
+                                const snap = await tx.get(ref)
+                                if (snap.exists()) throw new Error('ALREADY_EXISTS')
+
+                                const linkToken = generateToken()
+                                const payload = pruneUndefinedDeep({
+                                    templateId: sendTemplate.id,
+                                    recipientId: a.id,
+                                    recipientEmail: a.email,
+
+                                    status: 'pending',
+                                    deliveryMethod: 'in_app',
+                                    linkToken,
+                                    createdAt: nowIso,
+                                    createdBy: user?.email || '',
+                                    companyCode: user?.companyCode || '',
+                                    category: sendTemplate.category || ''
+                                })
+
+                                tx.set(ref, payload as any)
+                            })
+
+                            return { ok: true }
                         }
+                    } catch (err: any) {
+                        return { ok: false, reason: err?.message === 'ALREADY_EXISTS' ? 'already' : 'error' }
                     }
                 })
             )
@@ -509,7 +581,8 @@ export default function TemplatesPage() {
         }
     }
 
-    // ✅ metric icon chip
+
+    // metric icon chip
     const IconChip: React.FC<{ bg: string; icon: React.ReactNode }> = ({ bg, icon }) => (
         <div
             style={{
