@@ -147,6 +147,8 @@ import ProgramManager from './routes/programs'
 import GenericProgramExpenseForm from './routes/expenses'
 import SystemSetupForm from './routes/system'
 import InterventionDatabaseView from './routes/interventions'
+import TimedAssessmentRunner from './components/assessments/AssessmentRunner'
+
 
 import { TasksEventsPage } from './routes/tasksEvents'
 
@@ -272,6 +274,10 @@ const App = () => {
                           path='surveys/:id'
                           element={<FormSubmission />}
                         />
+                        <Route
+                                                    path='assessments/:id'
+                                                    element={<TimedAssessmentRunner />}
+                                                />
                         <Route
                           path='financials'
                           element={<FinancialReportsInterface />}
