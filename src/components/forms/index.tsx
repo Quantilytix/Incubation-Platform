@@ -354,11 +354,9 @@ export default function TemplatesPage() {
         }
     }
 
-
-
     useEffect(() => {
         fetchTemplates()
-    }, []) // eslint-disable-line
+    }, [user?.companyCode]) // eslint-disable-line
 
     // actions
     const goToNewSurvey = () => navigate('/operations/surveys/builder')
