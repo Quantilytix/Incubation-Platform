@@ -1,14 +1,3 @@
-// =============================================
-// components/assessments/AssessmentBuilder.tsx
-// Adds: AI document extraction → populate Title/Description/Fields/Meta
-// Endpoint: https://yoursdvniel-smart-incubation.hf.space/extract-assessment
-//
-// What this does:
-// - Upload a document (PDF/DOCX/TXT) to the endpoint
-// - Endpoint returns a "draft" (title, description, fields, assessmentMeta)
-// - We normalize + clamp + auto-fix missing ids/options and populate the builder
-// - You can choose: Replace current questions OR Append to existing
-// =============================================
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     Card,
@@ -64,7 +53,8 @@ import {
     TeamOutlined,
     ClockCircleOutlined,
     FieldTimeOutlined,
-    StopOutlined
+    StopOutlined,
+    CheckCircleOutlined
 } from '@ant-design/icons'
 import { LoadingOverlay } from '../shared/LoadingOverlay'
 
@@ -75,6 +65,7 @@ const { Dragger } = Upload
 type InterventionType = 'singular' | 'grouped'
 type AssessmentType = 'post_intervention' | 'general'
 type TimingMode = 'none' | 'per_question' | 'overall'
+type ResultsReleaseMode = 'instant' | 'after_hours'
 
 type Assigned = {
     id: string
@@ -260,9 +251,13 @@ export default function AssessmentBuilder() {
         (user?.email || '').toLowerCase().endsWith('@quantilytix.co.za') ||
         (user?.role || '').toLowerCase() === 'superadmin'
 
+    // results visibility
+    const [resultsReleaseMode, setResultsReleaseMode] = useState<ResultsReleaseMode>('instant')
+    const [resultsReleaseHours, setResultsReleaseHours] = useState<number>(24) // sensible default
+
+
     // Post-intervention recipients
     const [completed, setCompleted] = useState<Assigned[]>([])
-    const [loadingCompleted, setLoadingCompleted] = useState(false)
     const [mode, setMode] = useState<'single' | 'grouped'>('single')
     const [selectedAssigned, setSelectedAssigned] = useState<Assigned[]>([])
     const [searchAssigned, setSearchAssigned] = useState('')
@@ -309,6 +304,17 @@ export default function AssessmentBuilder() {
         }
 
         const meta = draft?.assessmentMeta || {}
+
+        const restoredResultsMode: ResultsReleaseMode =
+            meta?.resultsReleaseMode === 'after_hours' || meta?.resultsReleaseMode === 'instant'
+                ? meta.resultsReleaseMode
+                : resultsReleaseMode
+
+        const restoredResultsHours = clampInt(meta?.resultsReleaseHours ?? resultsReleaseHours, 1, 24 * 30)
+
+        setResultsReleaseMode(restoredResultsMode)
+        setResultsReleaseHours(restoredResultsHours)
+
 
         // timing/attempts (only set if present and valid)
         const restoredTiming: TimingMode =
@@ -517,6 +523,17 @@ export default function AssessmentBuilder() {
                 )
 
                 const meta = data.assessmentMeta || {}
+
+                const restoredResultsMode: ResultsReleaseMode =
+                    meta?.resultsReleaseMode === 'after_hours' || meta?.resultsReleaseMode === 'instant'
+                        ? meta.resultsReleaseMode
+                        : 'instant'
+
+                setResultsReleaseMode(restoredResultsMode)
+
+                const restoredResultsHours = clampInt(meta?.resultsReleaseHours ?? 24, 1, 24 * 30)
+                setResultsReleaseHours(restoredResultsHours)
+
                 setAutoGradeOn(Boolean(meta.autoGrade))
 
                 if (meta.interventionScope === 'grouped') setMode('grouped')
@@ -583,7 +600,7 @@ export default function AssessmentBuilder() {
                 setCompleted([])
                 return
             }
-            setLoadingCompleted(true)
+
             try {
                 const snap = await getDocs(query(collection(db, 'assignedInterventions'), where('status', '==', 'completed')))
 
@@ -632,8 +649,6 @@ export default function AssessmentBuilder() {
             } catch (e) {
                 console.error(e)
                 message.error('Failed to load completed interventions')
-            } finally {
-                setLoadingCompleted(false)
             }
         }
         load()
@@ -871,6 +886,10 @@ export default function AssessmentBuilder() {
 
             const now = new Date()
 
+            if (resultsReleaseMode === 'after_hours' && (!resultsReleaseHours || resultsReleaseHours < 1)) {
+                return message.warning('Set a valid results delay in hours (minimum 1).')
+            }
+
             await setDoc(
                 templateRef,
                 {
@@ -944,6 +963,11 @@ export default function AssessmentBuilder() {
 
             const now = new Date()
 
+            if (resultsReleaseMode === 'after_hours' && (!resultsReleaseHours || resultsReleaseHours < 1)) {
+                return message.warning('Set a valid results delay in hours (minimum 1).')
+            }
+
+
             await setDoc(
                 templateRef,
                 {
@@ -964,6 +988,8 @@ export default function AssessmentBuilder() {
                         timingMode,
                         overallTimeSeconds: timingMode === 'overall' ? clampInt(overallTimeSeconds, 0, 24 * 60 * 60) : 0,
                         maxAttempts: clampInt(maxAttempts, 1, 50),
+                        resultsReleaseMode,
+                        resultsReleaseHours: resultsReleaseMode === 'after_hours' ? clampInt(resultsReleaseHours, 1, 24 * 30) : 0,
                         perTypeTimes: timingMode === 'per_question' ? perTypeTimes : null
                     },
                     companyCode: user?.companyCode || '',
@@ -1172,6 +1198,12 @@ export default function AssessmentBuilder() {
                                                         : `Per Q (${totals.perQCount}/${totals.questions})`}
                                             </Tag>
                                         </Tooltip>
+                                        <Tooltip title="When learners can view results">
+                                            <Tag color="cyan">
+                                                Results: {resultsReleaseMode === 'instant' ? 'Instant' : `After ${resultsReleaseHours}h`}
+                                            </Tag>
+                                        </Tooltip>
+
                                         <Tooltip title="Maximum tries per learner">
                                             <Tag color="purple">Tries: {maxAttempts}</Tag>
                                         </Tooltip>
@@ -1215,6 +1247,8 @@ export default function AssessmentBuilder() {
                                             }
                                         ]}
                                         style={{
+                                            width: 'fit-content',
+                                            display: 'inline-flex',
                                             borderRadius: 999,
                                             padding: 4,
                                             background: '#f5f7fa'
@@ -1304,7 +1338,13 @@ export default function AssessmentBuilder() {
                                                 { value: 'overall', label: <Space><ClockCircleOutlined />Whole Assessment</Space> },
                                                 { value: 'per_question', label: <Space><FieldTimeOutlined />Per Question</Space> }
                                             ]}
-                                            style={{ borderRadius: 999, padding: 4, background: '#f5f7fa' }}
+                                            style={{
+                                                width: 'fit-content',
+                                                display: 'inline-flex',
+                                                borderRadius: 999,
+                                                padding: 4,
+                                                background: '#f5f7fa'
+                                            }}
                                         />
                                     </div>
 
@@ -1351,6 +1391,46 @@ export default function AssessmentBuilder() {
                                     {/* RIGHT (row 2): empty on purpose, but now it's BELOW the input so it doesn't look like a gap */}
                                     <div />
                                 </div>
+
+                                <Divider />
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <Text strong>Results visibility</Text>
+
+                                    <Segmented
+                                        value={resultsReleaseMode}
+                                        size="large"
+                                        onChange={(v: any) => setResultsReleaseMode(v as ResultsReleaseMode)}
+                                        options={[
+                                            { value: 'instant', label: <Space><CheckCircleOutlined />Instant</Space> },
+                                            { value: 'after_hours', label: <Space><ClockCircleOutlined />After N hours</Space> }
+                                        ]}
+                                        style={{
+                                            width: 'fit-content',
+                                            display: 'inline-flex',
+                                            borderRadius: 999,
+                                            padding: 4,
+                                            background: '#f5f7fa'
+                                        }}
+                                    />
+
+                                    {resultsReleaseMode === 'after_hours' && (
+                                        <Space>
+                                            <InputNumber
+                                                min={1}
+                                                max={24 * 30}
+                                                value={resultsReleaseHours}
+                                                onChange={v => setResultsReleaseHours(clampInt(v, 1, 24 * 30))}
+                                                addonBefore="Hours"
+                                                style={{ width: 220 }}
+                                            />
+                                            <Text type="secondary">
+                                                Learners see results only after this delay from submission.
+                                            </Text>
+                                        </Space>
+                                    )}
+                                </div>
+
 
                             </Form>
 
