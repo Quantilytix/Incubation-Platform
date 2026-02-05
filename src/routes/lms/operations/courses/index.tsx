@@ -14,7 +14,10 @@ import {
     Skeleton,
     Empty,
     Tooltip,
-    Divider
+    Divider,
+    Modal,
+    Descriptions,
+    Progress
 } from 'antd'
 import {
     SearchOutlined,
@@ -26,7 +29,10 @@ import {
     ReadOutlined,
     StarFilled,
     BookOutlined,
-    RiseOutlined
+    RiseOutlined,
+    ClockCircleOutlined,
+    FileTextOutlined,
+    CheckCircleOutlined
 } from '@ant-design/icons'
 import { db, auth } from '@/firebase'
 import {
@@ -36,11 +42,14 @@ import {
     where,
     getCountFromServer,
     Timestamp,
-    DocumentData
+    DocumentData,
+    doc,
+    getDoc
 } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import { MotionCard } from '@/components/shared/Header'
+import { DashboardHeaderCard, MotionCard } from '@/components/shared/Header'
+import { Helmet } from 'react-helmet'
 
 const { Title, Text } = Typography
 
@@ -58,6 +67,30 @@ type CourseRow = {
 
     updatedAtLabel: string
     canManage: boolean
+}
+
+type CourseSummary = {
+    id: string
+    title: string
+    category: string
+    status: 'draft' | 'active'
+    description: string
+
+    updatedAtLabel: string
+
+    lessonsCount: number
+    quizzesCount: number
+
+    // Time / duration (tolerant)
+    totalMinutes: number | null
+    estimatedWeeks: number | null
+
+    // Stats (optional display)
+    enrolledStudents: number
+    completedStudents: number
+    avgRating: number
+
+    providerId: string
 }
 
 const formatWhen = (v: any): string => {
@@ -90,6 +123,15 @@ const statusTag = (status: 'draft' | 'active') => {
     )
 }
 
+const formatMinutes = (mins: number | null) => {
+    if (mins == null || !Number.isFinite(mins) || mins <= 0) return '—'
+    const h = Math.floor(mins / 60)
+    const m = Math.round(mins % 60)
+    if (h <= 0) return `${m} min`
+    if (m <= 0) return `${h} hr`
+    return `${h} hr ${m} min`
+}
+
 const CoursesManager: React.FC = () => {
     const navigate = useNavigate()
     const { user } = useFullIdentity()
@@ -98,6 +140,11 @@ const CoursesManager: React.FC = () => {
     const [loading, setLoading] = useState(true)
     const [rows, setRows] = useState<CourseRow[]>([])
     const [search, setSearch] = useState('')
+
+    // --- View Modal State (NEW) ---
+    const [viewOpen, setViewOpen] = useState(false)
+    const [viewLoading, setViewLoading] = useState(false)
+    const [viewData, setViewData] = useState<CourseSummary | null>(null)
 
     // Role parsing (more tolerant)
     const rawRole = String(user?.role || '').toLowerCase()
@@ -123,7 +170,6 @@ const CoursesManager: React.FC = () => {
 
             try {
                 const coursesRef = collection(db, 'courses')
-                console.log(user)
 
                 // Consultant: only own courses
                 // Operations: all courses
@@ -204,8 +250,6 @@ const CoursesManager: React.FC = () => {
 
                 setRows(list)
             } catch (e: any) {
-                // ant message keeps it consistent with the rest of your app
-                // eslint-disable-next-line no-console
                 console.error(e)
             } finally {
                 setLoading(false)
@@ -229,9 +273,7 @@ const CoursesManager: React.FC = () => {
     const stats = useMemo(() => {
         const totalCourses = rows.length
         const totalStudents = rows.reduce((a, c) => a + (c.enrolledStudents || 0), 0)
-        const avgRating = rows.length
-            ? rows.reduce((a, c) => a + (c.avgRating || 0), 0) / rows.length
-            : 0
+        const avgRating = rows.length ? rows.reduce((a, c) => a + (c.avgRating || 0), 0) / rows.length : 0
         return {
             totalCourses,
             totalStudents,
@@ -240,54 +282,141 @@ const CoursesManager: React.FC = () => {
     }, [rows])
 
     const goCreate = () => navigate(`${base}/courses/new`)
-    const goView = (id: string) => navigate(`${base}/courses/${id}`)
 
-    //Operations can manage enrollments/grades/analytics only on OWN courses
+    // Operations can manage enrollments/grades/analytics only on OWN courses
     const goEnrollments = (id: string) => navigate(`${base}/enrollments?courseId=${id}`)
     const goGrades = (id: string) => navigate(`${base}/grades?courseId=${id}`)
     const goAnalytics = (id: string) => navigate(`${base}/analytics/${id}`)
     const goEdit = (id: string) => navigate(`${base}/courses/${id}?mode=edit`)
 
-    return (
-        <div style={{ padding: 16 }}>
-            {/* Header */}
-            <Card style={{ marginBottom: 16 }}>
-                <Row gutter={[12, 12]} align='middle'>
-                    <Col xs={24} md={12}>
-                        <Title level={3} style={{ margin: 0 }}>
-                            {isConsultant ? 'My Courses' : 'Courses'}
-                        </Title>
-                        <Text type='secondary'>
-                            {isOperations
-                                ? 'Operations: view all courses, manage only those you created.'
-                                : isConsultant
-                                    ? 'Consultant: only courses you created.'
-                                    : 'Courses'}
-                        </Text>
-                    </Col>
+    // --- NEW: view summary modal instead of navigating to edit route ---
+    const openViewModal = async (courseId: string) => {
+        setViewOpen(true)
+        setViewLoading(true)
+        setViewData(null)
 
-                    <Col xs={24} md={12}>
-                        <Row gutter={[8, 8]} justify='end'>
-                            <Col flex='auto'>
-                                <Input
-                                    prefix={<SearchOutlined />}
-                                    placeholder='Search courses...'
-                                    allowClear
-                                    value={search}
-                                    onChange={e => setSearch(e.target.value)}
-                                />
-                            </Col>
-                            <Col>
-                                {(isOperations || isConsultant) && (
-                                    <Button type='primary' icon={<PlusOutlined />} onClick={goCreate}>
-                                        Add New Course
-                                    </Button>
-                                )}
-                            </Col>
-                        </Row>
-                    </Col>
-                </Row>
-            </Card>
+        try {
+            // Pull the row (for quick stats) + the actual course doc (for description/time fields)
+            const row = rows.find(r => r.id === courseId) || null
+            const courseRef = doc(db, 'courses', courseId)
+            const snap = await getDoc(courseRef)
+            const data = (snap.exists() ? (snap.data() as any) : {}) || {}
+
+            // Counts (subcollections are the cleanest and don’t break anything)
+            let lessonsCount = 0
+            let quizzesCount = 0
+
+            try {
+                const lessonsRef = collection(db, 'courses', courseId, 'lessons')
+                const c = await getCountFromServer(lessonsRef as any)
+                lessonsCount = c.data().count || 0
+            } catch {
+                lessonsCount = Number(data?.lessonsCount || 0) || 0
+            }
+
+            try {
+                const quizzesRef = collection(db, 'courses', courseId, 'quizzes')
+                const c = await getCountFromServer(quizzesRef as any)
+                quizzesCount = c.data().count || 0
+            } catch {
+                quizzesCount = Number(data?.quizzesCount || 0) || 0
+            }
+
+            // Time/duration (tolerant: support a few possible field names)
+            const totalMinutesRaw =
+                data?.totalMinutes ??
+                data?.durationMinutes ??
+                data?.estimatedMinutes ??
+                data?.estimatedDurationMinutes ??
+                null
+
+            const estimatedWeeksRaw = data?.estimatedWeeks ?? data?.durationWeeks ?? null
+
+            const summary: CourseSummary = {
+                id: courseId,
+                title: String(data?.title || row?.title || 'Untitled Course'),
+                category: String(data?.category || row?.category || 'Uncategorized'),
+                status: (data?.status as 'draft' | 'active') || row?.status || 'draft',
+                description: String(data?.description || data?.summary || '').trim(),
+
+                updatedAtLabel: formatWhen(data?.updatedAt ?? data?.updatedAtISO ?? row?.updatedAtLabel),
+
+                lessonsCount,
+                quizzesCount,
+
+                totalMinutes: totalMinutesRaw != null ? Number(totalMinutesRaw) || null : null,
+                estimatedWeeks: estimatedWeeksRaw != null ? Number(estimatedWeeksRaw) || null : null,
+
+                enrolledStudents: row?.enrolledStudents || 0,
+                completedStudents: row?.completedStudents || 0,
+                avgRating: row?.avgRating || 0,
+
+                providerId: String(data?.providerId || row?.providerId || '')
+            }
+
+            setViewData(summary)
+        } catch (e) {
+            console.error(e)
+            setViewData(null)
+        } finally {
+            setViewLoading(false)
+        }
+    }
+
+    const closeViewModal = () => {
+        setViewOpen(false)
+        setViewLoading(false)
+        setViewData(null)
+    }
+
+    const completionRate = (enrolled: number, completed: number) => {
+        if (!enrolled) return 0
+        const pct = (completed / enrolled) * 100
+        if (!Number.isFinite(pct)) return 0
+        return Math.max(0, Math.min(100, Math.round(pct)))
+    }
+
+    return (
+        <div style={{ padding: 24, minHeight: '100vh' }}>
+
+            <Helmet>
+                <title>Course Management | Smart Incubation</title>
+            </Helmet>
+            {/* Header */}
+            <DashboardHeaderCard
+                title={isConsultant ? 'My Courses' : 'Courses'}
+                titleIcon={<BookOutlined />}
+                subtitle={
+                    isOperations
+                        ? 'Operations: view all courses, manage only those you created.'
+                        : isConsultant
+                            ? 'Consultant: only courses you created.'
+                            : 'Courses'
+                }
+                extraRight={
+                    <Row gutter={[8, 8]} justify="end">
+                        <Col flex="auto">
+                            <Input
+                                prefix={<SearchOutlined />}
+                                placeholder="Search courses..."
+                                allowClear
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                            />
+                        </Col>
+
+                        <Col>
+                            {(isOperations || isConsultant) && (
+                                <Button type="primary" icon={<PlusOutlined />} onClick={goCreate}>
+                                    Add New Course
+                                </Button>
+                            )}
+                        </Col>
+                    </Row>
+                }
+            />
+
+
 
             {/* Stats */}
             <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
@@ -303,12 +432,7 @@ const CoursesManager: React.FC = () => {
                 </Col>
                 <Col xs={24} md={6}>
                     <MotionCard>
-                        <Statistic
-                            title='Avg Rating'
-                            value={stats.avgRating}
-                            precision={1}
-                            prefix={<StarFilled />}
-                        />
+                        <Statistic title='Avg Rating' value={stats.avgRating} precision={1} prefix={<StarFilled />} />
                     </MotionCard>
                 </Col>
                 <Col xs={24} md={6}>
@@ -330,11 +454,7 @@ const CoursesManager: React.FC = () => {
                             const viewOnly = isOperations && !course.canManage
 
                             return (
-                                <Card
-                                    key={course.id}
-                                    style={{ borderRadius: 12 }}
-                                    bodyStyle={{ padding: 16 }}
-                                >
+                                <MotionCard key={course.id} style={{ borderRadius: 12 }} bodyStyle={{ padding: 16 }}>
                                     <Row gutter={[12, 12]} align='top'>
                                         <Col xs={24} md={16}>
                                             <Space direction='vertical' size={2} style={{ width: '100%' }}>
@@ -367,12 +487,7 @@ const CoursesManager: React.FC = () => {
                                                 </Col>
                                                 <Col xs={12} md={6}>
                                                     <Card size='small'>
-                                                        <Statistic
-                                                            title='Rating'
-                                                            value={course.avgRating || 0}
-                                                            precision={1}
-                                                            prefix={<StarFilled />}
-                                                        />
+                                                        <Statistic title='Rating' value={course.avgRating || 0} precision={1} prefix={<StarFilled />} />
                                                     </Card>
                                                 </Col>
                                                 <Col xs={12} md={6}>
@@ -385,75 +500,130 @@ const CoursesManager: React.FC = () => {
 
                                         <Col xs={24} md={8}>
                                             <Space direction='vertical' style={{ width: '100%' }} size={8}>
-                                                <Button icon={<EyeOutlined />} block onClick={() => goView(course.id)}>
+                                                {/* CHANGED: now opens summary modal */}
+                                                <Button icon={<EyeOutlined />} block onClick={() => openViewModal(course.id)}>
                                                     View Course
                                                 </Button>
 
-                                                <Tooltip
-                                                    title={
-                                                        viewOnly
-                                                            ? 'You can only manage courses you created.'
-                                                            : undefined
-                                                    }
-                                                >
-                                                    <Button
-                                                        icon={<TeamOutlined />}
-                                                        block
-                                                        disabled={viewOnly}
-                                                        onClick={() => goEnrollments(course.id)}
-                                                    >
+                                                <Tooltip title={viewOnly ? 'You can only manage courses you created.' : undefined}>
+                                                    <Button icon={<TeamOutlined />} block disabled={viewOnly} onClick={() => goEnrollments(course.id)}>
                                                         View Enrollments
                                                     </Button>
                                                 </Tooltip>
 
-                                                <Tooltip
-                                                    title={viewOnly ? 'You can only manage courses you created.' : undefined}
-                                                >
-                                                    <Button
-                                                        icon={<ReadOutlined />}
-                                                        block
-                                                        disabled={viewOnly}
-                                                        onClick={() => goGrades(course.id)}
-                                                    >
+                                                <Tooltip title={viewOnly ? 'You can only manage courses you created.' : undefined}>
+                                                    <Button icon={<ReadOutlined />} block disabled={viewOnly} onClick={() => goGrades(course.id)}>
                                                         Grades
                                                     </Button>
                                                 </Tooltip>
 
-                                                <Tooltip
-                                                    title={viewOnly ? 'You can only manage courses you created.' : undefined}
-                                                >
-                                                    <Button
-                                                        icon={<BarChartOutlined />}
-                                                        block
-                                                        disabled={viewOnly}
-                                                        onClick={() => goAnalytics(course.id)}
-                                                    >
+                                                <Tooltip title={viewOnly ? 'You can only manage courses you created.' : undefined}>
+                                                    <Button icon={<BarChartOutlined />} block disabled={viewOnly} onClick={() => goAnalytics(course.id)}>
                                                         Analytics
                                                     </Button>
                                                 </Tooltip>
 
-                                                <Tooltip
-                                                    title={viewOnly ? 'You can only edit courses you created.' : undefined}
-                                                >
-                                                    <Button
-                                                        type='primary'
-                                                        icon={<EditOutlined />}
-                                                        block
-                                                        disabled={viewOnly}
-                                                        onClick={() => goEdit(course.id)}
-                                                    >
+                                                <Tooltip title={viewOnly ? 'You can only edit courses you created.' : undefined}>
+                                                    <Button type='primary' icon={<EditOutlined />} block disabled={viewOnly} onClick={() => goEdit(course.id)}>
                                                         Edit
                                                     </Button>
                                                 </Tooltip>
                                             </Space>
                                         </Col>
                                     </Row>
-                                </Card>
+                                </MotionCard>
                             )
                         })}
                     </div>
                 )}
             </MotionCard>
+
+            {/* NEW: View Course Summary Modal */}
+            <Modal
+                open={viewOpen}
+                onCancel={closeViewModal}
+                title={
+                    <Space>
+                        <EyeOutlined />
+                        <span>Course Summary</span>
+                    </Space>
+                }
+                footer={[
+                    <Button key="close" onClick={closeViewModal}>
+                        Close
+                    </Button>
+                ]}
+                width={760}
+                destroyOnClose
+            >
+                {viewLoading ? (
+                    <Skeleton active />
+                ) : !viewData ? (
+                    <Empty description='Course details not available.' />
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <Card style={{ borderRadius: 12 }}>
+                            <Space direction='vertical' style={{ width: '100%' }} size={6}>
+                                <Space wrap size={10}>
+                                    <Text strong style={{ fontSize: 18 }}>
+                                        {viewData.title}
+                                    </Text>
+                                    {statusTag(viewData.status)}
+                                </Space>
+
+                                <Text type='secondary'>{capFirstLetter(viewData.category)}</Text>
+
+                                {viewData.description ? (
+                                    <Text style={{ whiteSpace: 'pre-wrap' }}>{viewData.description}</Text>
+                                ) : (
+                                    <Text type='secondary'>No description provided.</Text>
+                                )}
+
+                                <Divider style={{ margin: '10px 0' }} />
+
+                                <Descriptions size='small' column={2} bordered>
+                                    <Descriptions.Item label={<Space><ClockCircleOutlined />Time</Space>}>
+                                        {formatMinutes(viewData.totalMinutes)}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label={<Space><CheckCircleOutlined />Status</Space>}>
+                                        {capFirstLetter(viewData.status)}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label={<Space><ReadOutlined />Lessons</Space>}>
+                                        {viewData.lessonsCount}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label={<Space><FileTextOutlined />Quizzes</Space>}>
+                                        {viewData.quizzesCount}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label={<Space><StarFilled />Rating</Space>}>
+                                        {Number(viewData.avgRating || 0).toFixed(1)}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label={<Space><TeamOutlined />Enrolled</Space>}>
+                                        {viewData.enrolledStudents}
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label={<Space><RiseOutlined />Completion</Space>}>
+                                        <Space direction='vertical' size={0} style={{ width: '100%' }}>
+                                            <Progress
+                                                percent={completionRate(viewData.enrolledStudents, viewData.completedStudents)}
+                                                size='small'
+                                            />
+                                            <Text type='secondary' style={{ fontSize: 12 }}>
+                                                {viewData.completedStudents} completed
+                                            </Text>
+                                        </Space>
+                                    </Descriptions.Item>
+                                    <Descriptions.Item label='Last Updated'>{viewData.updatedAtLabel}</Descriptions.Item>
+                                </Descriptions>
+
+                                {viewData.estimatedWeeks ? (
+                                    <Text type='secondary' style={{ fontSize: 12 }}>
+                                        Estimated duration: {viewData.estimatedWeeks} week(s)
+                                    </Text>
+                                ) : null}
+                            </Space>
+                        </Card>
+                    </div>
+                )}
+            </Modal>
         </div>
     )
 }
