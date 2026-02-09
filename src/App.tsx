@@ -283,6 +283,7 @@ const App = () => {
                           element={<FinancialReportsInterface />}
                         />
                         <Route path='documents' element={<DocumentHub />} />
+                            <Route path='profile' element={<ProfileForm />} />
                       </Route>
                       {/* Investor Routes */}
                       <Route path='investor'>
@@ -463,22 +464,14 @@ const App = () => {
                       />
                       <Route path='programs' element={<ProgramManager />} />
                     </Route>
-                    {/* 🔹 IncubateeLayout Routes: SME, Tracker, Analytics */}
-                    <Route element={<IncubateeLayout />}>
-                      <Route path='/incubatee/sme' element={<SMEDashboard />} />
-                      <Route
-                        path='/incubatee/tracker'
-                        element={<ApplicationTracker />}
-                      />
-                      <Route
-                        path='/incubatee/profile'
-                        element={<ProfileForm />}
-                      />
-                      <Route
-                        path='/incubatee/analytics'
-                        element={<IncubateeAnalytics />}
-                      />
-                    </Route>
+         
+                    {/* 🔹 Incubatee apply/setup layout */}
+                                        <Route element={<IncubateeLayout />}>
+                                            <Route path='/incubatee-apply/sme' element={<SMEDashboard />} />
+                                            <Route path='/incubatee-apply/tracker' element={<ApplicationTracker />} />
+                                            <Route path='/incubatee-apply/profile' element={<ProfileForm />} />
+                                            <Route path='/incubatee-apply/analytics' element={<IncubateeAnalytics />} />
+                                        </Route>
                     {/* <Route path='/' element={<LoginPage />} /> */}
                     <Route path='/' element={<LandingPage />} />
                     <Route path='/landing/sme' element={<SMEDashboard />} />
