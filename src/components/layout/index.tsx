@@ -473,7 +473,7 @@ export const CustomLayout: React.FC = () => {
      {
                 key: 'forms',
                 to: '/incubatee/forms',
-                label: 'Forms',
+                label: 'Evaluations',
                 icon: <SolutionOutlined />
             },
       {
@@ -499,7 +499,13 @@ export const CustomLayout: React.FC = () => {
         to: '/incubatee/documents',
         label: 'Upload Documents',
         icon: <FileDoneOutlined />
-      }
+      },
+       {
+                key: 'profile',
+                to: '/incubatee/profile',
+                label: 'My Profile',
+                icon: <SettingOutlined />
+            },
     ],
 
     operations: [
