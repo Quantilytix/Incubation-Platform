@@ -20,16 +20,7 @@ import {
 } from 'antd'
 import { Helmet } from 'react-helmet'
 import { useParams, useNavigate } from 'react-router-dom'
-import {
-    doc,
-    getDoc,
-    addDoc,
-    collection,
-    updateDoc,
-    increment,
-    serverTimestamp,
-    runTransaction
-} from 'firebase/firestore'
+import { doc, getDoc, addDoc, collection, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { LoadingOverlay } from '../shared/LoadingOverlay'
@@ -38,6 +29,7 @@ const { Title, Text } = Typography
 
 type AnswersMap = Record<string, any>
 type TimingMode = 'none' | 'overall' | 'per_question'
+type RetryMode = 'none' | 'all' | 'belowScore'
 
 type FormField = {
     id: string
@@ -63,12 +55,21 @@ type FormTemplate = {
         startAt?: any
         endAt?: any
         dueAt?: any
+
         autoGrade?: boolean
 
         timingMode?: TimingMode
         overallTimeSeconds?: number | null
         maxAttempts?: number | null
 
+        passMarkPct?: number
+        retryPolicy?: {
+            enabled?: boolean
+            mode?: RetryMode
+            thresholdPct?: number
+        }
+
+        // legacy (optional)
         timePerQuestionSec?: number | null
         totalTimeSec?: number | null
     }
@@ -83,7 +84,11 @@ type FormRequest = {
     companyCode?: string
     status?: string
 
+    // We treat attemptCount as "submitted attempts count"
     attemptCount?: number
+
+    // last submitted score (for retryPolicy belowScore)
+    lastScorePct?: number
 
     startAt?: any
     endAt?: any
@@ -148,10 +153,9 @@ type SessionState = {
     questionTimeSpentSec: Record<string, number>
     remainingOverallSec: number | null
     remainingQuestionSec: number | null
-    attemptStarted: boolean
 }
 
-type SubmitTrigger = 'manual_submit' | 'overall_timeout' | 'per_question_timeout' | 'user_exit'
+type SubmitTrigger = 'manual_submit' | 'overall_timeout' | 'per_question_timeout'
 
 export default function TimedAssessmentRunner() {
     const { message } = App.useApp()
@@ -172,25 +176,21 @@ export default function TimedAssessmentRunner() {
 
     const tickRef = useRef<any>(null)
 
-    // guards
-    const attemptRegisteringRef = useRef(false)
-    const attemptStartLockRef = useRef(false)
-
-    // FINALIZATION HARD-LOCKS (fixes modal looping + glitch)
+    // hard locks
     const finalizingRef = useRef(false)
     const finalizedRef = useRef(false)
 
     const [showSubmittedResult, setShowSubmittedResult] = useState(false)
     const [submittedTrigger, setSubmittedTrigger] = useState<SubmitTrigger>('manual_submit')
+    const [lastScorePctUi, setLastScorePctUi] = useState<number | null>(null)
+    const [canRetakeUi, setCanRetakeUi] = useState<boolean>(false)
 
     useEffect(() => {
-        attemptStartLockRef.current = false
         finalizingRef.current = false
         finalizedRef.current = false
         Modal.destroyAll()
     }, [requestId])
 
-    // ensure cleanup
     useEffect(() => {
         return () => {
             if (tickRef.current) {
@@ -241,9 +241,9 @@ export default function TimedAssessmentRunner() {
                 }
 
                 const t = { id: tSnap.id, ...(tSnap.data() as any) } as FormTemplate
+                const meta = t.assessmentMeta || {}
 
                 // time window enforcement (request overrides template)
-                const meta = t.assessmentMeta || {}
                 const timeWindowEnabled = Boolean(r.timeWindowEnabled ?? meta.timeWindowEnabled)
                 const startAt = toDateSafe(r.startAt ?? meta.startAt)
                 const endAt = toDateSafe(r.endAt ?? meta.endAt)
@@ -260,21 +260,6 @@ export default function TimedAssessmentRunner() {
                         setLoading(false)
                         return
                     }
-                }
-
-                // attempts enforcement (IMPORTANT: allow resume when status is in_progress)
-                const maxAttemptsRaw = r.maxAttempts ?? meta.maxAttempts
-                const maxAttempts = typeof maxAttemptsRaw === 'number' && maxAttemptsRaw > 0 ? Math.floor(maxAttemptsRaw) : null
-
-                const attemptCount = Number(r.attemptCount || 0)
-                const status = String(r.status || '').toLowerCase()
-                const isInProgress = status === 'in_progress'
-
-                // block only if not in progress
-                if (maxAttempts !== null && attemptCount >= maxAttempts && !isInProgress) {
-                    setBlockedReason(`Maximum attempts reached (${attemptCount}/${maxAttempts}).`)
-                    setLoading(false)
-                    return
                 }
 
                 setReqDoc(r)
@@ -294,9 +279,9 @@ export default function TimedAssessmentRunner() {
     const questions = useMemo(() => (tpl?.fields || []).filter(f => f.type !== 'heading'), [tpl])
 
     // -----------------------------
-    // Resolve timing mode + limits
+    // Resolve timing + policy
     // -----------------------------
-    const resolvedTiming = useMemo(() => {
+    const resolved = useMemo(() => {
         const meta = tpl?.assessmentMeta || {}
 
         const mode: TimingMode =
@@ -322,15 +307,32 @@ export default function TimedAssessmentRunner() {
         const maxAttemptsRaw = reqDoc?.maxAttempts ?? meta.maxAttempts
         const maxAttempts = typeof maxAttemptsRaw === 'number' && maxAttemptsRaw > 0 ? Math.floor(maxAttemptsRaw) : null
 
-        return { mode, overallSeconds, legacyPerQ, maxAttempts }
+        const passMarkPct = clampInt(meta.passMarkPct ?? 50, 0, 100)
+
+        const rp = meta.retryPolicy || {}
+        const retryEnabled = Boolean(rp.enabled ?? true)
+        const retryMode: RetryMode =
+            rp.mode === 'all' || rp.mode === 'belowScore' || rp.mode === 'none' ? rp.mode : 'belowScore'
+        const retryThresholdPct = clampInt(rp.thresholdPct ?? 40, 0, 100)
+
+        const autoGrade = Boolean(meta.autoGrade ?? true)
+
+        return { mode, overallSeconds, legacyPerQ, maxAttempts, passMarkPct, retryEnabled, retryMode, retryThresholdPct, autoGrade }
     }, [tpl, reqDoc])
 
     // -----------------------------
-    // Initialize / restore session
+    // init / restore session
     // -----------------------------
     useEffect(() => {
         if (!requestId || !tpl || !reqDoc) return
         if (!questions.length) return
+
+        // if already submitted, we don't auto-restore session unless user retakes
+        const status = String(reqDoc.status || '').toLowerCase()
+        if (status === 'submitted') {
+            setSession(null)
+            return
+        }
 
         const raw = localStorage.getItem(lsKey(requestId))
         if (raw) {
@@ -345,15 +347,15 @@ export default function TimedAssessmentRunner() {
 
         const now = Date.now()
 
-        const initialOverall = resolvedTiming.mode === 'overall' && resolvedTiming.overallSeconds > 0 ? resolvedTiming.overallSeconds : null
+        const initialOverall = resolved.mode === 'overall' && resolved.overallSeconds > 0 ? resolved.overallSeconds : null
 
         const firstQ = questions[0]
         const initialPerQ =
-            resolvedTiming.mode === 'per_question'
+            resolved.mode === 'per_question'
                 ? (() => {
                     const sec = clampInt(firstQ?.timeLimitSeconds ?? 0, 0, 60 * 60)
                     if (sec > 0) return sec
-                    return resolvedTiming.legacyPerQ > 0 ? resolvedTiming.legacyPerQ : null
+                    return resolved.legacyPerQ > 0 ? resolved.legacyPerQ : null
                 })()
                 : null
 
@@ -366,66 +368,19 @@ export default function TimedAssessmentRunner() {
             unanswered: [],
             questionTimeSpentSec: {},
             remainingOverallSec: initialOverall,
-            remainingQuestionSec: initialPerQ,
-            attemptStarted: false
+            remainingQuestionSec: initialPerQ
         }
 
         setSession(initial)
         localStorage.setItem(lsKey(requestId), JSON.stringify(initial))
-    }, [requestId, tpl, reqDoc, questions, resolvedTiming.mode, resolvedTiming.overallSeconds, resolvedTiming.legacyPerQ])
+    }, [requestId, tpl, reqDoc, questions.length, resolved.mode, resolved.overallSeconds, resolved.legacyPerQ])
 
-    // -----------------------------
-    // Persist session
-    // -----------------------------
+    // persist session
     useEffect(() => {
         if (!requestId || !session) return
         localStorage.setItem(lsKey(requestId), JSON.stringify(session))
     }, [requestId, session])
 
-    // -----------------------------
-    // Mark in_progress + increment attemptCount ON FIRST OPEN (once)
-    // -----------------------------
-    useEffect(() => {
-        ; (async () => {
-            if (!requestId || !reqDoc) return
-            if (!session) return
-            if (attemptStartLockRef.current) return
-            if (session.attemptStarted) return
-            if (finalizingRef.current || finalizedRef.current) return
-
-            attemptStartLockRef.current = true
-
-            setSession(prev => (prev ? { ...prev, attemptStarted: true } : prev))
-
-            try {
-                const rRef = doc(db, 'formRequests', requestId)
-                await updateDoc(rRef, {
-                    status: 'in_progress',
-                    attemptCount: increment(1),
-                    attemptStartedAt: serverTimestamp(),
-                    updatedAt: serverTimestamp()
-                })
-
-                setReqDoc(prev =>
-                    prev
-                        ? {
-                            ...prev,
-                            status: 'in_progress',
-                            attemptCount: Number(prev.attemptCount || 0) + 1
-                        }
-                        : prev
-                )
-            } catch (e) {
-                console.error(e)
-                message.warning('Could not register attempt start. Please check connectivity.')
-            }
-        })()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [requestId, reqDoc?.templateId, session?.startedAtMs])
-
-    // -----------------------------
-    // Helpers
-    // -----------------------------
     const currentQ = useMemo(() => {
         if (!session) return null
         return questions[session.currentIndex] || null
@@ -436,7 +391,7 @@ export default function TimedAssessmentRunner() {
         if (!q) return null
         const secField = clampInt(q.timeLimitSeconds ?? 0, 0, 60 * 60)
         if (secField > 0) return secField
-        return resolvedTiming.legacyPerQ > 0 ? resolvedTiming.legacyPerQ : null
+        return resolved.legacyPerQ > 0 ? resolved.legacyPerQ : null
     }
 
     const effectiveQuestionRemaining = useMemo(() => {
@@ -459,16 +414,6 @@ export default function TimedAssessmentRunner() {
         return Math.round(((session.currentIndex + 1) / questions.length) * 100)
     }, [session, questions.length])
 
-    const requiredUnansweredWarning = useMemo(() => {
-        if (!session || !currentQ) return false
-        if (!currentQ.required) return false
-        const v = session.answers[currentQ.id]
-        if (v === undefined || v === null) return true
-        if (typeof v === 'string' && v.trim() === '') return true
-        if (Array.isArray(v) && v.length === 0) return true
-        return false
-    }, [session, currentQ])
-
     const isAnswered = (val: any) => {
         if (val === undefined || val === null) return false
         if (typeof val === 'string' && val.trim() === '') return false
@@ -476,174 +421,14 @@ export default function TimedAssessmentRunner() {
         return true
     }
 
-    // -----------------------------
-    // Submit / finalize (single-fire)
-    // -----------------------------
-    const ensureAttemptRegistered = async (): Promise<number | null> => {
-        if (!requestId) return null
-        if (!reqDoc) return null
-        if (!session) return null
-
-        if (finalizedRef.current) return Number(reqDoc.attemptCount || 0)
-
-        // If UI already knows attempt was registered AND reqDoc shows it, skip.
-        if (session.attemptStarted && Number(reqDoc.attemptCount || 0) > 0) return Number(reqDoc.attemptCount || 0)
-
-        if (attemptRegisteringRef.current) return Number(reqDoc.attemptCount || 0)
-        attemptRegisteringRef.current = true
-
-        try {
-            const rRef = doc(db, 'formRequests', requestId)
-
-            const nextCount = await runTransaction(db, async tx => {
-                const snap = await tx.get(rRef)
-                if (!snap.exists()) throw new Error('Request no longer exists')
-
-                const data = snap.data() as any
-                const status = String(data.status || '').toLowerCase()
-
-                // If already submitted, do not consume/modify attempts
-                if (status === 'submitted') return Number(data.attemptCount || 0)
-
-                const current = Number(data.attemptCount || 0)
-                const updated = current + 1
-
-                tx.update(rRef, {
-                    status: 'in_progress',
-                    attemptCount: updated,
-                    attemptStartedAt: data.attemptStartedAt || serverTimestamp(),
-                    updatedAt: serverTimestamp()
-                })
-
-                return updated
-            })
-
-            setSession(prev => (prev ? { ...prev, attemptStarted: true } : prev))
-            setReqDoc(prev => (prev ? { ...prev, status: 'in_progress', attemptCount: nextCount } : prev))
-
-            return nextCount
-        } catch (e) {
-            console.error('[ensureAttemptRegistered] failed:', e)
-            message.error('Could not register attempt. Check permissions / connectivity.')
-            return null
-        } finally {
-            attemptRegisteringRef.current = false
-        }
-    }
-
-    const submitResponse = async (s: SessionState, trigger: SubmitTrigger) => {
-        if (!tpl || !reqDoc || !requestId) return
-
-        const unanswered = new Set<string>(s.unanswered || [])
-        for (const q of questions) {
-            if (!isAnswered(s.answers[q.id])) unanswered.add(q.id)
-        }
-
-        const durationSec = Math.max(1, Math.floor((Date.now() - s.startedAtMs) / 1000))
-
-        const atEnd = s.currentIndex >= questions.length - 1
-        const leftMidway =
-            trigger === 'user_exit'
-                ? true
-                : trigger === 'overall_timeout' || trigger === 'per_question_timeout'
-                    ? !atEnd || unanswered.size > 0
-                    : unanswered.size > 0
-
-        await addDoc(collection(db, 'formResponses'), {
-            templateId: reqDoc.templateId,
-            formId: reqDoc.templateId,
-            requestId,
-            formTitle: tpl.title || 'Assessment',
-            kind: 'assessment',
-            companyCode: reqDoc.companyCode || tpl.companyCode || user?.companyCode || '',
-            participantId: reqDoc.participantId,
-            submittedBy: {
-                id: user?.uid || user?.id || '',
-                name: user?.name || user?.displayName || reqDoc.participantName || '',
-                email: user?.email || reqDoc.participantEmail || ''
-            },
-            submittedAt: serverTimestamp(),
-            status: 'submitted',
-            answers: s.answers,
-            completion: {
-                leftMidway,
-                trigger,
-                completedQuestions: Object.keys(s.answers || {}).filter(k => isAnswered((s.answers as any)[k])).length,
-                totalQuestions: questions.length,
-                lastQuestionIndex: s.currentIndex
-            },
-            timing: {
-                startedAtMs: s.startedAtMs,
-                durationSec,
-                perQuestionTimeSpentSec: s.questionTimeSpentSec || {},
-                unansweredIds: Array.from(unanswered),
-                timingMode: resolvedTiming.mode,
-                overallTimeSeconds: resolvedTiming.mode === 'overall' ? resolvedTiming.overallSeconds || null : null,
-                perQuestionLimits:
-                    resolvedTiming.mode === 'per_question'
-                        ? questions.reduce((acc: any, q) => {
-                            const lim = clampInt(q.timeLimitSeconds ?? 0, 0, 60 * 60)
-                            if (lim > 0) acc[q.id] = lim
-                            return acc
-                        }, {})
-                        : {}
-            }
-        })
-
-        await updateDoc(doc(db, 'formRequests', requestId), {
-            status: 'submitted',
-            submittedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            leftMidway
-        })
-
-        localStorage.removeItem(lsKey(requestId))
-    }
-
-    const finalize = async (stateOverride?: SessionState, trigger: SubmitTrigger = 'manual_submit') => {
-        const s = stateOverride || session
-        if (!s || !tpl || !reqDoc || !requestId) return
-
-        if (finalizingRef.current || finalizedRef.current) return
-        finalizingRef.current = true
-
-        // stop timers + kill any modals
-        if (tickRef.current) {
-            clearInterval(tickRef.current)
-            tickRef.current = null
-        }
-        Modal.destroyAll()
-
-        setSubmitting(true)
-        try {
-            await ensureAttemptRegistered()
-            await submitResponse(s, trigger)
-
-            finalizedRef.current = true
-            Modal.destroyAll()
-
-            // If user EXITED, don't show Result screen — just leave (or toast)
-            if (trigger === 'user_exit') {
-                message.info('Saved & submitted (incomplete).')
-                navigate(-1)
-                return
-            }
-
-            // If actually submitted/completed, show Result screen
-            setSubmittedTrigger(trigger)
-            setShowSubmittedResult(true)
-        } catch (e) {
-            console.error(e)
-            message.error('Failed to submit assessment.')
-            finalizingRef.current = false // allow retry only on failure
-        } finally {
-            setSubmitting(false)
-        }
-    }
-
+    const requiredUnansweredWarning = useMemo(() => {
+        if (!session || !currentQ) return false
+        if (!currentQ.required) return false
+        return !isAnswered(session.answers[currentQ.id])
+    }, [session, currentQ])
 
     // -----------------------------
-    // Timers (wall clock)
+    // Timers: subtract real elapsed time (anti "pause")
     // -----------------------------
     useEffect(() => {
         if (!session || !currentQ) return
@@ -657,6 +442,8 @@ export default function TimedAssessmentRunner() {
                 if (finalizingRef.current || finalizedRef.current) return prev
 
                 const now = Date.now()
+
+                // IMPORTANT: use real elapsed time since last tick (so leaving page still burns time when they come back)
                 const dtSec = Math.max(1, Math.floor((now - (prev.lastTickAtMs || now)) / 1000))
 
                 const q = questions[prev.currentIndex]
@@ -723,7 +510,184 @@ export default function TimedAssessmentRunner() {
     }, [session?.currentIndex, questions.length, currentQ?.id])
 
     // -----------------------------
-    // Answer setter
+    // Score + retry checks
+    // -----------------------------
+    const computeAutoScorePct = (answers: AnswersMap) => {
+        // only auto-grade supported types
+        const autoTypes = new Set(['radio', 'checkbox', 'number', 'rating'])
+        const qs = questions.filter(q => q.type !== 'heading')
+
+        let total = 0
+        let earned = 0
+        let autoCount = 0
+
+        for (const q of qs) {
+            const pts = clampInt(q.points ?? 1, 0, 1000)
+            if (!pts) continue
+
+            const canAuto = resolved.autoGrade && autoTypes.has(q.type) && q.correctAnswer !== undefined && q.correctAnswer !== null
+            if (!canAuto) continue
+
+            total += pts
+            autoCount += 1
+
+            const a = answers[q.id]
+            if (q.type === 'radio') {
+                if (a === q.correctAnswer) earned += pts
+            } else if (q.type === 'number') {
+                if (typeof a === 'number' && typeof q.correctAnswer === 'number' && a === q.correctAnswer) earned += pts
+            } else if (q.type === 'rating') {
+                if (typeof a === 'number' && typeof q.correctAnswer === 'number' && a === q.correctAnswer) earned += pts
+            } else if (q.type === 'checkbox') {
+                const arrA = Array.isArray(a) ? a.slice().sort() : []
+                const arrC = Array.isArray(q.correctAnswer) ? q.correctAnswer.slice().sort() : []
+                const sameLen = arrA.length === arrC.length
+                const sameAll = sameLen && arrA.every((v, i) => v === arrC[i])
+                if (sameAll) earned += pts
+            }
+        }
+
+        if (total <= 0) return { scorePct: null as number | null, earned: 0, total: 0, autoCount }
+        const scorePct = Math.round((earned / total) * 100)
+        return { scorePct, earned, total, autoCount }
+    }
+
+    const canRetakeNow = (attemptCount: number, lastScorePct: number | null) => {
+        if (!resolved.maxAttempts) return false
+        if (attemptCount >= resolved.maxAttempts) return false
+        if (!resolved.retryEnabled) return false
+
+        if (resolved.retryMode === 'none') return false
+        if (resolved.retryMode === 'all') return true
+
+        // belowScore
+        if (lastScorePct === null) return false
+        return lastScorePct < resolved.retryThresholdPct
+    }
+
+    // -----------------------------
+    // Submit (attempt counted HERE)
+    // -----------------------------
+    const submitResponse = async (s: SessionState, trigger: SubmitTrigger) => {
+        if (!tpl || !reqDoc || !requestId) return
+
+        const unanswered = new Set<string>(s.unanswered || [])
+        for (const q of questions) {
+            if (!isAnswered(s.answers[q.id])) unanswered.add(q.id)
+        }
+
+        const durationSec = Math.max(1, Math.floor((Date.now() - s.startedAtMs) / 1000))
+
+        const { scorePct, earned, total, autoCount } = computeAutoScorePct(s.answers)
+        const attemptCountNext = Number(reqDoc.attemptCount || 0) + 1
+
+        await addDoc(collection(db, 'formResponses'), {
+            templateId: reqDoc.templateId,
+            formId: reqDoc.templateId,
+            requestId,
+            formTitle: tpl.title || 'Assessment',
+            kind: 'assessment',
+            companyCode: reqDoc.companyCode || tpl.companyCode || user?.companyCode || '',
+            participantId: reqDoc.participantId,
+            submittedBy: {
+                id: user?.uid || user?.id || '',
+                name: user?.name || user?.displayName || reqDoc.participantName || '',
+                email: user?.email || reqDoc.participantEmail || ''
+            },
+            submittedAt: serverTimestamp(),
+            status: 'submitted',
+            answers: s.answers,
+            completion: {
+                trigger,
+                completedQuestions: Object.keys(s.answers || {}).filter(k => isAnswered((s.answers as any)[k])).length,
+                totalQuestions: questions.length,
+                lastQuestionIndex: s.currentIndex
+            },
+            timing: {
+                startedAtMs: s.startedAtMs,
+                durationSec,
+                perQuestionTimeSpentSec: s.questionTimeSpentSec || {},
+                unansweredIds: Array.from(unanswered),
+                timingMode: resolved.mode,
+                overallTimeSeconds: resolved.mode === 'overall' ? resolved.overallSeconds || null : null,
+                perQuestionLimits:
+                    resolved.mode === 'per_question'
+                        ? questions.reduce((acc: any, q) => {
+                            const lim = clampInt(q.timeLimitSeconds ?? 0, 0, 60 * 60)
+                            if (lim > 0) acc[q.id] = lim
+                            return acc
+                        }, {})
+                        : {}
+            },
+            grading: {
+                autoGradeApplied: resolved.autoGrade,
+                autoQuestionsCount: autoCount,
+                earnedPoints: earned,
+                totalPoints: total,
+                scorePct
+            }
+        })
+
+        await updateDoc(doc(db, 'formRequests', requestId), {
+            status: 'submitted',
+            submittedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            attemptCount: attemptCountNext,
+            lastScorePct: scorePct
+        })
+
+        // keep local state in sync
+        setReqDoc(prev =>
+            prev
+                ? { ...prev, status: 'submitted', attemptCount: attemptCountNext, lastScorePct: scorePct ?? undefined }
+                : prev
+        )
+
+        localStorage.removeItem(lsKey(requestId))
+
+        return { scorePct }
+    }
+
+    const finalize = async (stateOverride?: SessionState, trigger: SubmitTrigger = 'manual_submit') => {
+        const s = stateOverride || session
+        if (!s || !tpl || !reqDoc || !requestId) return
+
+        if (finalizingRef.current || finalizedRef.current) return
+        finalizingRef.current = true
+
+        if (tickRef.current) {
+            clearInterval(tickRef.current)
+            tickRef.current = null
+        }
+        Modal.destroyAll()
+
+        setSubmitting(true)
+        try {
+            const res = await submitResponse(s, trigger)
+
+            finalizedRef.current = true
+            Modal.destroyAll()
+
+            const scorePct = res?.scorePct ?? null
+            setLastScorePctUi(scorePct)
+
+            const attemptCountNow = Number((reqDoc.attemptCount || 0) + 1)
+            const canRetake = canRetakeNow(attemptCountNow, scorePct)
+            setCanRetakeUi(canRetake)
+
+            setSubmittedTrigger(trigger)
+            setShowSubmittedResult(true)
+        } catch (e) {
+            console.error(e)
+            message.error('Failed to submit assessment.')
+            finalizingRef.current = false
+        } finally {
+            setSubmitting(false)
+        }
+    }
+
+    // -----------------------------
+    // Navigation + Exit (exit is NOT an attempt)
     // -----------------------------
     const setAnswer = (fieldId: string, value: any) => {
         setSession(prev => {
@@ -732,16 +696,12 @@ export default function TimedAssessmentRunner() {
         })
     }
 
-    // -----------------------------
-    // Navigation
-    // -----------------------------
     const handleNext = () => {
         if (!session || !currentQ) return
         if (finalizingRef.current || finalizedRef.current) return
 
         if (currentQ.required) {
-            const v = session.answers[currentQ.id]
-            const missing = !isAnswered(v)
+            const missing = !isAnswered(session.answers[currentQ.id])
             if (missing) {
                 message.warning('This question is required.')
                 return
@@ -761,15 +721,12 @@ export default function TimedAssessmentRunner() {
                 ...prev,
                 currentIndex: nextIndex,
                 lockedIndexMax: Math.max(prev.lockedIndexMax, nextIndex),
-                remainingQuestionSec: resolvedTiming.mode === 'per_question' ? computePerQLimitForIndex(nextIndex) : null,
+                remainingQuestionSec: resolved.mode === 'per_question' ? computePerQLimitForIndex(nextIndex) : null,
                 lastTickAtMs: Date.now()
             }
         })
     }
 
-    // -----------------------------
-    // Exit behaviour (resume vs forced submit)
-    // -----------------------------
     const handleExit = () => {
         if (!reqDoc || !session) {
             navigate(-1)
@@ -777,71 +734,36 @@ export default function TimedAssessmentRunner() {
         }
         if (finalizingRef.current || finalizedRef.current) return
 
-        const maxAttempts = resolvedTiming.maxAttempts
-        const attemptCountDb = Number(reqDoc.attemptCount || 0)
-
-        // If maxAttempts exists, exiting should ALWAYS submit (since attempts are limited)
-        // so user can't "pause" a 1-attempt assessment and come back later.
-        const mustFinalizeOnExit = maxAttempts !== null
-
         Modal.confirm({
             title: 'Exit assessment?',
             width: 620,
             icon: null,
-            okText: mustFinalizeOnExit ? 'Exit & Submit' : 'Exit',
+            okText: 'Exit',
             cancelText: 'Continue',
-            okButtonProps: mustFinalizeOnExit ? { danger: true } : undefined,
             content: (
                 <Space direction="vertical" size={10} style={{ width: '100%' }}>
                     <Alert
                         type="info"
                         showIcon
                         message="Progress saved"
-                        description="Your progress is saved on this device."
+                        description="Your progress is saved on this device. Time continues to elapse while you’re away."
                         style={{ width: '100%', margin: 0 }}
                     />
-
-                    {mustFinalizeOnExit ? (
-                        <Alert
-                            type="warning"
-                            showIcon
-                            message="Limited attempts — exiting will submit"
-                            description={
-                                <span style={{ display: 'block', lineHeight: 1.45 }}>
-                                    This assessment has limited attempts ({Math.min(attemptCountDb + (session.attemptStarted ? 0 : 1), maxAttempts)}/{maxAttempts}).
-                                    If you exit now, your current answers will be <b>submitted automatically</b> and marked as <b>left mid-way</b>.
-                                    You may not be able to reopen it.
-                                </span>
-                            }
-                            style={{ width: '100%', margin: 0 }}
-                        />
-                    ) : (
-                        <Alert
-                            type="success"
-                            showIcon
-                            message="You can continue later"
-                            description={
-                                <span style={{ display: 'block', lineHeight: 1.45 }}>
-                                    You can exit now and return later to continue, as long as the assessment remains open and unsubmitted.
-                                </span>
-                            }
-                            style={{ width: '100%', margin: 0 }}
-                        />
-                    )}
+                    <Alert
+                        type="warning"
+                        showIcon
+                        message="No attempt consumed"
+                        description="Exiting does not count as an attempt because attempts are only counted when you submit."
+                        style={{ width: '100%', margin: 0 }}
+                    />
                 </Space>
             ),
-            onOk: () => {
-                if (!mustFinalizeOnExit) {
-                    navigate(-1)
-                    return
-                }
-                return finalize(session, 'user_exit')
-            }
+            onOk: () => navigate(-1)
         })
     }
 
     // -----------------------------
-    // Render by type
+    // Render input
     // -----------------------------
     const renderQuestionInput = (q: FormField) => {
         const v = session?.answers?.[q.id]
@@ -921,7 +843,7 @@ export default function TimedAssessmentRunner() {
         )
     }
 
-    if (!tpl || !reqDoc || !session || !currentQ) {
+    if (!tpl || !reqDoc) {
         return (
             <div style={{ minHeight: '100vh', padding: 24 }}>
                 <Card style={{ borderRadius: 16 }}>
@@ -933,16 +855,140 @@ export default function TimedAssessmentRunner() {
         )
     }
 
-    const maxAttempts = resolvedTiming.maxAttempts
+    // If already submitted: show result + optional retake button
+    const status = String(reqDoc.status || '').toLowerCase()
     const attemptCount = Number(reqDoc.attemptCount || 0)
+    const maxAttempts = resolved.maxAttempts
     const attemptLabel = maxAttempts !== null ? `${attemptCount}/${maxAttempts}` : `${attemptCount}`
+
+    const lastScorePct = typeof reqDoc.lastScorePct === 'number' ? clampInt(reqDoc.lastScorePct, 0, 100) : null
+    const canRetake = canRetakeNow(attemptCount, lastScorePct)
+
+    if (status === 'submitted' && !showSubmittedResult) {
+        return (
+            <div style={{ padding: 24, minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+                <Result
+                    status="success"
+                    title="Submitted"
+                    subTitle={
+                        <div style={{ display: 'grid', gap: 6 }}>
+                            <div>Attempts: {attemptLabel}</div>
+                            {lastScorePct !== null ? (
+                                <div>
+                                    Score: <b>{lastScorePct}%</b> (Pass mark: {resolved.passMarkPct}%)
+                                </div>
+                            ) : (
+                                <div>Score: Pending (manual grading)</div>
+                            )}
+                            {resolved.retryEnabled ? (
+                                <div>Retry policy: {resolved.retryMode === 'all' ? 'Everyone' : resolved.retryMode === 'belowScore' ? `Below ${resolved.retryThresholdPct}%` : 'No retry'}</div>
+                            ) : (
+                                <div>Retry policy: Disabled</div>
+                            )}
+                        </div>
+                    }
+                    extra={[
+                        canRetake ? (
+                            <Button
+                                type="primary"
+                                key="retake"
+                                onClick={async () => {
+                                    // reset local session + reopen
+                                    localStorage.removeItem(lsKey(requestId))
+                                    await updateDoc(doc(db, 'formRequests', requestId), {
+                                        status: 'in_progress',
+                                        updatedAt: serverTimestamp()
+                                    })
+                                    setReqDoc(prev => (prev ? { ...prev, status: 'in_progress' } : prev))
+                                    message.success('Retake started')
+                                }}
+                            >
+                                Retake
+                            </Button>
+                        ) : (
+                            <Button type="primary" key="back" onClick={() => navigate(-1)}>
+                                Back
+                            </Button>
+                        )
+                    ]}
+                />
+            </div>
+        )
+    }
+
+    // after submission in this session
+    if (showSubmittedResult) {
+        const scorePct = lastScorePctUi
+        return (
+            <div style={{ padding: 24, minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
+                <Result
+                    status="success"
+                    title="Submitted"
+                    subTitle={
+                        <div style={{ display: 'grid', gap: 6 }}>
+                            <div>Trigger: {submittedTrigger}</div>
+                            {scorePct !== null ? (
+                                <div>
+                                    Score: <b>{scorePct}%</b> (Pass mark: {resolved.passMarkPct}%)
+                                </div>
+                            ) : (
+                                <div>Score: Pending (manual grading)</div>
+                            )}
+                            {canRetakeUi ? <div>You can retake (attempts remaining + policy allows).</div> : <div>No retake available.</div>}
+                        </div>
+                    }
+                    extra={[
+                        canRetakeUi ? (
+                            <Button
+                                type="primary"
+                                key="retake"
+                                onClick={async () => {
+                                    localStorage.removeItem(lsKey(requestId))
+                                    await updateDoc(doc(db, 'formRequests', requestId), {
+                                        status: 'in_progress',
+                                        updatedAt: serverTimestamp()
+                                    })
+                                    setReqDoc(prev => (prev ? { ...prev, status: 'in_progress' } : prev))
+                                    setShowSubmittedResult(false)
+                                    setLastScorePctUi(null)
+                                    setCanRetakeUi(false)
+                                    finalizedRef.current = false
+                                    finalizingRef.current = false
+                                    message.success('Retake started')
+                                }}
+                            >
+                                Retake
+                            </Button>
+                        ) : (
+                            <Button type="primary" key="back" onClick={() => navigate(-1)}>
+                                Back
+                            </Button>
+                        )
+                    ]}
+                />
+            </div>
+        )
+    }
+
+    // must have session + currentQ to run
+    if (!session || !currentQ || questions.length === 0) {
+        return (
+            <div style={{ minHeight: '100vh', padding: 24 }}>
+                <Card style={{ borderRadius: 16 }}>
+                    <Alert type="warning" showIcon message="No questions to display" />
+                    <Divider />
+                    <Button onClick={() => navigate(-1)}>Back</Button>
+                </Card>
+            </div>
+        )
+    }
 
     const showOverall = typeof overallRemaining === 'number'
     const showPerQ = typeof effectiveQuestionRemaining === 'number'
 
     const overallPct =
-        showOverall && resolvedTiming.overallSeconds > 0 && typeof overallRemaining === 'number'
-            ? Math.round((Math.max(0, overallRemaining) / resolvedTiming.overallSeconds) * 100)
+        showOverall && resolved.overallSeconds > 0 && typeof overallRemaining === 'number'
+            ? Math.round((Math.max(0, overallRemaining) / resolved.overallSeconds) * 100)
             : null
 
     const perQPct =
@@ -954,31 +1000,11 @@ export default function TimedAssessmentRunner() {
             })()
             : null
 
-    if (showSubmittedResult) {
-        return (
-            <div style={{ padding: 24, minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
-                <Result
-                    status="success"
-                    title="Submitted"
-                    subTitle="Your assessment has been submitted."
-                    extra={[
-                        <Button type="primary" key="back" onClick={() => navigate(-1)}>
-                            Back
-                        </Button>
-                    ]}
-                />
-            </div>
-        )
-    }
-
-
     return (
         <div style={{ minHeight: '100vh', padding: 24 }}>
             <Helmet>
                 <title>{tpl.title || 'Assessment'} | Smart Incubation</title>
             </Helmet>
-
-
 
             <Card style={{ borderRadius: 16 }} bodyStyle={{ padding: 18 }}>
                 <Space direction="vertical" style={{ width: '100%' }} size={10}>
@@ -991,15 +1017,15 @@ export default function TimedAssessmentRunner() {
                         </div>
 
                         <Space wrap>
-                            <Tag color="blue">Attempt: {attemptLabel}</Tag>
+                            <Tag color="blue">Attempts used: {attemptLabel}</Tag>
                             <Tag>
                                 Q {session.currentIndex + 1} / {questions.length}
                             </Tag>
                             <Tag color="geekblue">Progress: {progressPct}%</Tag>
                             <Tag>
-                                Timer:{' '}
-                                {resolvedTiming.mode === 'none' ? 'Off' : resolvedTiming.mode === 'overall' ? 'Overall' : 'Per Question'}
+                                Timer: {resolved.mode === 'none' ? 'Off' : resolved.mode === 'overall' ? 'Overall' : 'Per Question'}
                             </Tag>
+                            {maxAttempts !== null && attemptCount >= maxAttempts ? <Tag color="red">No attempts left</Tag> : null}
                         </Space>
                     </Space>
 
@@ -1020,9 +1046,7 @@ export default function TimedAssessmentRunner() {
                                     <div>
                                         <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
                                             <Text strong>Question time left</Text>
-                                            <Tag color={effectiveQuestionRemaining! <= 10 ? 'red' : 'default'}>
-                                                {secondsToClock(effectiveQuestionRemaining!)}
-                                            </Tag>
+                                            <Tag color={effectiveQuestionRemaining! <= 10 ? 'red' : 'default'}>{secondsToClock(effectiveQuestionRemaining!)}</Tag>
                                         </Space>
                                         {perQPct !== null && <Progress percent={perQPct} showInfo={false} />}
                                     </div>
@@ -1050,10 +1074,9 @@ export default function TimedAssessmentRunner() {
                                 <Space wrap>
                                     {currentQ.required ? <Tag color="red">Required</Tag> : <Tag>Optional</Tag>}
                                     <Tag>{String(currentQ.type).toUpperCase()}</Tag>
-                                    {resolvedTiming.mode === 'per_question' && (
+                                    {resolved.mode === 'per_question' && (
                                         <Tag>
-                                            Limit:{' '}
-                                            {computePerQLimitForIndex(session.currentIndex) ? `${computePerQLimitForIndex(session.currentIndex)}s` : '—'}
+                                            Limit: {computePerQLimitForIndex(session.currentIndex) ? `${computePerQLimitForIndex(session.currentIndex)}s` : '—'}
                                         </Tag>
                                     )}
                                 </Space>
@@ -1074,7 +1097,7 @@ export default function TimedAssessmentRunner() {
 
                             <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
                                 <Text type="secondary">
-                                    No back navigation. {resolvedTiming.mode === 'overall' ? 'Overall timing is enforced.' : 'You can finish all questions without being “logged out”.'}
+                                    No back navigation. {resolved.mode === 'overall' ? 'Overall timing is enforced.' : 'Per-question timing is enforced.'}
                                 </Text>
 
                                 <Space>
