@@ -9,6 +9,7 @@ import {
   MenuUnfoldOutlined,
   MenuFoldOutlined,
   DashboardOutlined,
+  SettingOutlined,
   PieChartOutlined,
   BarChartOutlined,
   FundProjectionScreenOutlined,
