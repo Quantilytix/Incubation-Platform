@@ -112,6 +112,15 @@ export type FormField = {
 
 type TimedQuestionType = Exclude<FormField['type'], 'heading'>
 
+type RetryMode = 'none' | 'all' | 'belowScore'
+
+type RetryPolicy = {
+    enabled: boolean
+    mode: RetryMode
+    thresholdPct: number
+}
+
+
 function normalizeOptions(opts: string[]) {
     return opts.map(o => o.trim()).filter(o => o.length > 0)
 }
@@ -289,6 +298,14 @@ export default function AssessmentBuilder() {
     const [timingMode, setTimingMode] = useState<TimingMode>('none')
     const [overallTimeSeconds, setOverallTimeSeconds] = useState<number>(0)
     const [maxAttempts, setMaxAttempts] = useState<number>(1)
+    const [passMarkPct, setPassMarkPct] = useState<number>(50)
+
+    const [retryPolicy, setRetryPolicy] = useState<RetryPolicy>({
+        enabled: true,
+        mode: 'belowScore',
+        thresholdPct: 40
+    })
+
 
     // per question type defaults
     const [perTypeTimes, setPerTypeTimes] = useState<Record<TimedQuestionType, number>>(DEFAULT_TYPE_TIMES)
@@ -315,6 +332,20 @@ export default function AssessmentBuilder() {
         }
 
         const meta = draft?.assessmentMeta || {}
+
+        if (meta?.passMarkPct !== undefined) {
+            setPassMarkPct(clampInt(meta.passMarkPct, 0, 100))
+        }
+
+        const rp = meta?.retryPolicy
+        if (rp && typeof rp === 'object') {
+            setRetryPolicy({
+                enabled: Boolean(rp?.enabled ?? true),
+                mode: (rp?.mode === 'all' || rp?.mode === 'belowScore' || rp?.mode === 'none') ? rp.mode : 'belowScore',
+                thresholdPct: clampInt(rp?.thresholdPct ?? 40, 0, 100)
+            })
+        }
+
 
         const restoredResultsMode: ResultsReleaseMode =
             meta?.resultsReleaseMode === 'after_hours' || meta?.resultsReleaseMode === 'instant'
@@ -534,6 +565,17 @@ export default function AssessmentBuilder() {
                 )
 
                 const meta = data.assessmentMeta || {}
+
+                const loadedPass = clampInt(meta?.passMarkPct ?? 50, 0, 100)
+                setPassMarkPct(loadedPass)
+
+                const rp = meta?.retryPolicy || {}
+                setRetryPolicy({
+                    enabled: Boolean(rp?.enabled ?? true),
+                    mode: (rp?.mode === 'all' || rp?.mode === 'belowScore' || rp?.mode === 'none') ? rp.mode : 'belowScore',
+                    thresholdPct: clampInt(rp?.thresholdPct ?? 40, 0, 100)
+                })
+
 
                 const restoredResultsMode: ResultsReleaseMode =
                     meta?.resultsReleaseMode === 'after_hours' || meta?.resultsReleaseMode === 'instant'
@@ -921,6 +963,12 @@ export default function AssessmentBuilder() {
                         timingMode,
                         overallTimeSeconds: timingMode === 'overall' ? clampInt(overallTimeSeconds, 0, 24 * 60 * 60) : 0,
                         maxAttempts: clampInt(maxAttempts, 1, 50),
+                        passMarkPct: clampInt(passMarkPct, 0, 100),
+                        retryPolicy: {
+                            enabled: Boolean(retryPolicy.enabled),
+                            mode: retryPolicy.mode,
+                            thresholdPct: clampInt(retryPolicy.thresholdPct, 0, 100)
+                        },
                         perTypeTimes: timingMode === 'per_question' ? perTypeTimes : null
                     },
                     companyCode: user?.companyCode || '',
@@ -999,6 +1047,12 @@ export default function AssessmentBuilder() {
                         timingMode,
                         overallTimeSeconds: timingMode === 'overall' ? clampInt(overallTimeSeconds, 0, 24 * 60 * 60) : 0,
                         maxAttempts: clampInt(maxAttempts, 1, 50),
+                        passMarkPct: clampInt(passMarkPct, 0, 100),
+                        retryPolicy: {
+                            enabled: Boolean(retryPolicy.enabled),
+                            mode: retryPolicy.mode,
+                            thresholdPct: clampInt(retryPolicy.thresholdPct, 0, 100)
+                        },
                         resultsReleaseMode,
                         resultsReleaseHours: resultsReleaseMode === 'after_hours' ? clampInt(resultsReleaseHours, 1, 24 * 30) : 0,
                         perTypeTimes: timingMode === 'per_question' ? perTypeTimes : null
@@ -1402,6 +1456,73 @@ export default function AssessmentBuilder() {
                                     {/* RIGHT (row 2): empty on purpose, but now it's BELOW the input so it doesn't look like a gap */}
                                     <div />
                                 </div>
+
+                                <Divider />
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                    <Text strong>Pass mark</Text>
+
+                                    <Space>
+                                        <InputNumber
+                                            min={0}
+                                            max={100}
+                                            value={passMarkPct}
+                                            onChange={v => setPassMarkPct(clampInt(v, 0, 100))}
+                                            addonBefore="%"
+                                            style={{ width: 220 }}
+                                        />
+                                        <Text type="secondary">Used to classify pass/fail.</Text>
+                                    </Space>
+
+                                    <Divider style={{ margin: '8px 0' }} />
+
+                                    <Space align="center" wrap>
+                                        <Text strong>Retry policy</Text>
+                                        <Switch
+                                            checked={retryPolicy.enabled}
+                                            onChange={checked => setRetryPolicy(p => ({ ...p, enabled: checked }))}
+                                        />
+                                        <Tag color={retryPolicy.enabled ? 'green' : 'default'}>
+                                            {retryPolicy.enabled ? 'Enabled' : 'Disabled'}
+                                        </Tag>
+                                    </Space>
+
+                                    {retryPolicy.enabled && (
+                                        <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 12, alignItems: 'center' }}>
+                                            <Select
+                                                value={retryPolicy.mode}
+                                                onChange={(v: RetryMode) => setRetryPolicy(p => ({ ...p, mode: v }))}
+                                                style={{ width: 240 }}
+                                                options={[
+                                                    { value: 'belowScore', label: 'Allow retry if score below threshold' },
+                                                    { value: 'all', label: 'Allow retry for everyone' },
+                                                    { value: 'none', label: 'No retry (manual override only)' }
+                                                ]}
+                                            />
+
+                                            {retryPolicy.mode === 'belowScore' ? (
+                                                <Space>
+                                                    <InputNumber
+                                                        min={0}
+                                                        max={100}
+                                                        value={retryPolicy.thresholdPct}
+                                                        onChange={v => setRetryPolicy(p => ({ ...p, thresholdPct: clampInt(v, 0, 100) }))}
+                                                        addonBefore="%"
+                                                        style={{ width: 220 }}
+                                                    />
+                                                    <Text type="secondary">Example: below 40% can retake.</Text>
+                                                </Space>
+                                            ) : (
+                                                <Text type="secondary">
+                                                    {retryPolicy.mode === 'all'
+                                                        ? 'Everyone can retake (unless manually denied).'
+                                                        : 'Retries only via individual override in the viewer.'}
+                                                </Text>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
 
                                 <Divider />
 
