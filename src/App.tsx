@@ -27,6 +27,9 @@ import '@refinedev/antd/dist/reset.css'
 // 🔹 App Providers
 // ───────────────────────────────────────────────────────────
 import { authProvider, dataProvider, liveProvider } from '@/providers'
+import { SystemSettingsProvider } from './contexts/SystemSettingsContext'
+import { AssignedInterventionsProvider } from '@/contexts/AssignedInterventionsContext'
+import { SMEDetailsProvider } from './contexts/SMEDetailsContext'
 
 // ───────────────────────────────────────────────────────────
 // 🔹 Layout
@@ -188,6 +191,9 @@ const App = () => {
             }}
           >
             <AntdApp>
+               <SystemSettingsProvider>
+                            <AssignedInterventionsProvider>
+                                <SMEDetailsProvider>
               <DevtoolsProvider>
                 <Refine
                   routerProvider={routerProvider}
@@ -500,6 +506,9 @@ const App = () => {
                   <DocumentTitleHandler />
                 </Refine>
               </DevtoolsProvider>
+                                </SystemSettingsProvider>
+                            </AssignedInterventionsProvider>
+               </SMEDetailsProvider>
             </AntdApp>
           </ConfigProvider>
         </BrowserRouter>
