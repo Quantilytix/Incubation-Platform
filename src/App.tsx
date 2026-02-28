@@ -190,11 +190,11 @@ const App = () => {
               }
             }}
           >
-            <AntdApp>
-               <SystemSettingsProvider>
+                        <SystemSettingsProvider>
                             <AssignedInterventionsProvider>
                                 <SMEDetailsProvider>
-              <DevtoolsProvider>
+                                    <AntdApp>
+                                        <DevtoolsProvider>
                 <Refine
                   routerProvider={routerProvider}
                   dataProvider={dataProvider}
@@ -505,11 +505,11 @@ const App = () => {
                   <UnsavedChangesNotifier />
                   <DocumentTitleHandler />
                 </Refine>
-              </DevtoolsProvider>
-                                </SystemSettingsProvider>
+             </DevtoolsProvider>
+                                    </AntdApp>
+                                </SMEDetailsProvider>
                             </AssignedInterventionsProvider>
-               </SMEDetailsProvider>
-            </AntdApp>
+                        </SystemSettingsProvider>
           </ConfigProvider>
         </BrowserRouter>
       </QueryClientProvider>
