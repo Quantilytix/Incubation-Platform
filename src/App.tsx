@@ -63,7 +63,7 @@ import OperationsParticipantsManagement from '@/routes/operations/participants'
 import OperationsResourceManagement from '@/routes/operations/resources'
 import OperationsCompliance from './routes/operations/compliance'
 import OperationsReports from './routes/operations/reports'
-import { ConsultantAssignments } from './routes/operations/assignments'
+import { InterventionsAssignemnts } from './routes/operations/assignments'
 import ParticipantSuccess from './routes/operations/participants/success'
 import { TasksManager } from './routes/operations/tasks'
 import DiagnosticsDashboard from './routes/operations/diagnostics'
@@ -355,7 +355,7 @@ const App = () => {
                         <Route path='tasks' element={<TasksManager />} />
                         <Route
                           path='assignments'
-                          element={<ConsultantAssignments />}
+                          element={<InterventionsAssignemnts />}
                         />
                         <Route
                           path='diagnostics'
