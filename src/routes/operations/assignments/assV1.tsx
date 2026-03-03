@@ -1,0 +1,2862 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import {
+    Card,
+    Typography,
+    Table,
+    Space,
+    Tag,
+    Button,
+    Modal,
+    Form,
+    Input,
+    message,
+    DatePicker,
+    Select,
+    Tabs,
+    Row,
+    Col,
+    Statistic,
+    Progress,
+    Tooltip,
+    Drawer,
+    Slider,
+    Switch,
+    Segmented,
+    Grid
+} from 'antd'
+import {
+    CheckCircleOutlined,
+    CalendarOutlined,
+    CommentOutlined,
+    UserOutlined
+} from '@ant-design/icons'
+import { Helmet } from 'react-helmet'
+import {
+    collection,
+    getDoc,
+    setDoc,
+    doc,
+    Timestamp,
+    arrayUnion,
+    getDocs,
+    addDoc,
+    query,
+    where,
+    writeBatch
+} from 'firebase/firestore'
+import dayjs, { Dayjs } from 'dayjs'
+import { db } from '@/firebase'
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
+import { MotionCard } from '@/components/shared/Header'
+import Highcharts from 'highcharts'
+import HighchartsReact from 'highcharts-react-official'
+import { DashboardHeaderCard } from '@/components/shared/Header'
+import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+
+const { Title, Text, Paragraph } = Typography
+
+type InterventionType = 'singular' | 'grouped'
+type OperationUser = { id: string; name: string; email?: string }
+type AssigneeType = 'consultant' | 'operations'
+
+type ReassignForm = {
+    assigneeType: 'consultant' | 'operations'
+    consultant?: string
+    operationUser?: string
+    reason?: string
+    keepStatus?: boolean
+}
+
+interface Assignment {
+    id: string
+    groupId?: string | null
+    participantId: string
+    beneficiaryName: string
+    interventionId: string
+    interventionTitle: string
+    subtitle?: string | null
+    implementationDate?: Timestamp | null
+    isRecurring?: boolean
+    type: InterventionType
+    assigneeType?: 'consultant' | 'operations'
+    consultantId: string
+    consultantName: string
+    status: 'assigned' | 'in-progress' | 'completed' | 'cancelled'
+    consultantStatus: 'pending' | 'accepted' | 'declined'
+    userStatus: 'pending' | 'accepted' | 'declined'
+    consultantCompletionStatus: 'pending' | 'done'
+    userCompletionStatus: 'pending' | 'confirmed' | 'rejected'
+    createdAt: Timestamp
+    updatedAt?: Timestamp
+    dueDate?: Timestamp | null
+    notes?: string
+    feedback?: { rating: number; comments: string }
+    timeSpentHours?: number
+    targetType?: 'percentage' | 'number'
+    targetValue?: number
+    targetMetric?: string
+}
+
+interface Participant {
+    id: string
+    beneficiaryName: string
+    requiredInterventions: { id: string; title: string; area?: string }[]
+    completedInterventions: { id: string; title: string }[]
+    sector?: string
+    stage?: string
+    province?: string
+    city?: string
+    location?: string
+    programName?: string
+    email?: string
+    gender?: string | null
+}
+
+
+type AnalyticsFilters = {
+    statuses: string[]
+    consultants: string[]
+    programs: string[]
+    sectors: string[]
+    stages: string[]
+    provinces: string[]
+    cities: string[]
+    dueFrom?: dayjs.Dayjs | null
+    dueTo?: dayjs.Dayjs | null
+    overdueOnly?: boolean
+    dueWithinDays?: number | null
+    progressRange?: [number, number]
+}
+
+export const ConsultantAssignments: React.FC = () => {
+    const { user } = useFullIdentity()
+    const screens = Grid.useBreakpoint()
+    const isMobile = !screens.md
+
+    const [isRecurringSelected, setIsRecurringSelected] = useState(false)
+    const [analyticsView, setAnalyticsView] = useState<'individual' | 'grouped'>('individual')
+    const [analyticsScope, setAnalyticsScope] = useState<'all' | 'overdue'>('all')
+
+
+
+    const [participants, setParticipants] = useState<Participant[]>([])
+    const [consultants, setConsultants] = useState<
+        { id: string; name: string }[]
+    >([])
+    const [participantInterventionMap, setParticipantInterventionMap] = useState<
+        Record<string, string[]>
+    >({})
+
+    const [assignments, setAssignments] = useState<Assignment[]>([])
+    const [loading, setLoading] = useState(true)
+    const [reviewOpen, setReviewOpen] = useState(false)
+    const [reviewRow, setReviewRow] = useState<SuggestionRow | null>(null)
+    const [assignmentModalVisible, setAssignmentModalVisible] = useState(false)
+    const [assignmentForm] = Form.useForm()
+    const [reassignOpen, setReassignOpen] = useState(false)
+    const [reassignTarget, setReassignTarget] = useState<Assignment | null>(null)
+    const [reassigning, setReassigning] = useState(false)
+    const [reassignForm] = Form.useForm()
+    const [selectedType, setSelectedType] = useState<'singular' | 'grouped'>(
+        'singular'
+    )
+    const [sharedInterventions, setSharedInterventions] = useState<any[]>([])
+    const [lockedIntervention, setLockedIntervention] = useState<any>(null)
+    const [assignmentParticipant, setAssignmentParticipant] =
+        useState<Participant | null>(null)
+
+    const [manageModalVisible, setManageModalVisible] = useState(false)
+    const [selectedParticipant, setSelectedParticipant] =
+        useState<Participant | null>(null)
+    const [interventionFilter, setInterventionFilter] = useState<
+        'all' | 'assigned' | 'unassigned'
+    >('all')
+
+    const [searchText, setSearchText] = useState('')
+    const [selectedGender, setSelectedGender] = useState<string>('all')
+    const [selectedProgram, setSelectedProgram] = useState<string | undefined>()
+    const [analyticsOpen, setAnalyticsOpen] = useState(false)
+    const [analyticsSearch, setAnalyticsSearch] = useState('')
+    const [analyticsProgram, setAnalyticsProgram] = useState<string | undefined>()
+    const [donutStatus, setDonutStatus] = useState<string | null>(null)
+
+    const [segment, setSegment] = useState<'Assignments' | 'Analytics'>(
+        'Assignments'
+    )
+
+    //  operations list
+    const [operations, setOperations] = useState<OperationUser[]>([])
+
+    const [af, setAf] = useState<AnalyticsFilters>({
+        statuses: [],
+        consultants: [],
+        programs: [],
+        sectors: [],
+        stages: [],
+        provinces: [],
+        cities: [],
+        dueFrom: undefined,
+        dueTo: undefined,
+        overdueOnly: false,
+        dueWithinDays: null,
+        progressRange: [0, 100]
+    })
+
+    const startReassign = (a: Assignment) => {
+        setReassignTarget(a)
+        setReassignOpen(true)
+        reassignForm.resetFields()
+    }
+
+    // ---------- data load ----------
+    const fetchAssignments = async () => {
+        try {
+            const snapshot = await getDocs(collection(db, 'assignedInterventions'))
+            const fetched: Assignment[] = snapshot.docs.map(d => ({
+                id: d.id,
+                ...(d.data() as any)
+            }))
+
+            // enrich with participant/consultant names + titles we can find
+            const pMap = new Map(participants.map(p => [p.id, p.beneficiaryName]))
+            const cMap = new Map(consultants.map(c => [c.id, c.name]))
+            const enrich = fetched.map(a => {
+                const foundP = participants.find(p => p.id === a.participantId)
+                const fromP = foundP?.requiredInterventions.find(
+                    i => i.id === a.interventionId
+                )
+                return {
+                    ...a,
+                    beneficiaryName:
+                        pMap.get(a.participantId) || a.beneficiaryName || '—',
+                    consultantName: cMap.get(a.consultantId) || a.consultantName || '—',
+                    interventionTitle: fromP?.title || a.interventionTitle || 'Untitled'
+                }
+            })
+            setAssignments(enrich)
+        } catch (e) {
+            console.error(e)
+            message.error('Failed to load assignments')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        const fetchAll = async () => {
+            try {
+                const [appsSnap, consSnap, partsSnap] = await Promise.all([
+                    getDocs(
+                        query(
+                            collection(db, 'applications'),
+                            where('companyCode', '==', user.companyCode)
+                        )
+                    ),
+                    getDocs(
+                        query(
+                            collection(db, 'consultants'),
+                            where('companyCode', '==', user.companyCode)
+                        )
+                    ),
+                    getDocs(query(collection(db, 'participants')))
+                ])
+
+                const partsMap = new Map(partsSnap.docs.map(d => [d.id, d.data()]))
+                const apps = appsSnap.docs
+                    .map(d => ({ id: d.id, ...(d.data() as any) }))
+                    .filter(
+                        a =>
+                            a.companyCode === user?.companyCode &&
+                            String(a.applicationStatus || '').toLowerCase() === 'accepted'
+                    )
+
+                const fetchedParticipants: Participant[] = apps.map(app => {
+                    const pdata = (partsMap.get(app.participantId) as any) || {}
+                    return {
+                        id: app.participantId,
+                        beneficiaryName: app.beneficiaryName || 'Unknown',
+                        sector: pdata.sector || '—',
+                        stage: app.stage || '—',
+                        province: pdata.province || '—',
+                        city: pdata.city || '—',
+                        location: pdata.location || '—',
+                        programName: app.programName,
+                        requiredInterventions: app.interventions?.required || [],
+                        completedInterventions: app.interventions?.completed || [],
+                        email: pdata.email || app.email || '—',
+                        gender: (app.gender ?? pdata.gender ?? null) ? String(app.gender ?? pdata.gender) : null
+                    }
+                })
+
+
+                const pim: Record<string, string[]> = {}
+                fetchedParticipants.forEach(p => {
+                    pim[p.id] = (p.requiredInterventions || []).map(i => i.id)
+                })
+
+                const fetchedConsultants = consSnap.docs.map(d => {
+                    const data = d.data() as any
+                    return { id: d.id, name: data.name || 'Unnamed' }
+                })
+
+                setParticipants(fetchedParticipants)
+                setConsultants(fetchedConsultants)
+                setParticipantInterventionMap(pim)
+            } catch (e) {
+                console.error(e)
+                message.error('Failed to load participants/consultants')
+            }
+        }
+        if (user?.companyCode) fetchAll()
+    }, [user?.companyCode])
+
+    useEffect(() => {
+        if (!user?.companyCode) return
+            ; (async () => {
+                try {
+                    // Pull ops staff for this company
+                    const opsSnap = await getDocs(
+                        query(
+                            collection(db, 'users'),
+                            where('role', '==', 'operations'),
+                            where('companyCode', '==', user?.companyCode)
+                        )
+                    )
+
+                    const ops = opsSnap.docs.map(d => {
+                        const data = d.data() as any
+                        return {
+                            id: d.id,
+                            name:
+                                data?.name ||
+                                data?.fullName ||
+                                data?.displayName ||
+                                'Operations User',
+                            email: data?.email || undefined
+                        } as OperationUser
+                    })
+
+                    // ensure *your* account is available for self-assignment
+                    const meId = `self:${user?.email || user?.name || 'me'}`
+                    const me: OperationUser = {
+                        id: meId,
+                        name: user?.name || 'Me',
+                        email: user?.email
+                    }
+                    const exists = ops.some(
+                        o =>
+                            o.email &&
+                            me.email &&
+                            o.email.toLowerCase() === me.email.toLowerCase()
+                    )
+                    setOperations(exists ? ops : [me, ...ops])
+                } catch (e) {
+                    console.error('Failed to load operations', e)
+                    // don't block the page if ops fail; you can still assign to consultants
+                    setOperations(
+                        user?.email
+                            ? [
+                                {
+                                    id: `self:${user.email}`,
+                                    name: user.name || 'Me',
+                                    email: user.email
+                                }
+                            ]
+                            : []
+                    )
+                }
+            })()
+    }, [user?.companyCode])
+
+    useEffect(() => {
+        if (participants.length || consultants.length) {
+            setLoading(true)
+            fetchAssignments()
+        }
+    }, [participants.length, consultants.length])
+
+    // ---------- helpers ----------
+    const getCompositeStatus = (a: Assignment) => {
+        const {
+            status,
+            consultantStatus,
+            userStatus,
+            consultantCompletionStatus,
+            userCompletionStatus
+        } = a
+
+        if (status === 'cancelled') return { label: 'Cancelled', color: 'red' }
+        if (
+            status === 'completed' ||
+            (consultantCompletionStatus === 'done' &&
+                userCompletionStatus === 'confirmed')
+        )
+            return { label: 'Completed', color: 'green' }
+        if (consultantStatus === 'declined' || userStatus === 'declined')
+            return { label: 'Declined', color: 'red' }
+        if (userCompletionStatus === 'rejected')
+            return { label: 'Rejected', color: 'volcano' }
+        if (
+            consultantCompletionStatus === 'done' &&
+            userCompletionStatus === 'pending'
+        )
+            return { label: 'Awaiting Confirmation', color: 'purple' }
+        if (
+            consultantStatus === 'accepted' &&
+            userStatus === 'accepted' &&
+            consultantCompletionStatus !== 'done'
+        )
+            return { label: 'In Progress', color: 'blue' }
+        if (consultantStatus === 'pending' || userStatus === 'pending')
+            return { label: 'Awaiting Acceptance', color: 'orange' }
+        return { label: 'Assigned', color: 'gold' }
+    }
+
+    const pretty = (v?: string | null) => {
+        if (!v) return '—'
+        return v
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, c => c.toUpperCase())
+    }
+
+    const norm = (s: any) =>
+        String(s ?? '')
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ')
+
+    const reqId = (iv: any) => String(iv?.id ?? iv?.interventionId ?? '')
+    const reqTitle = (iv: any) => String(iv?.title ?? iv?.interventionTitle ?? 'Untitled')
+    const reqArea = (iv: any) => String(iv?.area ?? iv?.areaOfSupport ?? '')
+
+    const openReview = (row: SuggestionRow) => {
+        setReviewRow(row)
+        setReviewOpen(true)
+    }
+
+    // all IDs for quick "select all"
+    const allParticipantIds = useMemo(
+        () => participants.map(p => p.id),
+        [participants]
+    )
+
+    const isRowOverdue = (r: { dueDate: dayjs.Dayjs | null; statusLabel: string }) =>
+        !!r.dueDate && r.dueDate.isBefore(dayjs(), 'day') && r.statusLabel !== 'Completed'
+
+
+    const computeSharedInterventions = (ids: string[]) => {
+        const selectedList = participants.filter(p => ids.includes(p.id))
+        if (!selectedList.length) {
+            setSharedInterventions([])
+            return
+        }
+        const sets = selectedList.map(
+            p => new Set((p.requiredInterventions || []).map(i => i.id))
+        )
+        const sharedIds = sets.reduce(
+            (acc, set) => new Set([...acc].filter(id => set.has(id))),
+            sets[0]
+        )
+        const intersection = [...sharedIds]
+            .map(id => {
+                const ex = selectedList.find(p =>
+                    (p.requiredInterventions || []).some(i => i.id === id)
+                )
+                return ex?.requiredInterventions.find(i => i.id === id)
+            })
+            .filter(Boolean) as any[]
+        setSharedInterventions(intersection)
+    }
+
+
+
+    // cache to avoid re-fetching
+    const interventionMetaCacheRef = useRef<
+        Map<string, { isRecurring?: boolean; frequency?: string }>
+    >(new Map())
+
+    async function getInterventionMeta(interventionId: string) {
+        if (!interventionId) return { isRecurring: false }
+        const cache = interventionMetaCacheRef.current
+        if (cache.has(interventionId)) return cache.get(interventionId)!
+        try {
+            const ref = doc(collection(db, 'interventions'), interventionId)
+            const snap = await getDoc(ref)
+            const data = (snap.exists() ? snap.data() : {}) as any
+            const meta = {
+                isRecurring: !!data?.isRecurring,
+                frequency: data?.frequency || undefined
+            }
+            cache.set(interventionId, meta)
+            return meta
+        } catch {
+            return { isRecurring: false }
+        }
+    }
+
+    // keep modal and table in sync when you edit inside the modal
+    const patchReview = (patch: Partial<SuggestionRow>) => {
+        if (!reviewRow) return
+        const next = { ...reviewRow, ...patch }
+        setReviewRow(next)
+        setRow(reviewRow.key, patch) // update the table row too
+    }
+
+    // ---------- filtering & metrics for Assignments tab ----------
+    const filteredParticipants = useMemo(() => {
+        return participants.filter(p => {
+            const okName = (p.beneficiaryName || '')
+                .toLowerCase()
+                .includes(searchText.toLowerCase())
+
+            const okProgram = !selectedProgram || p.programName === selectedProgram
+
+            const okGender =
+                selectedGender === 'all'
+                    ? true
+                    : (p.gender || '').toLowerCase() === selectedGender.toLowerCase()
+
+            return okName && okProgram && okGender
+        })
+    }, [participants, searchText, selectedProgram, selectedGender])
+
+
+    const genderOptions = useMemo(() => {
+        const vals = participants
+            .map(p => (p.gender || '').trim())
+            .filter(Boolean)
+        return Array.from(new Set(vals)).sort()
+    }, [participants])
+
+
+    const participantIds = new Set(filteredParticipants.map(p => p.id))
+    const visibleAssignments = assignments.filter(a =>
+        participantIds.has(a.participantId)
+    )
+
+    const totalRequired = filteredParticipants.reduce(
+        (sum, p) => sum + (participantInterventionMap[p.id]?.length || 0),
+        0
+    )
+    const totalAssigned = visibleAssignments.length
+    const totalCompleted = visibleAssignments.filter(
+        a => getCompositeStatus(a).label === 'Completed'
+    ).length
+    const completionRate = totalRequired
+        ? Math.round((totalCompleted / totalRequired) * 100)
+        : 0
+
+    const progressMetrics = [
+        {
+            title: 'Assigned / Required',
+            value: `${totalAssigned} / ${totalRequired}`,
+            color: '#1890ff',
+            icon: <CheckCircleOutlined />,
+            bgColor: '#e6f7ff'
+        },
+        {
+            title: 'Completed / Assigned',
+            value: `${totalCompleted} / ${totalAssigned}`,
+            color: '#52c41a',
+            icon: <CalendarOutlined />,
+            bgColor: '#f6ffed'
+        },
+        {
+            title: 'Completion Rate',
+            customRender: (
+                <Progress
+                    percent={completionRate}
+                    strokeColor={
+                        completionRate > 75
+                            ? '#52c41a'
+                            : completionRate > 40
+                                ? '#faad14'
+                                : '#f5222d'
+                    }
+                />
+            ),
+            color: '#faad14',
+            icon: <CommentOutlined />,
+            bgColor: '#fffbe6'
+        }
+    ]
+
+    // ---------- Suggestions tab ----------
+    const normalizeId = (v: any) => (v == null ? '' : String(v))
+    const nextTuesday = (from: Dayjs = dayjs()) => {
+        const d = from.startOf('day')
+        const day = d.day() // 0 Sun .. 6 Sat
+        const diff = (9 - day) % 7 || 7 // next Tuesday (2)
+        return d.add(diff, 'day')
+    }
+    const nextNonTuesdayWeekday = (from: Dayjs = dayjs()) => {
+        let d = from.startOf('day').add(1, 'day')
+        while ([0, 2, 6].includes(d.day())) d = d.add(1, 'day')
+        return d
+    }
+
+    function splitIntoBatches<T>(arr: T[], size: number): T[][] {
+        if (size <= 0) return [arr]
+        const out: T[][] = []
+        for (let i = 0; i < arr.length; i += size) {
+            out.push(arr.slice(i, i + size))
+        }
+        return out
+    }
+
+    type SuggestionParticipant = { id: string; name: string; email?: string }
+    type SuggestionRow = {
+        key: string
+        interventionId: string
+        interventionTitle: string
+        area: string
+        type: 'singular' | 'grouped'
+        participants: SuggestionParticipant[]
+        suggestedDate: Dayjs
+        suggestedConsultantId?: string
+    }
+
+    const clusters = useMemo(() => {
+        const map = new Map<
+            string,
+            {
+                interventionId: string
+                title: string
+                area: string
+                participants: SuggestionParticipant[]
+            }
+        >()
+
+        filteredParticipants.forEach(p => {
+            ; (p.requiredInterventions || []).forEach(iv => {
+                const id = reqId(iv)
+                const title = reqTitle(iv) || 'Untitled Intervention'
+                const area = reqArea(iv) || '—'
+                if (!id) return // skip broken requiredInterventions entries
+
+                const cur = map.get(id) || {
+                    interventionId: id,
+                    title,
+                    area,
+                    participants: []
+                }
+                // keep the first non-empty area we see
+                if (!cur.area || cur.area === '—') cur.area = area
+
+                cur.participants.push({
+                    id: p.id,
+                    name: p.beneficiaryName,
+                    email: p.email || '—'
+                })
+                map.set(id, cur)
+            })
+        })
+
+        return Array.from(map.values()).sort(
+            (a, b) => b.participants.length - a.participants.length
+        )
+    }, [filteredParticipants])
+
+    const suggestedRows = useMemo<SuggestionRow[]>(() => {
+        const out: SuggestionRow[] = []
+        clusters.forEach(cluster => {
+            const demand = cluster.participants.length
+            const isGroup = demand >= 2
+            const defaultConsultant = consultants[0]?.id
+
+            if (isGroup) {
+                const batches = splitIntoBatches(cluster.participants, 15)
+                batches.forEach((batch, idx) => {
+                    out.push({
+                        key: `${cluster.interventionId}__b${idx}`,
+                        interventionId: cluster.interventionId,
+                        interventionTitle: cluster.title,
+                        area: cluster.area, // 👈 set
+                        type: 'grouped',
+                        participants: batch,
+                        suggestedDate: nextTuesday(dayjs().add(idx, 'week')),
+                        suggestedConsultantId: defaultConsultant
+                    })
+                })
+            } else {
+                out.push({
+                    key: `${cluster.interventionId}__${cluster.participants[0].id}`,
+                    interventionId: cluster.interventionId,
+                    interventionTitle: cluster.title,
+                    area: cluster.area, // 👈 set
+                    type: 'singular',
+                    participants: cluster.participants,
+                    suggestedDate: nextNonTuesdayWeekday(dayjs()),
+                    suggestedConsultantId: defaultConsultant
+                })
+            }
+        })
+        return out
+    }, [clusters, consultants])
+
+    const [rows, setRows] = useState<SuggestionRow[]>([])
+    useEffect(() => setRows(suggestedRows), [suggestedRows])
+    const setRow = (key: string, patch: Partial<SuggestionRow>) =>
+        setRows(prev => prev.map(r => (r.key === key ? { ...r, ...patch } : r)))
+
+    const approveRows = async (chosen: SuggestionRow[]) => {
+        const created: string[] = []
+        for (const r of chosen) {
+            const dueTs = Timestamp.fromDate(r.suggestedDate.toDate())
+            const consId = r.suggestedConsultantId || ''
+            const consName =
+                consultants.find(c => c.id === consId)?.name ||
+                (user?.name ?? 'Operations')
+
+            for (const p of r.participants) {
+                // duplicate guard
+                const dup = await getDocs(
+                    query(
+                        collection(db, 'assignedInterventions'),
+                        where('participantId', '==', p.id),
+                        where('interventionId', '==', r.interventionId),
+                        where('status', 'in', ['assigned', 'in-progress', 'completed'])
+                    )
+                )
+                if (!dup.empty) continue
+
+                const aRef = doc(collection(db, 'assignedInterventions'))
+                await setDoc(aRef, {
+                    id: aRef.id,
+                    participantId: p.id,
+                    beneficiaryName: p.name,
+                    interventionId: r.interventionId,
+                    interventionTitle: r.interventionTitle,
+                    type: r.type,
+                    consultantId: consId || (user?.email ?? 'ops'),
+                    consultantName: consName,
+                    status: 'assigned',
+                    consultantStatus: consId ? 'pending' : 'accepted',
+                    userStatus: 'pending',
+                    consultantCompletionStatus: 'pending',
+                    userCompletionStatus: 'pending',
+                    createdAt: Timestamp.now(),
+                    updatedAt: Timestamp.now(),
+                    dueDate: dueTs,
+                    targetType: 'percentage',
+                    targetMetric: 'Completion',
+                    targetValue: 100,
+                    areaOfSupport: r.area
+                })
+                created.push(aRef.id)
+            }
+        }
+        if (created.length) {
+            message.success(`Created ${created.length} assignment(s)`)
+            fetchAssignments()
+        } else {
+            message.info('Nothing to create (duplicates skipped)')
+        }
+    }
+
+    const suggestionColumns = [
+        {
+            title: 'Intervention',
+            dataIndex: 'interventionTitle',
+            key: 'interventionTitle'
+        },
+        { title: 'Area', dataIndex: 'area', key: 'area' },
+        {
+            title: 'Type',
+            dataIndex: 'type',
+            key: 'type',
+            render: (t: InterventionType) =>
+                t === 'grouped' ? <Tag color='purple'>Group</Tag> : <Tag>Single</Tag>
+        },
+        {
+            title: 'Participants',
+            key: 'participants',
+            render: (_: any, r: SuggestionRow) => (
+                <Tooltip
+                    title={
+                        <div style={{ maxWidth: 320 }}>
+                            {r.participants.map(p => (
+                                <div key={p.id}>• {p.name}</div>
+                            ))}
+                        </div>
+                    }
+                >
+                    <Tag icon={<UserOutlined />}>{r.participants.length}</Tag>
+                </Tooltip>
+            )
+        },
+        {
+            title: 'Suggested Date',
+            key: 'date',
+            render: (_: any, r: SuggestionRow) => (
+                <DatePicker
+                    value={r.suggestedDate}
+                    onChange={d => d && setRow(r.key, { suggestedDate: d })}
+                    style={{ width: 160 }}
+                    disabledDate={d => d && d < dayjs().startOf('day')}
+                />
+            )
+        },
+        {
+            title: 'Consultant',
+            key: 'consultant',
+            render: (_: any, r: SuggestionRow) => (
+                <Select
+                    value={r.suggestedConsultantId}
+                    onChange={v => setRow(r.key, { suggestedConsultantId: v })}
+                    style={{ width: 240 }}
+                    placeholder='Select consultant'
+                    options={consultants.map(c => ({ label: c.name, value: c.id }))}
+                    showSearch
+                    optionFilterProp='label'
+                    allowClear
+                />
+            )
+        },
+        {
+            title: 'Actions',
+            key: 'actions',
+            render: (_: any, r: SuggestionRow) => (
+                <Space>
+                    <Button onClick={() => openReview(r)}>Review</Button>
+                    <Button
+                        type='primary'
+                        icon={<CheckCircleOutlined />}
+                        onClick={() => approveRows([r])}
+                    >
+                        Approve
+                    </Button>
+                </Space>
+            )
+        }
+    ]
+
+    // ---------- Assignment tab UI ----------
+    const getRateTag = (rate: number) => {
+        if (rate <= 25) return <Tag color='red'>Critical</Tag>
+        if (rate <= 60) return <Tag color='orange'>Low</Tag>
+        if (rate <= 85) return <Tag color='gold'>Moderate</Tag>
+        return <Tag color='green'>Good</Tag>
+    }
+
+    const columns = [
+        {
+            title: 'Beneficiary',
+            dataIndex: 'beneficiaryName',
+            key: 'beneficiaryName'
+        },
+        { title: 'Sector', dataIndex: 'sector', key: 'sector' },
+        {
+            title: 'Interventions',
+            key: 'requiredInterventions',
+            render: (_: any, r: Participant) => (
+                <Tag>{participantInterventionMap[r.id]?.length || 0}</Tag>
+            )
+        },
+        {
+            title: 'Assignment Rate',
+            key: 'assignmentRate',
+            render: (_: any, r: Participant) => {
+                const required = participantInterventionMap[r.id]?.length || 0
+                const assigned = assignments.filter(
+                    a => a.participantId === r.id
+                ).length
+                const pct = required ? (assigned / required) * 100 : 0
+                return (
+                    <Space>
+                        <Text>
+                            {assigned} / {required}
+                        </Text>
+                        {getRateTag(pct)}
+                    </Space>
+                )
+            }
+        },
+        {
+            title: 'Actions',
+            key: 'actions',
+            render: (_: any, r: Participant) => (
+                <Button type='link' onClick={() => handleManageParticipant(r)}>
+                    Manage
+                </Button>
+            )
+        }
+    ]
+
+    const handleManageParticipant = (p: Participant) => {
+        setSelectedParticipant(p)
+        setManageModalVisible(true)
+        setInterventionFilter('all')
+    }
+
+    const getFilteredInterventions = () => {
+        if (!selectedParticipant) return []
+        const requiredIds = participantInterventionMap[selectedParticipant.id] || []
+        const assignedForP = assignments.filter(
+            a => a.participantId === selectedParticipant.id
+        )
+        const assignedIds = new Set(assignedForP.map(a => a.interventionId))
+
+        if (interventionFilter === 'assigned') return assignedForP
+
+        if (interventionFilter === 'unassigned') {
+            return requiredIds
+                .filter(id => !assignedIds.has(id))
+                .map(id => {
+                    const intervention = selectedParticipant.requiredInterventions.find(
+                        i => i.id === id
+                    )
+                    return {
+                        id,
+                        interventionTitle: intervention?.title || 'Unknown',
+                        consultantName: 'Not Assigned',
+                        status: 'Not Assigned',
+                        dueDate: null,
+                        isUnassigned: true,
+                        beneficiaryName: selectedParticipant.beneficiaryName,
+                        sector: selectedParticipant.sector,
+                        programName: selectedParticipant.programName
+                    }
+                })
+        }
+
+        const assignedMap = new Map(assignedForP.map(a => [a.interventionId, a]))
+        return requiredIds.map(id => {
+            const a = assignedMap.get(id)
+            if (a) return a
+            const intervention = selectedParticipant.requiredInterventions.find(
+                i => i.id === id
+            )
+            return {
+                id,
+                interventionId: id,
+                interventionTitle: intervention?.title || 'Unknown',
+                consultantName: 'Not Assigned',
+                status: 'Unassigned',
+                dueDate: null,
+                isUnassigned: true
+            }
+        })
+    }
+
+    const modalColumns = [
+        {
+            title: 'Intervention Title',
+            dataIndex: 'interventionTitle',
+            key: 'interventionTitle'
+        },
+        { title: 'Consultant', dataIndex: 'consultantName', key: 'consultantName' },
+        {
+            title: 'Status',
+            key: 'status',
+            render: (_: any, record: any) => {
+                if (record.isUnassigned) return <Tag>Unassigned</Tag>
+                const { label, color } = getCompositeStatus(record as Assignment)
+                return <Tag color={color}>{label}</Tag>
+            }
+        },
+        {
+            title: 'Due Date',
+            key: 'dueDate',
+            render: (_: any, record: any) => {
+                if (!record.dueDate) return '—'
+                const d =
+                    typeof record.dueDate === 'string'
+                        ? new Date(record.dueDate)
+                        : record.dueDate?.toDate?.() ?? new Date()
+                return d.toLocaleDateString()
+            }
+        },
+        {
+            title: 'Action',
+            key: 'action',
+            render: (_: any, record: any) =>
+                record.isUnassigned ? (
+                    <Button type='link' onClick={() => handleQuickAssign(record)}>
+                        Assign
+                    </Button>
+                ) : null
+        }
+    ]
+
+    const handleQuickAssign = (intervention: any) => {
+        if (!selectedParticipant) return
+        setAssignmentParticipant(selectedParticipant)
+        setLockedIntervention(intervention)
+        assignmentForm.setFieldsValue({
+            participant: selectedParticipant.id,
+            intervention: intervention.id
+        })
+        setAssignmentModalVisible(true)
+    }
+
+    const handleReassignSubmit = async (values: ReassignForm) => {
+        if (!reassignTarget) return
+        setReassigning(true)
+        try {
+            // Resolve new assignee
+            let newId = ''
+            let newName = ''
+            let newEmail = ''
+            if (values.assigneeType === 'consultant') {
+                const c = consultants.find(cc => cc.id === values.consultant)
+                if (!c) return message.error('Select a consultant')
+                newId = c.id
+                newName = c.name
+            } else {
+                const o = operations.find(oo => oo.id === values.operationUser)
+                if (!o) return message.error('Select an operations user')
+                newId = o.id
+                newName = o.name
+                newEmail = o.email || ''
+            }
+
+            // Self-assign detection for operations (auto-accept)
+            const isSelf =
+                values.assigneeType === 'operations' &&
+                ((newEmail &&
+                    user?.email &&
+                    newEmail.toLowerCase() === user.email.toLowerCase()) ||
+                    newId.startsWith('self:'))
+
+            // Decide statuses
+            const nextConsultantStatus = isSelf ? 'accepted' : 'pending'
+            const nextStatus = values.keepStatus
+                ? reassignTarget.status
+                : reassignTarget.status === 'completed'
+                    ? 'in-progress'
+                    : 'assigned'
+
+            const now = Timestamp.now()
+
+            await updateDoc(doc(db, 'assignedInterventions', reassignTarget.id), {
+                assigneeType: values.assigneeType,
+                consultantId: newId, // keep legacy field name
+                consultantName: newName,
+                consultantStatus: nextConsultantStatus,
+                // userStatus unchanged (incubatee re-accept can stay pending unless you want to reset)
+                status: nextStatus,
+                updatedAt: now,
+                reassignmentHistory: arrayUnion({
+                    at: now,
+                    by: user?.email || user?.name || 'system',
+                    reason: values.reason || null,
+                    from: {
+                        assigneeType: (reassignTarget as any).assigneeType || 'consultant',
+                        consultantId: reassignTarget.consultantId,
+                        consultantName: reassignTarget.consultantName
+                    },
+                    to: {
+                        assigneeType: values.assigneeType,
+                        consultantId: newId,
+                        consultantName: newName
+                    }
+                })
+            })
+
+            message.success('Assignment reassigned')
+            setReassignOpen(false)
+            setReassignTarget(null)
+            reassignForm.resetFields()
+            await fetchAssignments()
+        } catch (e) {
+            console.error('Reassign failed:', e)
+            message.error('Failed to reassign')
+        } finally {
+            setReassigning(false)
+        }
+    }
+
+    // ---------- Analytics tab ----------
+    // simple progress proxy (since this screen doesn't track Target/Tracking)
+    const progressFor = (a: Assignment) =>
+        getCompositeStatus(a).label === 'Completed' ? 100 : 0
+
+    type DetailedRow = {
+        key: string
+        id: string
+        groupId?: string | null
+        assignmentType: InterventionType
+        participantId: string
+
+        beneficiaryName: string
+        interventionTitle: string
+        programName: string
+        sector: string
+        stage: string
+        province: string
+        city: string
+        consultantName: string
+
+        statusLabel: string
+        statusColor: string
+        dueDate: dayjs.Dayjs | null
+        progress: number
+        subtitle?: string | null
+
+
+        // expose the “why pending” fields
+        userStatus: Assignment['userStatus']
+        userCompletionStatus: Assignment['userCompletionStatus']
+        consultantStatus: Assignment['consultantStatus']
+        consultantCompletionStatus: Assignment['consultantCompletionStatus']
+    }
+
+
+    const allInterventionRows = useMemo<DetailedRow[]>(() => {
+        return visibleAssignments.map(a => {
+            const p = participants.find(pp => pp.id === a.participantId)
+            const st = getCompositeStatus(a)
+            const due =
+                (a.dueDate as any)?.toDate?.() ??
+                (a.dueDate ? new Date(String(a.dueDate)) : null)
+
+            return {
+                key: a.id,
+                id: a.id,
+                groupId: (a as any).groupId ?? null,
+                assignmentType: a.type,
+                participantId: a.participantId,
+
+                beneficiaryName: a.beneficiaryName || '—',
+                interventionTitle: a.interventionTitle || 'Untitled',
+                subtitle: a.subtitle ?? null,
+                programName: p?.programName || '—',
+                sector: p?.sector || '—',
+                stage: p?.stage || '—',
+                province: p?.province || '—',
+                city: p?.city || '—',
+                consultantName: a.consultantName || '—',
+
+                statusLabel: st.label,
+                statusColor: st.color,
+                dueDate: due ? dayjs(due) : null,
+                progress: progressFor(a),
+
+                userStatus: a.userStatus,
+                userCompletionStatus: a.userCompletionStatus,
+                consultantStatus: a.consultantStatus,
+                consultantCompletionStatus: a.consultantCompletionStatus
+            }
+        })
+    }, [visibleAssignments, participants])
+
+
+    // options for Program dropdown and Advanced Drawer
+    const analyticsProgramOptions = useMemo(
+        () =>
+            Array.from(new Set(allInterventionRows.map(r => r.programName))).filter(
+                Boolean
+            ) as string[],
+        [allInterventionRows]
+    )
+
+    const afOptions = useMemo(() => {
+        const uniq = (arr: string[]) =>
+            Array.from(new Set(arr.filter(Boolean))).sort()
+        return {
+            statuses: uniq(allInterventionRows.map(r => r.statusLabel)),
+            consultants: uniq(allInterventionRows.map(r => r.consultantName)),
+            programs: uniq(allInterventionRows.map(r => r.programName)),
+            sectors: uniq(allInterventionRows.map(r => r.sector)),
+            stages: uniq(allInterventionRows.map(r => r.stage)),
+            provinces: uniq(allInterventionRows.map(r => r.province)),
+            cities: uniq(allInterventionRows.map(r => r.city))
+        }
+    }, [allInterventionRows])
+
+    // base filters (no donut)
+    const filteredRowsNoDonut = useMemo(() => {
+        const withinProgress = (v: number) => {
+            const [lo, hi] = af.progressRange || [0, 100]
+            return v >= lo && v <= hi
+        }
+
+        return allInterventionRows.filter(r => {
+            if (analyticsSearch) {
+                const q = analyticsSearch.toLowerCase().trim()
+                const hit =
+                    (r.beneficiaryName || '').toLowerCase().includes(q) ||
+                    (r.interventionTitle || '').toLowerCase().includes(q)
+                if (!hit) return false
+            }
+            if (analyticsProgram && r.programName !== analyticsProgram) return false
+
+            if (af.statuses.length && !af.statuses.includes(r.statusLabel))
+                return false
+            if (af.consultants.length && !af.consultants.includes(r.consultantName))
+                return false
+            if (af.programs.length && !af.programs.includes(r.programName))
+                return false
+            if (af.sectors.length && !af.sectors.includes(r.sector)) return false
+            if (af.stages.length && !af.stages.includes(r.stage)) return false
+            if (af.provinces.length && !af.provinces.includes(r.province))
+                return false
+            if (af.cities.length && !af.cities.includes(r.city)) return false
+
+            if (af.dueFrom && (!r.dueDate || r.dueDate.isBefore(af.dueFrom, 'day')))
+                return false
+            if (af.dueTo && (!r.dueDate || r.dueDate.isAfter(af.dueTo, 'day')))
+                return false
+
+            if (af.overdueOnly) {
+                const isOverdue =
+                    r.dueDate &&
+                    r.dueDate.isBefore(dayjs(), 'day') &&
+                    r.statusLabel !== 'Completed'
+                if (!isOverdue) return false
+            }
+
+            if (af.dueWithinDays && af.dueWithinDays > 0) {
+                const lim = dayjs().add(af.dueWithinDays, 'day').endOf('day')
+                if (!r.dueDate || r.dueDate.isAfter(lim)) return false
+            }
+
+            if (!withinProgress(r.progress)) return false
+            return true
+        })
+    }, [allInterventionRows, af, analyticsSearch, analyticsProgram])
+
+    // donut selection
+    const filteredInterventionRows = useMemo(() => {
+        if (!donutStatus) return filteredRowsNoDonut
+        return filteredRowsNoDonut.filter(r => r.statusLabel === donutStatus)
+    }, [filteredRowsNoDonut, donutStatus])
+
+    type GroupBatchRow = {
+        key: string
+        groupId: string
+        interventionTitle: string
+        subtitle?: string | null
+        consultantName: string
+        dueDate: dayjs.Dayjs | null
+        totalSMEs: number
+
+        awaitingSMEAcceptance: number
+        awaitingSMEConfirmation: number
+        inProgressSMEs: number
+        completedSMEs: number
+
+        members: DetailedRow[]
+    }
+
+
+    const groupedBatches = useMemo<GroupBatchRow[]>(() => {
+        const base = filteredRowsNoDonut
+            .filter(r => r.assignmentType === 'grouped')
+            .filter(r => !!r.groupId)
+
+        const by = new Map<string, DetailedRow[]>()
+        for (const r of base) {
+            const gid = String(r.groupId)
+            const arr = by.get(gid) || []
+            arr.push(r)
+            by.set(gid, arr)
+        }
+
+        const out: GroupBatchRow[] = []
+        by.forEach((members, gid) => {
+            const head = members[0]
+
+            const completedSMEs = members.filter(m => m.statusLabel === 'Completed').length
+
+            // SME hasn’t accepted yet
+            const awaitingSMEAcceptance = members.filter(m => m.userStatus === 'pending').length
+
+            // Consultant done, SME still hasn’t confirmed
+            const awaitingSMEConfirmation = members.filter(
+                m => m.consultantCompletionStatus === 'done' && m.userCompletionStatus === 'pending'
+            ).length
+
+            const inProgressSMEs = members.filter(m => m.statusLabel === 'In Progress').length
+
+            out.push({
+                key: gid,
+                groupId: gid,
+                interventionTitle: head.interventionTitle,
+                subtitle: head.subtitle ?? null,
+                consultantName: head.consultantName,
+                dueDate: head.dueDate,
+                totalSMEs: members.length,
+
+                awaitingSMEAcceptance,
+                awaitingSMEConfirmation,
+                inProgressSMEs,
+                completedSMEs,
+
+                members: members.sort((a, b) =>
+                    (a.beneficiaryName || '').localeCompare(b.beneficiaryName || '')
+                )
+            })
+        })
+
+        return out.sort((a, b) => b.totalSMEs - a.totalSMEs)
+    }, [filteredRowsNoDonut])
+
+
+
+    const overdueRows = useMemo(
+        () =>
+            filteredInterventionRows.filter(r => {
+                const isOverdue =
+                    r.dueDate &&
+                    r.dueDate.isBefore(dayjs(), 'day') &&
+                    r.statusLabel !== 'Completed'
+                return !!isOverdue
+            }),
+        [filteredInterventionRows]
+    )
+
+    const avgProgress = useMemo(() => {
+        if (!filteredInterventionRows.length) return 0
+        const s = filteredInterventionRows.reduce(
+            (a, r) => a + (r.progress || 0),
+            0
+        )
+        return Math.round(s / filteredInterventionRows.length)
+    }, [filteredInterventionRows])
+
+    // donut series
+    const donutSeries = useMemo(() => {
+        const by: Record<string, { color: string; count: number }> = {}
+        filteredRowsNoDonut.forEach(r => {
+            by[r.statusLabel] = by[r.statusLabel] || {
+                color: r.statusColor,
+                count: 0
+            }
+            by[r.statusLabel].count += 1
+        })
+        return Object.entries(by)
+            .filter(([, v]) => v.count > 0)
+            .map(([name, v]) => ({
+                name,
+                y: v.count,
+                color: v.color,
+                sliced: donutStatus === name,
+                selected: donutStatus === name
+            }))
+    }, [filteredRowsNoDonut, donutStatus])
+
+    const statusDonutOptions: Highcharts.Options = {
+        chart: { type: 'pie', height: 260, backgroundColor: 'transparent' },
+        title: { text: 'Interventions by Status' },
+        credits: { enabled: false },
+        legend: { enabled: true },
+        plotOptions: {
+            pie: {
+                innerSize: '60%',
+                allowPointSelect: true,
+                cursor: 'pointer',
+                animation: { duration: 250 },
+                point: {
+                    events: {
+                        click: function () {
+                            const name = (this as any).name as string
+                            setDonutStatus(prev => (prev === name ? null : name))
+                        }
+                    }
+                },
+                dataLabels: {
+                    enabled: true,
+                    distance: 18,
+                    formatter: function () {
+                        // @ts-ignore
+                        const y = this.y || 0
+                        if (!y) return null
+                        // @ts-ignore
+                        return `${this.point.name} ${y}`
+                    },
+                    style: { color: '#000', textOutline: 'none', fontWeight: '600' }
+                }
+            }
+        },
+        series: [{ name: 'Assignments', type: 'pie', data: donutSeries }]
+    }
+
+    const analyticsTableRows = useMemo(() => {
+        const rows =
+            analyticsScope === 'overdue' ? overdueRows : filteredInterventionRows
+
+        const unknowns = rows.filter(r =>
+            !r.interventionTitle ||
+            r.interventionTitle.toLowerCase() === 'unknown' ||
+            r.interventionTitle.toLowerCase() === 'untitled'
+        )
+
+        if (unknowns.length) {
+            console.group(
+                `%c[Analytics] Unknown / Untitled Interventions (${unknowns.length})`,
+                'color: orange; font-weight: bold'
+            )
+
+            unknowns.forEach(r => {
+                console.log({
+                    assignmentId: r.id,
+                    participantId: r.participantId,
+                    beneficiaryName: r.beneficiaryName,
+                    interventionId: r.interventionId,
+                    interventionTitle: r.interventionTitle,
+                    programName: r.programName,
+                    groupId: r.groupId,
+                    assignmentType: r.assignmentType,
+                    consultantName: r.consultantName,
+                    status: r.statusLabel
+                })
+            })
+
+            console.groupEnd()
+        }
+
+        return rows
+    }, [analyticsScope, overdueRows, filteredInterventionRows])
+
+
+    const analyticsCols = [
+        {
+            title: 'Beneficiary',
+            dataIndex: 'beneficiaryName',
+            fixed: 'left',
+            width: 200
+        },
+        { title: 'Intervention', dataIndex: 'interventionTitle', width: 260 },
+        {
+            title: 'Subtitle',
+            dataIndex: 'subtitle',
+            width: 220,
+            render: (v: string | null) => (v ? <Tag color='geekblue'>{v}</Tag> : '—')
+        },
+        { title: 'Assignee', dataIndex: 'consultantName', width: 200 },
+        {
+            title: 'Status',
+            dataIndex: 'statusLabel',
+            width: 180,
+            render: (_: any, r: any) => (
+                <Tag color={r.statusColor}>{pretty(r.statusLabel)}</Tag>
+            )
+        },
+        {
+            title: 'Due',
+            dataIndex: 'dueDate',
+            width: 140,
+            render: (d: dayjs.Dayjs | null, r: any) => {
+                if (!d) return '—'
+                const overdue = isRowOverdue(r)
+                return overdue ? <Text type='danger'>{d.format('YYYY-MM-DD')}</Text> : d.format('YYYY-MM-DD')
+            }
+        },
+
+        {
+            title: 'Progress',
+            dataIndex: 'progress',
+            width: 160,
+            render: (v: number) => <Progress percent={v} size='small' />
+        }
+    ]
+
+
+    // ---------- UI ----------
+    return (
+        <div style={{ padding: 24, minHeight: '100vh' }}>
+            <Helmet>
+                <title>Consultant Assignments | Incubation Platform</title>
+            </Helmet>
+
+            <DashboardHeaderCard
+                title='Assignments & Analytics'
+                subtitle='Assign interventions to consultants or operations (including self-assignment), then monitor progress and status.'
+                extraRight={
+                    <Segmented
+                        value={segment}
+                        onChange={v => setSegment(v as any)}
+                        options={['Assignments', 'Analytics']}
+                    />
+                }
+            />
+
+            {/* show global loading overlay when fetching */}
+            {loading && (
+                <LoadingOverlay tip='Loading assignments and participants…' />
+            )}
+
+            {segment === 'Assignments' ? (
+                <>
+                    {/* ASSIGNMENTS */}
+                    <Row gutter={[16, 16]} style={{ marginBottom: 15 }}>
+                        {progressMetrics.map(
+                            ({ title, value, icon, customRender, color, bgColor }) => (
+                                <Col xs={24} sm={12} md={8} key={title}>
+                                    <MotionCard>
+                                        <Statistic
+                                            title={
+                                                <Space>
+                                                    <div
+                                                        style={{
+                                                            background: bgColor,
+                                                            padding: 8,
+                                                            borderRadius: '50%',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}
+                                                    >
+                                                        {React.cloneElement(icon, {
+                                                            style: { fontSize: 18, color }
+                                                        })}
+                                                    </div>
+                                                    <span>{title}</span>
+                                                </Space>
+                                            }
+                                            valueRender={() => customRender ?? <span>{value}</span>}
+                                        />
+                                    </MotionCard>
+                                </Col>
+                            )
+                        )}
+                    </Row>
+
+                    <MotionCard style={{ marginBottom: 10 }}>
+                        <Row gutter={[12, 12]}>
+                            {/* Search */}
+                            <Col xs={24} md={10} order={1}>
+                                <Input.Search
+                                    placeholder='Search beneficiary...'
+                                    allowClear
+                                    value={searchText}
+                                    onChange={e => setSearchText(e.target.value)}
+                                    style={{ width: '100%' }}
+                                />
+                            </Col>
+
+                            {/* Gender filter */}
+                            <Col xs={24} md={6} order={2}>
+                                <Select
+                                    value={selectedGender}
+                                    onChange={setSelectedGender}
+                                    style={{ width: '100%' }}
+                                    options={[
+                                        { label: 'All Genders', value: 'all' },
+                                        ...genderOptions.map(g => ({ label: g, value: g }))
+                                    ]}
+                                    placeholder='Filter by gender'
+                                />
+                            </Col>
+
+                            {/* Action button */}
+                            <Col xs={24} md={8} order={3}>
+                                <Button
+                                    type='primary'
+                                    icon={<CheckCircleOutlined />}
+                                    onClick={() => setAssignmentModalVisible(true)}
+                                    block
+                                >
+                                    Assign New Intervention
+                                </Button>
+                            </Col>
+                        </Row>
+                    </MotionCard>
+
+
+                    <MotionCard>
+                        <div style={{ width: '100%', overflowX: 'auto' }}>
+                            <Table
+                                columns={columns}
+                                dataSource={filteredParticipants}
+                                rowKey='id'
+                                size={isMobile ? 'small' : 'middle'}
+                                pagination={{
+                                    pageSize: isMobile ? 6 : 10,
+                                    simple: isMobile,
+                                    showSizeChanger: !isMobile,
+                                    responsive: true
+                                }}
+                                scroll={{ x: 'max-content' }}
+                                sticky
+                            />
+                        </div>
+                    </MotionCard>
+                </>
+            ) : (
+                <>
+                    {/* ANALYTICS */}
+                    <Row gutter={[16, 16]}>
+                        <Col xs={24} md={8}>
+                            <MotionCard>
+                                <Text type='secondary'>Average Progress</Text>
+                                <div style={{ marginTop: 8 }}>
+                                    <Progress percent={avgProgress} />
+                                </div>
+                            </MotionCard>
+                        </Col>
+                        <Col xs={24} md={8}>
+                            <MotionCard>
+                                <Text type='secondary'>Total Interventions (filtered)</Text>
+                                <Title level={3} style={{ margin: 0 }}>
+                                    {filteredInterventionRows.length}
+                                </Title>
+                            </MotionCard>
+                        </Col>
+                        <Col xs={24} md={8}>
+                            <MotionCard>
+                                <Text type='secondary'>Completed (filtered)</Text>
+                                <Title level={3} style={{ margin: 0 }}>
+                                    {
+                                        filteredInterventionRows.filter(
+                                            r => r.statusLabel === 'Completed'
+                                        ).length
+                                    }
+                                </Title>
+                            </MotionCard>
+                        </Col>
+                    </Row>
+                    {/* Filters full width */}
+                    <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
+                        <Col xs={24}>
+                            <Card>
+                                <Row gutter={[8, 8]} align="middle" wrap>
+                                    <Col xs={24} md={10}>
+                                        <Input.Search
+                                            placeholder='Search by beneficiary / intervention'
+                                            allowClear
+                                            value={analyticsSearch}
+                                            onChange={e => setAnalyticsSearch(e.target.value)}
+                                            style={{ width: '100%' }}
+                                        />
+                                    </Col>
+
+                                    <Col xs={24} md={8}>
+                                        <Segmented
+                                            value={analyticsView}
+                                            onChange={v => setAnalyticsView(v as any)}
+                                            options={[
+                                                { label: 'Individual Rows', value: 'individual' },
+                                                { label: 'Grouped Batches', value: 'grouped' }
+                                            ]}
+                                            style={{ width: '100%' }}
+                                        />
+                                    </Col>
+
+                                    <Col xs={24} md={6}>
+                                        <Space style={{ width: '100%', justifyContent: 'flex-end' }} wrap>
+                                            <Button onClick={() => setAnalyticsOpen(true)}>Advanced Filters</Button>
+                                            <Button
+                                                onClick={() => {
+                                                    setAnalyticsSearch('')
+                                                    setAnalyticsProgram(undefined)
+                                                    setDonutStatus(null)
+                                                }}
+                                            >
+                                                Reset
+                                            </Button>
+                                        </Space>
+                                    </Col>
+                                </Row>
+                            </Card>
+                        </Col>
+                    </Row>
+
+
+                    <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
+                        {/* Donut */}
+                        <Col xs={24} lg={8}>
+                            <MotionCard
+                                title={
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <Text type='secondary'>Interventions by Status</Text>
+                                        {donutStatus && (
+                                            <Button size='small' onClick={() => setDonutStatus(null)}>
+                                                Clear
+                                            </Button>
+                                        )}
+                                    </div>
+                                }
+                            >
+                                <HighchartsReact highcharts={Highcharts} options={statusDonutOptions} />
+                            </MotionCard>
+                        </Col>
+
+                        {/* Table */}
+                        <Col xs={24} lg={16}>
+                            <Card
+                                title={analyticsView === 'individual'
+                                    ? 'Interventions (Detailed)'
+                                    : 'Grouped Interventions (Batches)'}
+                            >
+                                {analyticsView === 'individual' ? (
+                                    <Table
+                                        rowKey='id'
+                                        columns={analyticsCols as any}
+                                        dataSource={analyticsTableRows}
+                                        scroll={{ x: 1200 }}
+                                        pagination={{ pageSize: 8 }}
+                                    />
+                                ) : (
+                                    <Table
+                                        rowKey='key'
+                                        pagination={{ pageSize: 8 }}
+                                        scroll={{ x: 1100 }}
+                                        columns={[
+                                            { title: 'Intervention', dataIndex: 'interventionTitle', key: 'interventionTitle', width: 280 },
+                                            {
+                                                title: 'Subtitle',
+                                                dataIndex: 'subtitle',
+                                                key: 'subtitle',
+                                                width: 220,
+                                                render: (v: string | null) => (v ? <Tag color='geekblue'>{v}</Tag> : '—')
+                                            },
+                                            { title: 'Assignee', dataIndex: 'consultantName', key: 'consultantName', width: 220 },
+                                            {
+                                                title: 'Due',
+                                                dataIndex: 'dueDate',
+                                                key: 'dueDate',
+                                                width: 120,
+                                                render: (d: dayjs.Dayjs | null) => (d ? d.format('YYYY-MM-DD') : '—')
+                                            },
+                                            { title: 'SMEs', dataIndex: 'totalSMEs', key: 'totalSMEs', width: 90 },
+                                            {
+                                                title: 'SME Acceptance Pending',
+                                                dataIndex: 'awaitingSMEAcceptance',
+                                                key: 'awaitingSMEAcceptance',
+                                                width: 190,
+                                                render: (v: number) => <Tag color={v ? 'orange' : 'green'}>{v}</Tag>
+                                            },
+                                            {
+                                                title: 'Awaiting SME Confirmation',
+                                                dataIndex: 'awaitingSMEConfirmation',
+                                                key: 'awaitingSMEConfirmation',
+                                                width: 200,
+                                                render: (v: number) => <Tag color={v ? 'purple' : 'green'}>{v}</Tag>
+                                            },
+                                            {
+                                                title: 'In Progress',
+                                                dataIndex: 'inProgressSMEs',
+                                                key: 'inProgressSMEs',
+                                                width: 130,
+                                                render: (v: number) => <Tag color={v ? 'blue' : 'default'}>{v}</Tag>
+                                            },
+                                            {
+                                                title: 'Completed',
+                                                dataIndex: 'completedSMEs',
+                                                key: 'completedSMEs',
+                                                width: 120,
+                                                render: (v: number, r: any) => (
+                                                    <Tag color={v === r.totalSMEs ? 'green' : 'blue'}>{v}</Tag>
+                                                )
+                                            }
+                                        ]}
+                                        dataSource={groupedBatches}
+                                        expandable={{
+                                            expandedRowRender: (r: any) => (
+                                                <Table
+                                                    size="small"
+                                                    rowKey="id"
+                                                    pagination={{ pageSize: 10 }}
+                                                    dataSource={r.members}
+                                                    columns={[
+                                                        { title: 'SME', dataIndex: 'beneficiaryName', key: 'beneficiaryName' },
+                                                        {
+                                                            title: 'Overall',
+                                                            key: 'statusLabel',
+                                                            render: (_: any, m: DetailedRow) => (
+                                                                <Tag color={m.statusColor}>{pretty(m.statusLabel)}</Tag>
+                                                            )
+                                                        },
+                                                        {
+                                                            title: 'SME Accepted',
+                                                            dataIndex: 'userStatus',
+                                                            key: 'userStatus',
+                                                            render: (v: string) => (
+                                                                <Tag color={v === 'pending' ? 'orange' : v === 'accepted' ? 'green' : 'red'}>
+                                                                    {pretty(v)}
+                                                                </Tag>
+                                                            )
+                                                        },
+                                                        {
+                                                            title: 'Consultant Completion',
+                                                            dataIndex: 'consultantCompletionStatus',
+                                                            key: 'consultantCompletionStatus',
+                                                            render: (v: string) => (
+                                                                <Tag color={v === 'done' ? 'green' : 'orange'}>
+                                                                    {pretty(v)}
+                                                                </Tag>
+                                                            )
+                                                        },
+                                                        {
+                                                            title: 'SME Confirmation',
+                                                            dataIndex: 'userCompletionStatus',
+                                                            key: 'userCompletionStatus',
+                                                            render: (v: string) => (
+                                                                <Tag color={v === 'confirmed' ? 'green' : v === 'rejected' ? 'volcano' : 'orange'}>
+                                                                    {pretty(v)}
+                                                                </Tag>
+                                                            )
+                                                        }
+                                                    ]}
+                                                />
+                                            )
+                                        }}
+                                    />
+                                )}
+                            </Card>
+                        </Col>
+                    </Row>
+
+                    {/* Advanced Filters Drawer */}
+                    <Drawer
+                        title='Analytics — Advanced Filters'
+                        width={420}
+                        open={analyticsOpen}
+                        onClose={() => setAnalyticsOpen(false)}
+                        extra={
+                            <Space>
+                                <Button
+                                    onClick={() =>
+                                        setAf({
+                                            statuses: [],
+                                            consultants: [],
+                                            programs: [],
+                                            sectors: [],
+                                            stages: [],
+                                            provinces: [],
+                                            cities: [],
+                                            dueFrom: undefined,
+                                            dueTo: undefined,
+                                            overdueOnly: false,
+                                            dueWithinDays: null,
+                                            progressRange: [0, 100]
+                                        })
+                                    }
+                                >
+                                    Reset
+                                </Button>
+                                <Button type='primary' onClick={() => setAnalyticsOpen(false)}>
+                                    Apply
+                                </Button>
+                            </Space>
+                        }
+                    >
+                        <Form layout='vertical'>
+                            <Form.Item label='Status'>
+                                <Select
+                                    mode='multiple'
+                                    value={af.statuses}
+                                    onChange={v => setAf(s => ({ ...s, statuses: v }))}
+                                    options={afOptions.statuses.map(s => ({
+                                        label: s,
+                                        value: s
+                                    }))}
+                                    allowClear
+                                />
+                            </Form.Item>
+                            <Form.Item label='Consultant'>
+                                <Select
+                                    mode='multiple'
+                                    value={af.consultants}
+                                    onChange={v => setAf(s => ({ ...s, consultants: v }))}
+                                    options={afOptions.consultants.map(s => ({
+                                        label: s,
+                                        value: s
+                                    }))}
+                                    allowClear
+                                />
+                            </Form.Item>
+                            <Form.Item label='Program'>
+                                <Select
+                                    mode='multiple'
+                                    value={af.programs}
+                                    onChange={v => setAf(s => ({ ...s, programs: v }))}
+                                    options={afOptions.programs.map(s => ({
+                                        label: s,
+                                        value: s
+                                    }))}
+                                    allowClear
+                                />
+                            </Form.Item>
+                            <Form.Item label='Sector'>
+                                <Select
+                                    mode='multiple'
+                                    value={af.sectors}
+                                    onChange={v => setAf(s => ({ ...s, sectors: v }))}
+                                    options={afOptions.sectors.map(s => ({ label: s, value: s }))}
+                                    allowClear
+                                />
+                            </Form.Item>
+                            <Form.Item label='Stage'>
+                                <Select
+                                    mode='multiple'
+                                    value={af.stages}
+                                    onChange={v => setAf(s => ({ ...s, stages: v }))}
+                                    options={afOptions.stages.map(s => ({ label: s, value: s }))}
+                                    allowClear
+                                />
+                            </Form.Item>
+                            <Form.Item label='Province'>
+                                <Select
+                                    mode='multiple'
+                                    value={af.provinces}
+                                    onChange={v => setAf(s => ({ ...s, provinces: v }))}
+                                    options={afOptions.provinces.map(s => ({
+                                        label: s,
+                                        value: s
+                                    }))}
+                                    allowClear
+                                />
+                            </Form.Item>
+                            <Form.Item label='City'>
+                                <Select
+                                    mode='multiple'
+                                    value={af.cities}
+                                    onChange={v => setAf(s => ({ ...s, cities: v }))}
+                                    options={afOptions.cities.map(s => ({ label: s, value: s }))}
+                                    allowClear
+                                />
+                            </Form.Item>
+
+                            <Form.Item label='Due Date Window'>
+                                <Space.Compact block>
+                                    <DatePicker
+                                        value={af.dueFrom || null}
+                                        onChange={d =>
+                                            setAf(s => ({ ...s, dueFrom: d || undefined }))
+                                        }
+                                        style={{ width: '50%' }}
+                                        placeholder='From'
+                                    />
+                                    <DatePicker
+                                        value={af.dueTo || null}
+                                        onChange={d =>
+                                            setAf(s => ({ ...s, dueTo: d || undefined }))
+                                        }
+                                        style={{ width: '50%' }}
+                                        placeholder='To'
+                                    />
+                                </Space.Compact>
+                            </Form.Item>
+
+                            <Form.Item label='Overdue Only'>
+                                <Switch
+                                    checked={!!af.overdueOnly}
+                                    onChange={v => setAf(s => ({ ...s, overdueOnly: v }))}
+                                />
+                            </Form.Item>
+
+                            <Form.Item label='Due Within (days)'>
+                                <Input
+                                    type='number'
+                                    min={1}
+                                    value={af.dueWithinDays ?? ''}
+                                    onChange={e =>
+                                        setAf(s => ({
+                                            ...s,
+                                            dueWithinDays: e.target.value
+                                                ? Number(e.target.value)
+                                                : null
+                                        }))
+                                    }
+                                    placeholder='e.g. 14'
+                                />
+                            </Form.Item>
+
+                            <Form.Item label='Progress Range (%)'>
+                                <Slider
+                                    range
+                                    min={0}
+                                    max={100}
+                                    value={af.progressRange || [0, 100]}
+                                    onChange={(v: [number, number]) =>
+                                        setAf(s => ({ ...s, progressRange: v }))
+                                    }
+                                />
+                            </Form.Item>
+                        </Form>
+                    </Drawer>
+                </>
+            )}
+
+            {/* ASSIGN MODAL */}
+            <Modal
+                title='Assign New Intervention'
+                open={assignmentModalVisible}
+                onCancel={() => {
+                    setAssignmentModalVisible(false)
+                    setLockedIntervention(null)
+                    setAssignmentParticipant(null)
+                    assignmentForm.resetFields()
+                }}
+                footer={null}
+            >
+                <Form
+                    form={assignmentForm}
+                    layout='vertical'
+                    onFinish={async values => {
+                        try {
+                            const isGrouped = values.type === 'grouped'
+                            const selectedIds: string[] = isGrouped
+                                ? values.participants
+                                : [values.participant]
+
+                            // Resolve chosen assignee
+                            const assigneeType: AssigneeType = values.assigneeType
+                            let assigneeId = ''
+                            let assigneeName = ''
+                            let assigneeEmail = ''
+
+                            if (assigneeType === 'consultant') {
+                                const consultant = consultants.find(
+                                    c => c.id === values.consultant
+                                )
+                                if (!consultant) return message.error('Consultant not found')
+                                assigneeId = consultant.id
+                                assigneeName = consultant.name
+                            } else {
+                                const op = operations.find(o => o.id === values.operationUser)
+                                if (!op) return message.error('Operations user not found')
+                                assigneeId = op.id
+                                assigneeName = op.name
+                                assigneeEmail = op.email || ''
+                            }
+
+                            // Determine self-assign (only for operations; you asked “if I choose myself” → accepted=true)
+                            const isSelf =
+                                assigneeType === 'operations' &&
+                                ((!!assigneeEmail &&
+                                    !!user?.email &&
+                                    assigneeEmail.toLowerCase() === user.email.toLowerCase()) ||
+                                    assigneeId.startsWith('self:'))
+
+                            // resolve interventionId & meta
+                            const interventionId: string = values.intervention
+                            const meta = await getInterventionMeta(interventionId)
+
+                            const selectedParticipants = selectedIds
+                                .map((pid: string) => participants.find(p => p.id === pid))
+                                .filter(Boolean) as Participant[]
+                            if (!selectedParticipants.length) {
+                                return message.error('No valid participant(s) selected')
+                            }
+
+                            if (isGrouped && !interventionId) {
+                                return message.error('Select a shared intervention')
+                            }
+                            if (!isGrouped) {
+                                const p0 = selectedParticipants[0]
+                                const found = (p0.requiredInterventions || []).find(
+                                    i => i.id === interventionId
+                                )
+                                if (!found)
+                                    return message.error(
+                                        'Intervention not found for selected participant'
+                                    )
+                            }
+
+                            const batch = writeBatch(db)
+                            const now = Timestamp.now()
+                            const dueTs = values.dueDate
+                                ? Timestamp.fromDate(values.dueDate.toDate())
+                                : null
+                            const implTs = values.implementationDate
+                                ? Timestamp.fromDate(values.implementationDate.toDate())
+                                : null
+
+                            let groupId: string | null = null
+                            if (isGrouped) {
+                                const groupRef = doc(collection(db, 'groupAssignments'))
+                                groupId = groupRef.id
+                                batch.set(groupRef, {
+                                    id: groupRef.id,
+                                    groupId,
+                                    type: 'grouped',
+                                    assigneeType, // NEW
+                                    consultantId: assigneeId, // keep schema compatibility
+                                    consultantName: assigneeName,
+                                    interventionId,
+                                    participantIds: selectedParticipants.map(p => p.id),
+                                    dueDate: dueTs,
+                                    implementationDate: implTs,
+                                    isRecurring: !!meta.isRecurring,
+                                    createdAt: now,
+                                    updatedAt: now
+                                })
+                            }
+
+                            for (const p of selectedParticipants) {
+                                const intv =
+                                    (p.requiredInterventions || []).find(i => reqId(i) === String(interventionId)) ||
+                                    (p.requiredInterventions || []).find(i => norm(reqTitle(i)) === norm(values.interventionTitle)) ||
+                                    null
+
+                                const fixedInterventionId = intv ? reqId(intv) : String(interventionId ?? '')
+                                const fixedTitle = intv ? reqTitle(intv) : 'Unknown'
+
+                                if (!fixedInterventionId) {
+                                    message.error(`Missing interventionId for ${p.beneficiaryName}. Assignment not created.`)
+                                    continue
+                                }
+
+                                const aRef = doc(collection(db, 'assignedInterventions'))
+
+                                // acceptance flags:
+                                // - self (ops) → accepted instantly
+                                // - otherwise → pending (as before)
+                                const consultantStatus = isSelf ? 'accepted' : 'pending'
+                                const userStatus = 'pending'
+
+                                batch.set(aRef, {
+                                    id: aRef.id,
+                                    groupId,
+                                    companyCode: user?.companyCode,
+                                    type: values.type,
+                                    assigneeType,
+                                    participantId: p.id,
+                                    beneficiaryName: p.beneficiaryName,
+                                    consultantId: assigneeId,
+                                    consultantName: assigneeName,
+                                    interventionId: fixedInterventionId,
+                                    interventionTitle: fixedTitle,
+                                    subtitle: meta.isRecurring ? values.subtitle || null : null,
+                                    isRecurring: !!meta.isRecurring,
+                                    targetType: values.targetType,
+                                    targetValue: values.targetValue ?? null,
+                                    targetMetric: values.targetMetric ?? null,
+                                    implementationDate: implTs,
+                                    dueDate: dueTs,
+                                    status: 'assigned',
+                                    consultantStatus,
+                                    userStatus,
+                                    consultantCompletionStatus: 'pending',
+                                    userCompletionStatus: 'pending',
+                                    createdAt: now,
+                                    updatedAt: now
+                                })
+                            }
+
+                            await batch.commit()
+                            message.success(
+                                isGrouped
+                                    ? `Assigned${meta.isRecurring ? ' (recurring)' : ''
+                                    } intervention to ${selectedParticipants.length
+                                    } participant(s)`
+                                    : `Intervention assigned${meta.isRecurring ? ' (recurring)' : ''
+                                    }`
+                            )
+
+                            setAssignmentModalVisible(false)
+                            setLockedIntervention(null)
+                            setAssignmentParticipant(null)
+                            assignmentForm.resetFields()
+                            fetchAssignments()
+                        } catch (err) {
+                            console.error('Assign failed:', err)
+                            message.error('Failed to create assignment(s)')
+                        }
+                    }}
+                    onValuesChange={async (changed, all) => {
+                        if (changed.type) setSelectedType(changed.type)
+
+                        if (
+                            Array.isArray(changed.participants) &&
+                            selectedType === 'grouped'
+                        ) {
+                            computeSharedInterventions(changed.participants)
+                        }
+
+                        if (changed.intervention) {
+                            const meta = await getInterventionMeta(changed.intervention)
+                            setIsRecurringSelected(!!meta.isRecurring)
+                            if (meta.isRecurring) {
+                                const impl = assignmentForm.getFieldValue(
+                                    'implementationDate'
+                                ) as Dayjs | undefined
+                                assignmentForm.setFieldsValue({
+                                    subtitle:
+                                        assignmentForm.getFieldValue('subtitle') ||
+                                        (impl
+                                            ? `Session - ${impl.format('YYYY-MM-DD')}`
+                                            : 'Session')
+                                })
+                            } else {
+                                assignmentForm.setFieldsValue({ subtitle: undefined })
+                            }
+                        }
+
+                        if (changed.targetType === 'percentage') {
+                            assignmentForm.setFieldsValue({ targetMetric: 'Completion' })
+                        } else if (changed.targetType) {
+                            assignmentForm.setFieldsValue({ targetMetric: undefined })
+                        }
+                    }}
+                >
+                    <Form.Item
+                        name='type'
+                        label='Assignment Type'
+                        rules={[
+                            { required: true, message: 'Please select assignment type' }
+                        ]}
+                    >
+                        <Select placeholder='Select type' defaultValue='singular'>
+                            <Select.Option value='singular'>Singular (1 SME)</Select.Option>
+                            <Select.Option value='grouped'>
+                                Grouped (Multiple SMEs)
+                            </Select.Option>
+                        </Select>
+                    </Form.Item>
+
+                    {selectedType === 'grouped' ? (
+                        <>
+                            <Form.Item label='Select Multiple Beneficiaries'>
+                                <Space style={{ marginBottom: 8 }}>
+                                    <Button
+                                        size='small'
+                                        onClick={() => {
+                                            const allIds = participants.map(p => p.id)
+                                            assignmentForm.setFieldsValue({ participants: allIds })
+                                            computeSharedInterventions(allIds) // keep in sync
+                                        }}
+                                    >
+                                        Select all ({participants.length})
+                                    </Button>
+                                    <Button
+                                        size='small'
+                                        onClick={() => {
+                                            assignmentForm.setFieldsValue({ participants: [] })
+                                            computeSharedInterventions([]) // or setSharedInterventions([])
+                                        }}
+                                    >
+                                        Clear
+                                    </Button>
+                                </Space>
+
+                                {/* 👇 bind the field here (single direct child for the named item) */}
+                                <Form.Item
+                                    name='participants'
+                                    noStyle
+                                    rules={[
+                                        { required: true, message: 'Please select participants' }
+                                    ]}
+                                >
+                                    <Select
+                                        mode='multiple'
+                                        placeholder='Choose beneficiaries'
+                                        onChange={(ids: string[]) =>
+                                            computeSharedInterventions(ids)
+                                        }
+                                    // value is injected by Form context; no need to pass it
+                                    >
+                                        {participants.map(p => (
+                                            <Select.Option key={p.id} value={p.id}>
+                                                {p.beneficiaryName}
+                                            </Select.Option>
+                                        ))}
+                                    </Select>
+                                </Form.Item>
+                            </Form.Item>
+                        </>
+                    ) : (
+                        <Form.Item
+                            name='participant'
+                            label='Select Beneficiary'
+                            rules={[
+                                { required: true, message: 'Please select a participant' }
+                            ]}
+                        >
+                            <Select placeholder='Choose a beneficiary'>
+                                {participants.map(p => (
+                                    <Select.Option key={p.id} value={p.id}>
+                                        {p.beneficiaryName}
+                                    </Select.Option>
+                                ))}
+                            </Select>
+                        </Form.Item>
+                    )}
+
+                    <Form.Item
+                        shouldUpdate={(prev, curr) =>
+                            prev.participant !== curr.participant ||
+                            prev.participants !== curr.participants ||
+                            prev.type !== curr.type
+                        }
+                        noStyle
+                    >
+                        {({ getFieldValue }) => {
+                            const isGrouped = getFieldValue('type') === 'grouped'
+                            if (isGrouped) {
+                                return (
+                                    <Form.Item
+                                        name='intervention'
+                                        label='Select Shared Intervention'
+                                        rules={[
+                                            { required: true, message: 'Select an intervention' }
+                                        ]}
+                                    >
+                                        <Select placeholder='Select intervention (shared)'>
+                                            {sharedInterventions.map(iv => (
+                                                <Select.Option key={iv.id} value={iv.id}>
+                                                    {iv.title}
+                                                </Select.Option>
+                                            ))}
+                                        </Select>
+                                    </Form.Item>
+                                )
+                            }
+                            const pid = getFieldValue('participant')
+                            const selected = participants.find(p => p.id === pid)
+                            const options = selected?.requiredInterventions || []
+                            return (
+                                <Form.Item
+                                    name='intervention'
+                                    label='Select Intervention'
+                                    rules={[
+                                        { required: true, message: 'Select an intervention' }
+                                    ]}
+                                >
+                                    <Select
+                                        placeholder='Choose an intervention'
+                                        disabled={!pid || !!lockedIntervention}
+                                    >
+                                        {options.map(iv => (
+                                            <Select.Option key={iv.id} value={iv.id}>
+                                                {iv.title}
+                                            </Select.Option>
+                                        ))}
+                                    </Select>
+                                </Form.Item>
+                            )
+                        }}
+                    </Form.Item>
+
+                    {/* after your Intervention select */}
+                    {isRecurringSelected && (
+                        <Form.Item
+                            name='subtitle'
+                            label='Subtitle (for recurring sessions)'
+                            rules={[
+                                {
+                                    required: true,
+                                    message: 'Please add a subtitle to distinguish this session'
+                                }
+                            ]}
+                        >
+                            <Input placeholder='e.g., Week 1 — Intro to Bookkeeping' />
+                        </Form.Item>
+                    )}
+
+                    <Form.Item
+                        name='assigneeType'
+                        label='Assign To'
+                        rules={[{ required: true, message: 'Choose who to assign to' }]}
+                        initialValue='consultant'
+                    >
+                        <Select
+                            options={[
+                                { label: 'Consultant', value: 'consultant' },
+                                { label: 'Operations', value: 'operations' }
+                            ]}
+                        />
+                    </Form.Item>
+
+                    {/* Conditionally show either Consultants or Operations */}
+                    <Form.Item
+                        noStyle
+                        shouldUpdate={(p, c) => p.assigneeType !== c.assigneeType}
+                    >
+                        {({ getFieldValue }) =>
+                            getFieldValue('assigneeType') === 'consultant' ? (
+                                <Form.Item
+                                    name='consultant'
+                                    label='Select Consultant'
+                                    rules={[
+                                        { required: true, message: 'Please select a consultant' }
+                                    ]}
+                                >
+                                    <Select placeholder='Choose a consultant'>
+                                        {consultants.map(c => (
+                                            <Select.Option key={c.id} value={c.id}>
+                                                {c.name}
+                                            </Select.Option>
+                                        ))}
+                                    </Select>
+                                </Form.Item>
+                            ) : (
+                                <Form.Item
+                                    name='operationUser'
+                                    label='Select Operations User'
+                                    rules={[
+                                        {
+                                            required: true,
+                                            message: 'Please select an operations user'
+                                        }
+                                    ]}
+                                >
+                                    <Select placeholder='Choose operations assignee'>
+                                        {operations.map(o => (
+                                            <Select.Option key={o.id} value={o.id}>
+                                                {o.name} {o.email ? `— ${o.email}` : ''}
+                                            </Select.Option>
+                                        ))}
+                                    </Select>
+                                </Form.Item>
+                            )
+                        }
+                    </Form.Item>
+
+                    <Form.Item
+                        name='targetType'
+                        label='Target Type'
+                        rules={[{ required: true, message: 'Please select target type' }]}
+                    >
+                        <Select placeholder='Select target type'>
+                            <Select.Option value='percentage'>Percentage (%)</Select.Option>
+                            <Select.Option value='number'>
+                                Number (Hours/Sessions)
+                            </Select.Option>
+                        </Select>
+                    </Form.Item>
+
+                    <Form.Item
+                        shouldUpdate={(p, c) => p.targetType !== c.targetType}
+                        noStyle
+                    >
+                        {({ getFieldValue }) =>
+                            getFieldValue('targetType') === 'percentage' ? (
+                                <>
+                                    <Form.Item name='targetMetric' label='Label'>
+                                        <Input disabled value='Completion' />
+                                    </Form.Item>
+                                    <Form.Item
+                                        name='targetValue'
+                                        label='Target Completion (%)'
+                                        rules={[{ required: true, message: 'Enter % target' }]}
+                                    >
+                                        <Input type='number' max={100} min={1} suffix='%' />
+                                    </Form.Item>
+                                </>
+                            ) : getFieldValue('targetType') === 'number' ? (
+                                <>
+                                    <Form.Item
+                                        name='targetMetric'
+                                        label='Unit of Measure'
+                                        rules={[{ required: true, message: 'Choose a metric' }]}
+                                    >
+                                        <Select mode='tags' placeholder='e.g. Hours, Sessions'>
+                                            <Select.Option value='hours'>Hours</Select.Option>
+                                            <Select.Option value='sessions'>Sessions</Select.Option>
+                                        </Select>
+                                    </Form.Item>
+                                    <Form.Item
+                                        name='targetValue'
+                                        label='Target Value'
+                                        rules={[{ required: true, message: 'Enter numeric goal' }]}
+                                    >
+                                        <Input type='number' placeholder='e.g. 5 or 10' />
+                                    </Form.Item>
+                                </>
+                            ) : null
+                        }
+                    </Form.Item>
+
+                    <Form.Item
+                        name='implementationDate'
+                        label='Date Of Implementation'
+                        rules={[
+                            { required: true, message: 'Please select a implementation date' }
+                        ]}
+                    >
+                        <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+
+                    <Form.Item
+                        name='dueDate'
+                        label='Due Date'
+                        rules={[{ required: true, message: 'Please select a due date' }]}
+                    >
+                        <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+
+                    <Form.Item>
+                        <Button type='primary' htmlType='submit' block>
+                            Create Assignment
+                        </Button>
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            {/* REASSIGN MODAL */}
+            <Modal
+                title={
+                    reassignTarget
+                        ? `Reassign: ${reassignTarget.interventionTitle}`
+                        : 'Reassign'
+                }
+                open={reassignOpen}
+                onCancel={() => {
+                    setReassignOpen(false)
+                    setReassignTarget(null)
+                    reassignForm.resetFields()
+                }}
+                footer={null}
+                destroyOnClose
+            >
+                {reassigning && <LoadingOverlay tip='Reassigning…' />}
+
+                <Form
+                    form={reassignForm}
+                    layout='vertical'
+                    onFinish={handleReassignSubmit}
+                >
+                    <Form.Item
+                        name='assigneeType'
+                        label='Assign To'
+                        initialValue={(reassignTarget as any)?.assigneeType || 'consultant'}
+                        rules={[{ required: true, message: 'Choose who to assign to' }]}
+                    >
+                        <Select
+                            options={[
+                                { label: 'Consultant', value: 'consultant' },
+                                { label: 'Operations', value: 'operations' }
+                            ]}
+                        />
+                    </Form.Item>
+
+                    <Form.Item
+                        noStyle
+                        shouldUpdate={(p, c) => p.assigneeType !== c.assigneeType}
+                    >
+                        {({ getFieldValue }) =>
+                            getFieldValue('assigneeType') === 'consultant' ? (
+                                <Form.Item
+                                    name='consultant'
+                                    label='Select Consultant'
+                                    rules={[
+                                        { required: true, message: 'Please select a consultant' }
+                                    ]}
+                                    initialValue={
+                                        (reassignTarget?.assigneeType === 'consultant' &&
+                                            reassignTarget?.consultantId) ||
+                                        undefined
+                                    }
+                                >
+                                    <Select
+                                        placeholder='Choose a consultant'
+                                        options={consultants.map(c => ({
+                                            label: c.name,
+                                            value: c.id
+                                        }))}
+                                        showSearch
+                                        optionFilterProp='label'
+                                    />
+                                </Form.Item>
+                            ) : (
+                                <Form.Item
+                                    name='operationUser'
+                                    label='Select Operations User'
+                                    rules={[
+                                        {
+                                            required: true,
+                                            message: 'Please select an operations user'
+                                        }
+                                    ]}
+                                    initialValue={
+                                        (reassignTarget?.assigneeType === 'operations' &&
+                                            reassignTarget?.consultantId) ||
+                                        undefined
+                                    }
+                                >
+                                    <Select
+                                        placeholder='Choose operations assignee'
+                                        options={operations.map(o => ({
+                                            label: `${o.name}${o.email ? ` — ${o.email}` : ''}`,
+                                            value: o.id
+                                        }))}
+                                        showSearch
+                                        optionFilterProp='label'
+                                    />
+                                </Form.Item>
+                            )
+                        }
+                    </Form.Item>
+
+                    <Form.Item name='reason' label='Reason (optional)'>
+                        <Input.TextArea
+                            placeholder='Why are you reassigning this?'
+                            rows={3}
+                        />
+                    </Form.Item>
+
+                    <Form.Item name='keepStatus' valuePropName='checked'>
+                        <Switch />{' '}
+                        <span style={{ marginLeft: 8 }}>Keep current overall status</span>
+                    </Form.Item>
+
+                    <Form.Item>
+                        <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+                            <Button onClick={() => setReassignOpen(false)}>Cancel</Button>
+                            <Button type='primary' htmlType='submit' loading={reassigning}>
+                                Confirm Reassignment
+                            </Button>
+                        </Space>
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            {/* MANAGE PARTICIPANT MODAL */}
+            <Modal
+                title={`Interventions for ${selectedParticipant?.beneficiaryName || ''
+                    }`}
+                open={manageModalVisible}
+                onCancel={() => setManageModalVisible(false)}
+                footer={null}
+                width={isMobile ? '100%' : 900}
+                style={{ top: isMobile ? 8 : 24, paddingInline: isMobile ? 8 : 0 }}
+                bodyStyle={{ padding: isMobile ? 12 : 24 }}
+                destroyOnClose
+            >
+                {/* Filter row: stacks on mobile */}
+                <Form layout='vertical' style={{ marginBottom: 12 }}>
+                    <Row gutter={[8, 8]} align='middle'>
+                        <Col xs={24} sm={16} md={10}>
+                            <Form.Item label='Filter' style={{ marginBottom: 0 }}>
+                                <Select
+                                    value={interventionFilter}
+                                    onChange={setInterventionFilter}
+                                    style={{ width: '100%' }}
+                                >
+                                    <Select.Option value='all'>All Interventions</Select.Option>
+                                    <Select.Option value='assigned'>Assigned</Select.Option>
+                                    <Select.Option value='unassigned'>Unassigned</Select.Option>
+                                </Select>
+                            </Form.Item>
+                        </Col>
+                    </Row>
+                </Form>
+
+                {/* Table wrapper for horizontal scroll on small screens */}
+                <div style={{ width: '100%', overflowX: 'auto' }}>
+                    <Table
+                        rowKey='id'
+                        size={isMobile ? 'small' : 'middle'}
+                        pagination={{
+                            pageSize: isMobile ? 6 : 10,
+                            simple: isMobile,
+                            showSizeChanger: !isMobile,
+                            responsive: true
+                        }}
+                        scroll={{ x: 'max-content' }}
+                        columns={
+                            [
+                                {
+                                    title: 'Intervention Title',
+                                    dataIndex: 'interventionTitle',
+                                    key: 'interventionTitle'
+                                },
+                                {
+                                    title: 'Consultant',
+                                    dataIndex: 'consultantName',
+                                    key: 'consultantName'
+                                },
+                                {
+                                    title: 'Status',
+                                    key: 'status',
+                                    render: (_: any, record: any) =>
+                                        record.isUnassigned ? (
+                                            <Tag>Unassigned</Tag>
+                                        ) : (
+                                            <Tag color={getCompositeStatus(record as any).color}>
+                                                {getCompositeStatus(record as any).label}
+                                            </Tag>
+                                        )
+                                },
+                                {
+                                    title: 'Due',
+                                    key: 'dueDate',
+                                    responsive: ['md'], // hide on mobile
+                                    render: (_: any, record: any) => {
+                                        if (!record.dueDate) return '—'
+                                        const d =
+                                            typeof record.dueDate === 'string'
+                                                ? new Date(record.dueDate)
+                                                : record.dueDate?.toDate?.() ?? new Date()
+                                        return d.toLocaleDateString()
+                                    }
+                                },
+                                {
+                                    title: 'Action',
+                                    key: 'action',
+                                    fixed: isMobile ? undefined : 'right',
+                                    render: (_: any, record: any) =>
+                                        record.isUnassigned ? (
+                                            <Button
+                                                type='link'
+                                                onClick={() => handleQuickAssign(record)}
+                                            >
+                                                Assign
+                                            </Button>
+                                        ) : (
+                                            <Space>
+                                                <Button
+                                                    type='link'
+                                                    onClick={() => startReassign(record)}
+                                                >
+                                                    Reassign
+                                                </Button>
+                                            </Space>
+                                        )
+                                }
+                            ] as any[]
+                        }
+                        dataSource={getFilteredInterventions()}
+                        expandable={{
+                            expandedRowRender: (record: any) =>
+                                record.isUnassigned ? (
+                                    <Text type='secondary'>
+                                        This intervention has not been assigned yet.
+                                    </Text>
+                                ) : (
+                                    <div style={{ padding: isMobile ? 6 : 10 }}>
+                                        <Paragraph style={{ marginBottom: 8 }}>
+                                            <Text strong>Type:</Text> {record.type || 'N/A'}
+                                            <br />
+                                            <Text strong>Target:</Text> {record.targetValue ?? '—'}{' '}
+                                            {record.targetType ?? ''} ({record.targetMetric || '—'})
+                                        </Paragraph>
+                                        <Paragraph style={{ marginBottom: 8 }}>
+                                            <Text strong>Assigned On:</Text>{' '}
+                                            {record.createdAt?.toMillis
+                                                ? new Date(
+                                                    record.createdAt.toMillis()
+                                                ).toLocaleDateString()
+                                                : 'N/A'}
+                                        </Paragraph>
+                                        {record.dueDate && (
+                                            <Paragraph style={{ marginBottom: 8 }}>
+                                                <Text strong>Due Date:</Text>{' '}
+                                                {typeof record.dueDate === 'string'
+                                                    ? new Date(record.dueDate).toLocaleDateString()
+                                                    : record.dueDate?.toDate?.()?.toLocaleDateString() ??
+                                                    'N/A'}
+                                            </Paragraph>
+                                        )}
+                                        <Paragraph style={{ marginBottom: 8 }}>
+                                            <Text strong>Status Summary:</Text>
+                                            <br />
+                                            <Space size={[8, 8]} wrap>
+                                                <Tag color='blue'>
+                                                    Overall: {pretty(record.status)}
+                                                </Tag>
+
+                                                <Tag color='purple'>
+                                                    Consultant Assigned: {pretty(record.consultantStatus)}
+                                                </Tag>
+
+                                                <Tag color='gold'>
+                                                    SME Accepted: {pretty(record.userStatus)}
+                                                </Tag>
+
+                                                <Tag color='cyan'>
+                                                    Consultant Completion: {pretty(record.consultantCompletionStatus)}
+                                                </Tag>
+
+                                                <Tag color='lime'>
+                                                    SME Confirmation: {pretty(record.userCompletionStatus)}
+                                                </Tag>
+                                            </Space>
+                                        </Paragraph>
+
+                                        {record.feedback && (
+                                            <Paragraph style={{ marginBottom: 0 }}>
+                                                <Text strong>Feedback:</Text>
+                                                <br />
+                                                <Text italic>"{record.feedback.comments}"</Text>
+                                                <br />
+                                                <Tag color='green'>
+                                                    Rating: {record.feedback.rating} / 5
+                                                </Tag>
+                                            </Paragraph>
+                                        )}
+                                    </div>
+                                )
+                        }}
+                        sticky
+                    />
+                </div>
+            </Modal>
+
+            {/* SUGGESTED INTERVENTIONS MODAL */}
+            <Modal
+                title={reviewRow ? `Review: ${reviewRow.interventionTitle}` : 'Review'}
+                open={reviewOpen}
+                onCancel={() => setReviewOpen(false)}
+                footer={null}
+                destroyOnClose
+            >
+                {reviewRow && (
+                    <Space direction='vertical' style={{ width: '100%' }}>
+                        <Space wrap>
+                            <Tag color={reviewRow.type === 'grouped' ? 'purple' : 'default'}>
+                                {reviewRow.type === 'grouped' ? 'Group' : 'Single'}
+                            </Tag>
+                            <Text type='secondary'>Area:</Text>
+                            <Tag>{reviewRow.area}</Tag>
+                        </Space>
+
+                        <Row gutter={12}>
+                            <Col xs={24} md={12}>
+                                <Text strong>Suggested Date</Text>
+                                <DatePicker
+                                    value={reviewRow.suggestedDate}
+                                    onChange={d => d && patchReview({ suggestedDate: d })}
+                                    style={{ width: '100%', marginTop: 6 }}
+                                    disabledDate={d => d && d < dayjs().startOf('day')}
+                                />
+                            </Col>
+                            <Col xs={24} md={12}>
+                                <Text strong>Consultant</Text>
+                                <Select
+                                    value={reviewRow.suggestedConsultantId}
+                                    onChange={v => patchReview({ suggestedConsultantId: v })}
+                                    style={{ width: '100%', marginTop: 6 }}
+                                    placeholder='Select consultant'
+                                    options={consultants.map(c => ({
+                                        label: c.name,
+                                        value: c.id
+                                    }))}
+                                    showSearch
+                                    optionFilterProp='label'
+                                    allowClear
+                                />
+                            </Col>
+                        </Row>
+
+                        <Card
+                            size='small'
+                            title={`Incubatees (${reviewRow.participants.length})`}
+                        >
+                            <Table
+                                size='small'
+                                rowKey='id'
+                                pagination={{ pageSize: 8 }} // 👈 paginate
+                                columns={[
+                                    { title: 'Incubatee', dataIndex: 'name', key: 'name' },
+                                    { title: 'Email', dataIndex: 'email', key: 'email' } // 👈 show email
+                                ]}
+                                dataSource={reviewRow.participants}
+                            />
+                        </Card>
+
+                        <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+                            <Button onClick={() => setReviewOpen(false)}>Close</Button>
+                            <Button
+                                type='primary'
+                                icon={<CheckCircleOutlined />}
+                                onClick={async () => {
+                                    await approveRows([reviewRow])
+                                    setReviewOpen(false)
+                                }}
+                            >
+                                Confirm & Create
+                            </Button>
+                        </Space>
+                    </Space>
+                )}
+            </Modal>
+        </div>
+    )
+}
