@@ -316,7 +316,7 @@ export const CustomLayout: React.FC = () => {
 
     const allMenus = useMemo(() => {
         const consultantAssignmentsLabel =
-            assignmentModel === 'consultant_self_assign' ? 'Assignments' : 'Active'
+            assignmentModel === 'consultant_self_assign' ? 'Active' : 'Active'
 
         const base = {
             admin: [
