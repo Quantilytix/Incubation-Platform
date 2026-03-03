@@ -24,10 +24,11 @@ import {
   ClockCircleOutlined,
   CloseCircleOutlined
 } from '@ant-design/icons'
-import FormBuilder from '@/components/form-builder/FormBuilder'
+// import FormBuilder from '@/components/form-builder/FormBuilder'
 import FormResponseViewer from '@/components/form-response-viewer/FormResponseViewer'
 import { useGetIdentity } from '@refinedev/core'
 import { useNavigate } from 'react-router-dom'
+import FormBuilder from '@/components/forms/builder'
 
 const { Title, Text } = Typography
 const { TabPane } = Tabs
