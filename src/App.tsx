@@ -178,6 +178,7 @@ import InterventionAppointments from './routes/shared/appointments/InterventionA
 import SMEsMasterPage from './routes/shared/incubatees/SMEsMasterPage'
 import AllocatedInterventions from './routes/shared/allocated/AllocatedInterventions'
 import InterventionTracker from './routes/shared/allocated/[id]/InterventionTracker'
+import UsersPage from './routes/operations/users/UsersPage'
 
 
 type FullIdentity = {
@@ -405,6 +406,10 @@ const App = () => {
                                                             />
                                                             <Route path='consultants'>
                                                                 <Route index element={<ConsultantPage />} />
+                                                                <Route path=':id/performance' element={<ConsultantPerformance />} />
+                                                            </Route>
+                                                            <Route path='users'>
+                                                                <Route index element={<UsersPage />} />
                                                                 <Route path=':id/performance' element={<ConsultantPerformance />} />
                                                             </Route>
                                                             <Route path='resources' element={<OperationsResourceManagement />} />
