@@ -1,1695 +1,1029 @@
-import React, { useState } from 'react'
+
+// src/pages/director/DirectorDashboard.tsx
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Card,
-  Row,
-  Col,
-  Statistic,
-  Typography,
-  List,
-  Tag,
-  Space,
-  Divider,
-  Tabs,
-  Progress,
-  Button,
-  Table,
-  Avatar,
-  Badge,
-  Tooltip,
-  Alert,
-  Timeline,
-  Drawer,
-  message,
-  Spin
+    Card,
+    Col,
+    DatePicker,
+    Row,
+    Space,
+    Statistic,
+    Tag,
+    Typography,
+    message,
+    Grid,
+    Tooltip,
+    Empty,
+    Button,
+    Modal,
+    List
 } from 'antd'
-import {
-  BarChartOutlined,
-  TeamOutlined,
-  RiseOutlined,
-  ClockCircleOutlined,
-  CheckCircleOutlined,
-  WarningOutlined,
-  DollarOutlined,
-  FundOutlined,
-  PieChartOutlined,
-  ProjectOutlined,
-  FileTextOutlined,
-  CloseCircleOutlined,
-  CalendarOutlined,
-  ApartmentOutlined,
-  BellOutlined,
-  AreaChartOutlined
-} from '@ant-design/icons'
-import { useEffect } from 'react'
-import { addDoc, collection, getDocs, query, where } from 'firebase/firestore'
-import { app, db } from '@/firebase'
 import { Helmet } from 'react-helmet'
-import dayjs from 'dayjs'
-import { getAuth } from 'firebase/auth'
+import dayjs, { Dayjs } from 'dayjs'
+import Highcharts from 'highcharts'
+import HighchartsReact from 'highcharts-react-official'
 
-const { Title, Text, Paragraph } = Typography
-const { TabPane } = Tabs
+import VariablePie from 'highcharts/modules/variable-pie'
+import Drilldown from 'highcharts/modules/drilldown'
 
-const sampleFinancialData = [
-  {
-    category: 'Project Management',
-    allocated: 120000,
-    spent: 95000,
-    remaining: 25000
-  },
-  {
-    category: 'Facilities',
-    allocated: 200000,
-    spent: 170000,
-    remaining: 30000
-  },
-  {
-    category: 'Program Marketing',
-    allocated: 80000,
-    spent: 65000,
-    remaining: 15000
-  },
-  { category: 'Events', allocated: 50000, spent: 42000, remaining: 8000 },
-  {
-    category: 'Technology',
-    allocated: 150000,
-    spent: 110000,
-    remaining: 40000
-  },
-  {
-    category: 'General Admin',
-    allocated: 180000,
-    spent: 160000,
-    remaining: 20000
-  }
-]
+import { db } from '@/firebase'
+import {
+    collection,
+    doc,
+    getDoc,
+    onSnapshot,
+    query,
+    where,
+    Timestamp
+} from 'firebase/firestore'
+import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { DashboardHeaderCard, MotionCard } from '@/components/shared/Header'
+import { useNavigate } from 'react-router-dom'
+import {
+    TeamOutlined,
+    ShopOutlined,
+    SolutionOutlined,
+    CheckCircleOutlined,
+    ReloadOutlined,
+    WarningOutlined,
+    ClockCircleOutlined,
+    ExclamationCircleOutlined,
+    ArrowRightOutlined
+} from '@ant-design/icons'
 
-const sampleKPIData = [
-  {
-    metric: 'Revenue Growth',
-    target: 25,
-    actual: 32,
-    unit: '%',
-    status: 'Exceeding'
-  },
-  {
-    metric: 'Funding Secured',
-    target: 5000000,
-    actual: 4200000,
-    unit: '$',
-    status: 'On Track'
-  },
-  {
-    metric: 'Job Creation',
-    target: 120,
-    actual: 97,
-    unit: 'jobs',
-    status: 'At Risk'
-  },
-  {
-    metric: 'Market Expansion',
-    target: 3,
-    actual: 4,
-    unit: 'markets',
-    status: 'Exceeding'
-  },
-  {
-    metric: 'Product Launches',
-    target: 12,
-    actual: 10,
-    unit: 'products',
-    status: 'On Track'
-  }
-]
-
-const sampleResourcesData = [
-  { resource: 'Mentors', allocated: 45, utilized: 38, utilization: 84 },
-  { resource: 'Meeting Rooms', allocated: 8, utilized: 7, utilization: 92 },
-  { resource: 'Event Spaces', allocated: 3, utilized: 2, utilization: 65 },
-  { resource: 'Lab Equipment', allocated: 12, utilized: 8, utilization: 72 },
-  {
-    resource: 'Software Licenses',
-    allocated: 200,
-    utilized: 185,
-    utilization: 93
-  }
-]
-
-const sampleAnalytics = {
-  totalIncubatees: 35,
-  activeProjects: 28,
-  complianceRate: 84,
-  averageProgress: 72,
-  pendingApprovals: 7,
-  upcomingDeadlines: 12,
-  successRate: 76,
-  avgFundingSecured: 850000,
-  activeMentors: 42,
-  resourceUtilization: 78,
-  totalBudget: 1500000,
-  budgetUtilized: 1150000,
-  roi: 2.4
+if (typeof VariablePie === 'function') {
+    VariablePie(Highcharts)
+}
+if (typeof Drilldown === 'function') {
+    Drilldown(Highcharts)
 }
 
-// Sample portfolio data
-const samplePortfolioData = [
-  {
-    id: 1,
-    name: 'TechInnovate',
-    sector: 'FinTech',
-    stage: 'Growth',
-    valuation: 4500000,
-    investment: 750000,
-    progress: 72,
-    metrics: {
-      revenue: 1200000,
-      customers: 5800,
-      employees: 32,
-      growthRate: 68
-    },
-    status: 'Active',
-    risk: 'Low'
-  },
-  {
-    id: 2,
-    name: 'GreenSolutions',
-    sector: 'CleanEnergy',
-    stage: 'Early Growth',
-    valuation: 2800000,
-    investment: 500000,
-    progress: 56,
-    metrics: {
-      revenue: 840000,
-      customers: 1200,
-      employees: 18,
-      growthRate: 42
-    },
-    status: 'Active',
-    risk: 'Medium'
-  },
-  {
-    id: 3,
-    name: 'HealthPlus',
-    sector: 'HealthTech',
-    stage: 'Seed',
-    valuation: 1200000,
-    investment: 300000,
-    progress: 45,
-    metrics: {
-      revenue: 320000,
-      customers: 1500,
-      employees: 12,
-      growthRate: 85
-    },
-    status: 'Warning',
-    risk: 'High'
-  },
-  {
-    id: 4,
-    name: 'EduConnect',
-    sector: 'EdTech',
-    stage: 'Growth',
-    valuation: 3800000,
-    investment: 650000,
-    progress: 81,
-    metrics: {
-      revenue: 950000,
-      customers: 8500,
-      employees: 27,
-      growthRate: 74
-    },
-    status: 'Active',
-    risk: 'Low'
-  },
-  {
-    id: 5,
-    name: 'AgriTech Systems',
-    sector: 'Agriculture',
-    stage: 'Seed',
-    valuation: 950000,
-    investment: 250000,
-    progress: 38,
-    metrics: {
-      revenue: 180000,
-      customers: 450,
-      employees: 8,
-      growthRate: 28
-    },
-    status: 'Warning',
-    risk: 'High'
-  }
-]
+const { Text } = Typography
+const { RangePicker } = DatePicker
+const { useBreakpoint } = Grid
 
-const sampleSectorData = [
-  {
-    sector: 'FinTech',
-    companies: 8,
-    totalInvestment: 3200000,
-    averageValuation: 4100000,
-    performance: 72
-  },
-  {
-    sector: 'HealthTech',
-    companies: 6,
-    totalInvestment: 2400000,
-    averageValuation: 2800000,
-    performance: 65
-  },
-  {
-    sector: 'CleanEnergy',
-    companies: 5,
-    totalInvestment: 2100000,
-    averageValuation: 3100000,
-    performance: 58
-  },
-  {
-    sector: 'EdTech',
-    companies: 7,
-    totalInvestment: 2800000,
-    averageValuation: 3600000,
-    performance: 81
-  },
-  {
-    sector: 'Agriculture',
-    companies: 4,
-    totalInvestment: 1500000,
-    averageValuation: 1200000,
-    performance: 42
-  },
-  {
-    sector: 'E-commerce',
-    companies: 5,
-    totalInvestment: 1900000,
-    averageValuation: 2500000,
-    performance: 63
-  }
-]
+type AssignmentModel = 'ops_assign_consultant' | 'consultant_self_assign'
+type SmeDivisionModel =
+    | 'system_equal_random'
+    | 'ops_assign_smes_to_consultants'
+    | 'consultants_register_their_smes'
 
-const sampleMilestoneData = [
-  {
-    id: 1,
-    company: 'TechInnovate',
-    milestone: 'Series A Funding',
-    target: '2024-08-15',
-    progress: 85,
-    status: 'On Track'
-  },
-  {
-    id: 2,
-    company: 'GreenSolutions',
-    milestone: 'Market Expansion',
-    target: '2024-09-30',
-    progress: 62,
-    status: 'At Risk'
-  },
-  {
-    id: 3,
-    company: 'HealthPlus',
-    milestone: 'Product Launch',
-    target: '2024-07-20',
-    progress: 45,
-    status: 'Delayed'
-  },
-  {
-    id: 4,
-    company: 'EduConnect',
-    milestone: 'User Growth Target',
-    target: '2024-08-01',
-    progress: 92,
-    status: 'Ahead'
-  },
-  {
-    id: 5,
-    company: 'AgriTech Systems',
-    milestone: 'Pilot Program',
-    target: '2024-10-15',
-    progress: 38,
-    status: 'Delayed'
-  }
-]
+type SystemSettingsDoc = {
+    companyCode: string
+    companyName?: string
+    hasDepartments: boolean
+    hasBranches: boolean
+    assignmentModel: AssignmentModel
+    smeDivisionModel?: SmeDivisionModel
+    branchScopedManagement?: boolean
+    locked: true
+    createdAt: Timestamp
+    createdByUid: string
+    createdByEmail?: string
+}
 
-export const DirectorDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('overview')
-  const [programs, setPrograms] = useState<any[]>([])
-  const [incubatees, setIncubatees] = useState<any[]>([])
-  const [complianceRecords, setComplianceRecords] = useState<any[]>([])
-  const [drawerVisible, setDrawerVisible] = useState(false)
-  const [drawerContent, setDrawerContent] = useState<React.ReactNode>(null)
-  const [notifications, setNotifications] = useState<any[]>([])
-  const [notificationDrawerVisible, setNotificationDrawerVisible] =
-    useState(false)
-  const [overdueInterventions, setOverdueInterventions] = useState<any[]>([])
-  const [pendingApplications, setPendingApplications] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
-  const [companyCode, setCompanyCode] = useState('')
-  const auth = getAuth()
-  const currentUser = auth.currentUser
+type ProgramDoc = {
+    companyCode?: string
+    startDate?: any
+    createdAt?: any
+    status?: string
+    isActive?: boolean
+    [k: string]: any
+}
 
-  useEffect(() => {
-    const fetchCompanyCode = async () => {
-      if (!currentUser?.email) return
-      const userSnap = await getDocs(
-        query(collection(db, 'users'), where('email', '==', currentUser.email))
-      )
-      const code = userSnap.docs[0]?.data()?.companyCode || ''
-      setCompanyCode(code)
+type InterventionMeta = {
+    id: string
+    areaOfSupport?: string
+    department?: string
+    companyCode?: string
+    [k: string]: any
+}
+
+type RequiredInterventionRef = {
+    interventionId?: string
+    id?: string
+    areaOfSupport?: string
+    department?: string
+    [k: string]: any
+}
+
+type AnyAssignedIntervention = {
+    id: string
+    companyCode?: string
+    interventionId?: string
+
+    // sometimes stored directly; we override using interventions map
+    department?: string
+    areaOfSupport?: string
+
+    // SME identity (varies across your docs)
+    enterpriseName?: string
+    beneficiaryName?: string
+    participantName?: string
+    smmEName?: string
+    smeName?: string
+    companyName?: string
+    participantId?: string
+    smeId?: string
+    email?: string
+
+    dueDate?: any
+    createdAt?: any
+
+    consultantStatus?: string
+    userStatus?: string
+    consultantCompletionStatus?: string
+    userCompletionStatus?: string
+
+    [k: string]: any
+}
+
+type BottleneckKey =
+    | 'pending_consultant'
+    | 'pending_sme_acceptance'
+    | 'pending'
+    | 'awaiting_sme_completion'
+
+const norm = (v?: any) => String(v ?? '').trim().toLowerCase()
+
+const tsToDayjs = (v: any): Dayjs | null => {
+    if (!v) return null
+    if (typeof v?.toDate === 'function') return dayjs(v.toDate())
+    if (typeof v === 'string') {
+        const d = dayjs(v)
+        return d.isValid() ? d : null
     }
-    fetchCompanyCode()
-  }, [currentUser])
+    if (v instanceof Date) return dayjs(v)
+    return null
+}
 
-  // PROGRAMS
-  useEffect(() => {
-    if (!companyCode) return
-    const fetchPrograms = async () => {
-      const q = query(
-        collection(db, 'programs'),
-        where('companyCode', '==', companyCode)
-      )
-      const programSnap = await getDocs(q)
-      setPrograms(programSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })))
-    }
-    fetchPrograms()
-  }, [companyCode])
-
-  // PARTICIPANTS
-  useEffect(() => {
-    if (!companyCode) return
-    const fetchParticipants = async () => {
-      const q = query(
-        collection(db, 'participants'),
-        where('companyCode', '==', companyCode)
-      )
-      const participantSnap = await getDocs(q)
-      setIncubatees(
-        participantSnap.docs.map(doc => {
-          const data = doc.data()
-          const docs = data.complianceDocuments || []
-          const validDocs = docs.filter(doc => doc.status === 'valid')
-          const totalTypes = 7
-          const complianceRate = Math.round(
-            (validDocs.length / totalTypes) * 100
-          )
-          return {
-            id: doc.id,
-            ...data,
-            complianceRate
-          }
-        })
-      )
-    }
-    fetchParticipants()
-  }, [companyCode])
-
-  // 🔽 Load notifications on mount
-  useEffect(() => {
-    if (!currentUser?.uid) return
-    const fetchNotifications = async () => {
-      const q = query(
-        collection(db, 'notifications'),
-        where('recipientIds', 'array-contains', currentUser.uid)
-      )
-      const snapshot = await getDocs(q)
-      setNotifications(
-        snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      )
-    }
-    fetchNotifications()
-  }, [currentUser])
-
-  useEffect(() => {
-    const fetchApplications = async () => {
-      setLoading(true)
-      try {
-        const applicationSnap = await getDocs(collection(db, 'applications'))
-
-        const pendingApps = applicationSnap.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(
-            app =>
-              app.applicationStatus?.toLowerCase() === 'pending' &&
-              app.companyCode === companyCode
-          )
-
-        setPendingApplications(pendingApps)
-        setPendingApplications(pendingApps)
-      } catch (err) {
-        console.error('Failed to fetch overview data:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchApplications()
-  }, [])
-
-  useEffect(() => {
-    const fetchOverdueInterventions = async () => {
-      setLoading(true)
-      try {
-        const email = currentUser?.email
-        if (!email) return
-
-        // 1. Get the current user's company code
-        const userSnap = await getDocs(
-          query(collection(db, 'users'), where('email', '==', email))
+const getDocDate = (docData: any, field: 'dueDate' | 'createdAt' | 'startDate' | 'createdAtOrAccepted') => {
+    if (field === 'createdAtOrAccepted') {
+        return (
+            tsToDayjs(docData?.dateAccepted) ||
+            tsToDayjs(docData?.acceptedAt) ||
+            tsToDayjs(docData?.createdAt) ||
+            tsToDayjs(docData?.submittedAt) ||
+            null
         )
-        const companyCode = userSnap.docs[0]?.data()?.companyCode
+    }
+    return tsToDayjs(docData?.[field])
+}
+
+const getSmeLabel = (x: AnyAssignedIntervention) =>
+    x.enterpriseName ||
+    x.beneficiaryName ||
+    x.participantName ||
+    x.smmEName ||
+    x.smeName ||
+    x.companyName ||
+    x.participantId ||
+    x.smeId ||
+    x.email ||
+    '—'
+
+const classifyBottleneck = (x: AnyAssignedIntervention): BottleneckKey => {
+    const consultantAccepted = norm(x.consultantStatus) === 'accepted'
+    const smeAccepted = norm(x.userStatus) === 'accepted'
+
+    const consultantCompleted = norm(x.consultantCompletionStatus) === 'completed'
+    const smeCompleted = norm(x.userCompletionStatus) === 'completed'
+
+    if (consultantCompleted && smeCompleted) return 'pending' // not used here, completion handled separately
+    if (!consultantAccepted) return 'pending_consultant'
+    if (consultantAccepted && !smeAccepted) return 'pending_sme_acceptance'
+    if (consultantCompleted && !smeCompleted) return 'awaiting_sme_completion'
+    return 'pending'
+}
+
+const prettyBottleneck = (k: BottleneckKey) => {
+    switch (k) {
+        case 'pending_consultant':
+            return 'Pending Consultant'
+        case 'pending_sme_acceptance':
+            return 'Pending SME Acceptance'
+        case 'awaiting_sme_completion':
+            return 'Awaiting SME Completion'
+        case 'pending':
+            return 'Pending'
+    }
+}
+
+const percent = (num: number, den: number) => (den <= 0 ? 0 : Math.round((num / den) * 100))
+
+const DirectorDashboard: React.FC = () => {
+    const screens = useBreakpoint()
+    const isMobile = !screens.md
+    const navigate = useNavigate()
+
+    const { user } = useFullIdentity()
+    const companyCode = String((user as any)?.companyCode || '').trim()
+
+    const [systemSettings, setSystemSettings] = useState<SystemSettingsDoc | null>(null)
+
+    // Program-driven default range
+    const [defaultRange, setDefaultRange] = useState<[Dayjs, Dayjs] | null>(null)
+    const [range, setRange] = useState<[Dayjs, Dayjs]>(() => [dayjs().startOf('month'), dayjs().endOf('day')])
+    const defaultRangeRef = useRef<[Dayjs, Dayjs] | null>(null)
+
+    // Counts
+    const [usersCount, setUsersCount] = useState(0)
+    const [smesCount, setSmesCount] = useState(0)
+
+    // Intervention meta map
+    const [interventionMetaById, setInterventionMetaById] = useState<Record<string, InterventionMeta>>({})
+    const [totalRequiredFromAcceptedApps, setTotalRequiredFromAcceptedApps] = useState(0)
+
+    // Accepted SME filters
+    const [acceptedParticipantIds, setAcceptedParticipantIds] = useState<Set<string>>(new Set())
+    const [acceptedEmails, setAcceptedEmails] = useState<Set<string>>(new Set())
+
+    // Required vs Completed per scope
+    const [requiredByScope, setRequiredByScope] = useState<Record<string, number>>({})
+    const [completedByScope, setCompletedByScope] = useState<Record<string, number>>({})
+
+    // Bottlenecks
+    const [bottlenecks, setBottlenecks] = useState<Record<BottleneckKey, number>>({
+        pending_consultant: 0,
+        pending_sme_acceptance: 0,
+        pending: 0,
+        awaiting_sme_completion: 0
+    })
+
+    // Risk signals (instead of overdue table)
+    const [riskCounts, setRiskCounts] = useState({
+        overdue: 0,
+        upcoming7: 0,
+        upcoming14: 0,
+        unresponsiveSMEs: 0
+    })
+
+    const [riskLists, setRiskLists] = useState<{
+        overdue: any[]
+        upcoming: any[]
+        unresponsive: any[]
+    }>({ overdue: [], upcoming: [], unresponsive: [] })
+
+    const [riskModal, setRiskModal] = useState<{ open: boolean; title: string; items: any[] }>({
+        open: false,
+        title: '',
+        items: []
+    })
+
+    // ----------- Load system settings -----------
+    useEffect(() => {
+        if (!companyCode) return
+        getDoc(doc(db, 'systemSettings', companyCode))
+            .then(snap => setSystemSettings(snap.exists() ? (snap.data() as SystemSettingsDoc) : null))
+            .catch(e => message.error(e?.message || 'Failed to load system settings'))
+    }, [companyCode])
+
+    const modeHasDepartments = !!systemSettings?.hasDepartments
+    const scopeLabel = modeHasDepartments ? 'Department Mode' : 'Area Mode'
+
+    const scopeOf = (interventionId?: string, fallback?: { areaOfSupport?: string; department?: string }) => {
+        const iid = String(interventionId || '').trim()
+        const meta = iid ? interventionMetaById[iid] : undefined
+        return modeHasDepartments
+            ? String(meta?.department || fallback?.department || 'Unassigned Department')
+            : String(meta?.areaOfSupport || fallback?.areaOfSupport || 'Unassigned Area')
+    }
+
+    // ----------- Default date range from programs -----------
+    useEffect(() => {
         if (!companyCode) return
 
-        // 2. Get consultant IDs with same company code
-        const consultantSnap = await getDocs(
-          query(
-            collection(db, 'consultants'),
-            where('companyCode', '==', companyCode)
-          )
+        const qPrograms = query(collection(db, 'programs'), where('companyCode', '==', companyCode))
+        const unsub = onSnapshot(
+            qPrograms,
+            snap => {
+                let earliest: Dayjs | null = null
+
+                snap.forEach(d => {
+                    const data = d.data() as ProgramDoc
+                    const s = getDocDate(data, 'startDate') || getDocDate(data, 'createdAt')
+                    if (!s) return
+                    if (!earliest || s.isBefore(earliest)) earliest = s
+                })
+
+                const from = (earliest || dayjs().startOf('month')).startOf('day')
+                const to = dayjs().endOf('day')
+                const nextDefault: [Dayjs, Dayjs] = [from, to]
+
+                setDefaultRange(nextDefault)
+                defaultRangeRef.current = nextDefault
+
+                setRange(prev => {
+                    const looksLikeInitial =
+                        prev?.[0]?.isSame(dayjs().startOf('month'), 'day') &&
+                        prev?.[1]?.isSame(dayjs().endOf('day'), 'day')
+                    return looksLikeInitial ? nextDefault : prev
+                })
+            },
+            err => message.error(err?.message || 'Failed to load programs')
         )
-        const consultantIds = consultantSnap.docs.map(doc => doc.id)
 
-        // 3. Get assignedInterventions linked to those consultants
-        const interventionSnap = await getDocs(
-          collection(db, 'assignedInterventions')
-        )
-        const allInterventions = interventionSnap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
+        return () => unsub()
+    }, [companyCode])
 
-        const now = new Date()
-
-        const overdue = allInterventions.filter(
-          i =>
-            consultantIds.includes(i.consultantId) &&
-            i.dueDate?.toDate?.() < now &&
-            i.consultantCompletionStatus !== 'done'
-        )
-
-        setOverdueInterventions(overdue)
-      } catch (err) {
-        console.error('Failed to fetch overdue interventions:', err)
-      } finally {
-        setLoading(false)
-      }
+    const resetToDefault = () => {
+        const def = defaultRangeRef.current
+        if (!def) return
+        setRange([def[0], def[1]])
+        message.success('Range reset to program start → today')
     }
 
-    fetchOverdueInterventions()
-  }, [])
-
-  const getCurrentUserCompanyCode = async () => {
-    const email = currentUser?.email
-    if (!email) return null
-
-    const userSnap = await getDocs(
-      query(collection(db, 'users'), where('email', '==', email))
-    )
-
-    return userSnap.docs[0]?.data()?.companyCode || null
-  }
-
-  const getRelevantOpsUsers = async (companyCode: string) => {
-    const opsSnap = await getDocs(
-      query(
-        collection(db, 'users'),
-        where('role', '==', 'operations'),
-        where('companyCode', '==', companyCode)
-      )
-    )
-    return opsSnap.docs.map(doc => doc.id) // these are user IDs
-  }
-
-  const getOverallComplianceRate = () => {
-    if (incubatees.length === 0) return 0
-    const total = incubatees.reduce(
-      (sum, p) => sum + (p.complianceRate || 0),
-      0
-    )
-    return Math.round(total / incubatees.length)
-  }
-
-  const getComplianceRate = (participant: any): number => {
-    const docs = participant.complianceDocuments || []
-    const totalRequired = 7 // adjust to match your required doc count
-    const validDocs = docs.filter(doc => doc.status === 'valid')
-    return Math.round((validDocs.length / totalRequired) * 100)
-  }
-
-  const sendNotification = async (payload: any) => {
-    console.log('[🔔 Sending Notification]', payload) // ✅ Add this
-
-    try {
-      await addDoc(collection(db, 'notifications'), {
-        ...payload,
-        createdAt: new Date(),
-        readBy: {}
-      })
-      message.success('Reminder sent.')
-    } catch (err) {
-      console.error('[❌ Failed to send notification]', err)
-      message.error('Could not send notification.')
-    }
-  }
-
-  const remindUser = (intervention: any) => {
-    if (!intervention.assignedRole || !intervention.assignedTo) {
-      console.warn('[⚠️ Missing assignment info] intervention:', intervention)
-      return message.warning(
-        'intervention must have an assigned user and role.'
-      )
+    const inRange = (d: Dayjs | null) => {
+        if (!d) return true
+        const [from, to] = range
+        const start = from.startOf('day')
+        const end = to.endOf('day')
+        return (d.isAfter(start) || d.isSame(start)) && (d.isBefore(end) || d.isSame(end))
     }
 
-    const isOverdue = dayjs(intervention.dueDate.toDate()).isBefore(
-      dayjs(),
-      'day'
-    )
-    const formattedDate = dayjs(intervention.dueDate.toDate()).format(
-      'YYYY-MM-DD'
-    )
+    // ----------- Interventions meta -----------
+    useEffect(() => {
+        if (!companyCode) return
 
-    const role = intervention.assignedRole
-    const messageText = isOverdue
-      ? `🚨 Your intervention "${intervention.title}" is OVERDUE (was due ${formattedDate}). Please take action.`
-      : `⏳ Reminder: Your intervention "${intervention.title}" is due on ${formattedDate}.`
-
-    sendNotification({
-      message: {
-        [role]: messageText
-      },
-      recipientRoles: [role],
-      recipientIds: [intervention.assignedTo]
-    })
-  }
-
-  const remindReviewApplications = async () => {
-    try {
-      const companyCode = await getCurrentUserCompanyCode()
-      if (!companyCode) {
-        console.warn('[⚠️ Missing Company Code]')
-        return message.warning('Company code not found.')
-      }
-
-      const opsUserIds = await getRelevantOpsUsers(companyCode)
-
-      if (!opsUserIds.length) {
-        console.info(
-          '[ℹ️ No operations users found for this company]',
-          companyCode
+        const unsub = onSnapshot(
+            query(collection(db, 'interventions'), where('companyCode', '==', companyCode)),
+            snap => {
+                const map: Record<string, InterventionMeta> = {}
+                snap.forEach(d => {
+                    map[d.id] = { id: d.id, ...(d.data() as any) }
+                })
+                setInterventionMetaById(map)
+            },
+            err => message.error(err?.message || 'Failed to load interventions')
         )
-        return message.info('No operations users found for your company.')
-      }
 
-      console.log('[🔔 Notifying Ops IDs]', opsUserIds)
+        return () => unsub()
+    }, [companyCode])
 
-      const reminderText = `There are ${pendingApplications.length} pending applications awaiting review.`
+    // ----------- Accepted apps (SMEs set + total required from accepted) -----------
+    useEffect(() => {
+        if (!companyCode) return
 
-      await sendNotification({
-        message: {
-          operations: reminderText
-        },
-        recipientRoles: ['operations'],
-        recipientIds: opsUserIds,
-        type: 'application-reminder'
-      })
-    } catch (err) {
-      console.error('Failed to send reminder to ops:', err)
-      message.error('Could not send notification.')
-    }
-  }
+        const unsub = onSnapshot(
+            query(
+                collection(db, 'applications'),
+                where('companyCode', '==', companyCode),
+                where('applicationStatus', '==', 'accepted')
+            ),
+            snap => {
+                // 1) SME count = accepted applications
+                setSmesCount(snap.size)
 
-  const calculateParticipantCompliance = participant => {
-    const docs = participant.complianceDocuments || []
-    const validDocs = docs.filter(doc => doc.status === 'valid')
-    const totalTypes = 7 // or get this dynamically if needed
+                // 2) Accepted SME identity sets (to filter assignedInterventions)
+                const pidSet = new Set<string>()
+                const emailSet = new Set<string>()
 
-    return Math.round((validDocs.length / totalTypes) * 100)
-  }
+                // 3) Total required (no date filter)
+                let totalRequired = 0
 
-  const overallCompliance = () => {
-    if (!complianceRecords.length) return 0
-    const avg =
-      complianceRecords.reduce((acc, r) => acc + (r.complianceRate || 0), 0) /
-      complianceRecords.length
-    return Math.round(avg)
-  }
+                snap.forEach(d => {
+                    const app: any = d.data()
 
-  // Format currency values
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-ZA', {
-      style: 'currency',
-      currency: 'ZAR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value)
-  }
+                    if (app?.participantId) pidSet.add(String(app.participantId))
+                    if (app?.email) emailSet.add(String(app.email).trim().toLowerCase())
 
-  // Strategic Dashboard Content
-  const renderStrategicDashboard = () => {
-    return (
-      <div>
-        <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-          <Col xs={24}>
-            <Card>
-              <Tabs
-                defaultActiveKey='program'
-                onChange={key => console.log(key)}
-              >
-                <TabPane
-                  tab={
-                    <span>
-                      <ProjectOutlined />
-                      Program Overview
-                    </span>
-                  }
-                  key='program'
-                >
-                  <Row gutter={[16, 16]}>
-                    <Col xs={24} md={6}>
-                      <Card>
-                        <Statistic
-                          title='Total Programs'
-                          value={programs.length}
-                          prefix={<ProjectOutlined />}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Card>
-                        <Statistic
-                          title='Active Startups'
-                          value={
-                            incubatees.filter(p => p.stage === 'Startup').length
-                          }
-                          prefix={<TeamOutlined />}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Card>
-                        <Statistic
-                          title='Success Rate'
-                          value={sampleAnalytics.successRate}
-                          suffix='%'
-                          prefix={<CheckCircleOutlined />}
-                          valueStyle={{ color: '#3f8600' }}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Card>
-                        <Statistic
-                          title='Program Compliance'
-                          value={getOverallComplianceRate()}
-                          suffix='%'
-                          prefix={<CheckCircleOutlined />}
-                          valueStyle={{
-                            color:
-                              getOverallComplianceRate() > 80
-                                ? '#3f8600'
-                                : '#cf1322'
-                          }}
-                        />
-                      </Card>
-                    </Col>
-                  </Row>
+                    const required =
+                        app?.interventions?.required ||
+                        app?.interventionsRequired ||
+                        app?.requiredInterventions ||
+                        []
 
-                  <Card title='Incubation Programs' style={{ marginTop: 16 }}>
-                    <Table dataSource={programs} rowKey='id' pagination={false}>
-                      <Table.Column
-                        title='Program'
-                        dataIndex='name'
-                        key='name'
-                      />
-                      <Table.Column title='Type' dataIndex='type' key='type' />
-                      <Table.Column
-                        title='Progress'
-                        dataIndex='progress'
-                        key='progress'
-                        render={progress => (
-                          <Progress
-                            percent={progress}
-                            size='small'
-                            status={
-                              progress < 50
-                                ? 'exception'
-                                : progress < 80
-                                ? 'active'
-                                : 'success'
-                            }
-                          />
-                        )}
-                      />
+                    if (Array.isArray(required)) totalRequired += required.length
+                })
 
-                      <Table.Column
-                        title='Status'
-                        dataIndex='status'
-                        key='status'
-                        filters={[
-                          { text: 'Active', value: 'Active' },
-                          { text: 'Completed', value: 'Completed' },
-                          { text: 'Upcoming', value: 'Upcoming' }
-                        ]}
-                        onFilter={(value, record) => record.status === value}
-                        render={status => (
-                          <Tag
-                            color={
-                              status === 'Active'
-                                ? 'green'
-                                : status === 'Ending'
-                                ? 'orange'
-                                : 'red'
-                            }
-                          >
-                            {status}
-                          </Tag>
-                        )}
-                      />
-                      <Table.Column
-                        title='Budget Utilization'
-                        key='budget'
-                        render={record => {
-                          const utilization = Math.round(
-                            (record.spent / record.budget) * 100
-                          )
-                          return (
-                            <div>
-                              <Progress
-                                percent={Math.round(
-                                  (record.spent / record.budget) * 100
-                                )}
-                                size='small'
-                                status={
-                                  record.spent / record.budget > 0.9
-                                    ? 'exception'
-                                    : 'normal'
-                                }
-                              />
+                setAcceptedParticipantIds(pidSet)
+                setAcceptedEmails(emailSet)
+                setTotalRequiredFromAcceptedApps(totalRequired)
+            },
+            err => message.error(err?.message || 'Failed to read accepted applications')
+        )
 
-                              <div style={{ fontSize: '12px', color: '#888' }}>
-                                {formatCurrency(record.spent)} of{' '}
-                                {formatCurrency(record.budget)}
-                              </div>
-                            </div>
-                          )
-                        }}
-                      />
-                      <Table.Column
-                        title='Actions'
-                        key='actions'
-                        render={() => (
-                          <Space>
-                            <Button size='small'>Details</Button>
-                            <Button size='small' type='primary'>
-                              Manage
-                            </Button>
-                          </Space>
-                        )}
-                      />
-                    </Table>
-                  </Card>
-                </TabPane>
+        return () => unsub()
+    }, [companyCode])
 
-                <TabPane
-                  tab={
-                    <span>
-                      <AreaChartOutlined />
-                      Success Metrics
-                    </span>
-                  }
-                  key='kpis'
-                >
-                  <Row gutter={[16, 16]}>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Average Funding Secured'
-                          value={sampleAnalytics.avgFundingSecured}
-                          prefix={<DollarOutlined />}
-                          formatter={value => formatCurrency(Number(value))}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Active Mentors'
-                          value={sampleAnalytics.activeMentors}
-                          prefix={<TeamOutlined />}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Productivity Ratio'
-                          value={sampleAnalytics.roi}
-                          prefix={<FundOutlined />}
-                          precision={1}
-                          suffix='x'
-                          valueStyle={{ color: '#3f8600' }}
-                        />
-                      </Card>
-                    </Col>
-                  </Row>
 
-                  <Card
-                    title='Key Performance Indicators'
-                    style={{ marginTop: 16 }}
-                  >
-                    <Table
-                      dataSource={sampleKPIData}
-                      rowKey='metric'
-                      pagination={false}
-                    >
-                      <Table.Column
-                        title='Metric'
-                        dataIndex='metric'
-                        key='metric'
-                        render={text => <Text strong>{text}</Text>}
-                      />
-                      <Table.Column
-                        title='Target'
-                        key='target'
-                        render={record => (
-                          <span>
-                            {record.metric.includes('Funding')
-                              ? formatCurrency(record.target)
-                              : `${record.target.toLocaleString()} ${
-                                  record.unit
-                                }`}
-                          </span>
-                        )}
-                      />
-                      <Table.Column
-                        title='Actual'
-                        key='actual'
-                        render={record => (
-                          <span>
-                            {record.metric.includes('Funding')
-                              ? formatCurrency(record.actual)
-                              : `${record.actual.toLocaleString()} ${
-                                  record.unit
-                                }`}
-                          </span>
-                        )}
-                      />
-                      <Table.Column
-                        title='Progress'
-                        key='progress'
-                        render={record => {
-                          const progress = Math.round(
-                            (record.actual / record.target) * 100
-                          )
-                          let status:
-                            | 'success'
-                            | 'exception'
-                            | 'active'
-                            | 'normal' = 'normal'
 
-                          if (progress >= 100) {
-                            status = 'success'
-                          } else if (progress < 80) {
-                            status = 'exception'
-                          } else {
-                            status = 'active'
-                          }
 
-                          return (
-                            <Progress
-                              percent={progress}
-                              size='small'
-                              status={status}
-                            />
-                          )
-                        }}
-                      />
-                      <Table.Column
-                        title='Status'
-                        dataIndex='status'
-                        key='status'
-                        render={status => {
-                          let color = 'blue'
-                          if (status === 'Exceeding') color = 'green'
-                          if (status === 'At Risk') color = 'red'
+    // ----------- Users count -----------
+    useEffect(() => {
+        if (!companyCode) return
+        const unsubUsers = onSnapshot(
+            query(collection(db, 'users'), where('companyCode', '==', companyCode)),
+            snap => setUsersCount(snap.size)
+        )
+        return () => unsubUsers()
+    }, [companyCode])
 
-                          return <Tag color={color}>{status}</Tag>
-                        }}
-                      />
-                    </Table>
-                  </Card>
-                </TabPane>
+    // ----------- REQUIRED BY SCOPE (ONLY accepted apps, and in range) -----------
+    useEffect(() => {
+        if (!companyCode) return
 
-                <TabPane
-                  tab={
-                    <span>
-                      <ApartmentOutlined />
-                      Resource Utilization
-                    </span>
-                  }
-                  key='resources'
-                >
-                  <Row gutter={[16, 16]}>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Resource Utilization'
-                          value={sampleAnalytics.resourceUtilization}
-                          suffix='%'
-                          prefix={<PieChartOutlined />}
-                          valueStyle={{ color: '#3f8600' }}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Active Programs'
-                          value={
-                            programs.filter(p => p.status === 'Active').length
-                          }
-                          prefix={<ProjectOutlined />}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Capacity Usage'
-                          value={81}
-                          suffix='%'
-                          prefix={<PieChartOutlined />}
-                          valueStyle={{ color: '#3f8600' }}
-                        />
-                      </Card>
-                    </Col>
-                  </Row>
+        const unsub = onSnapshot(
+            query(
+                collection(db, 'applications'),
+                where('companyCode', '==', companyCode),
+                where('applicationStatus', '==', 'accepted')
+            ),
+            snap => {
+                const req: Record<string, number> = {}
 
-                  <Card title='Resource Allocation' style={{ marginTop: 16 }}>
-                    <Table
-                      dataSource={sampleResourcesData}
-                      rowKey='resource'
-                      pagination={false}
-                    >
-                      <Table.Column
-                        title='Resource'
-                        dataIndex='resource'
-                        key='resource'
-                      />
-                      <Table.Column
-                        title='Total Available'
-                        dataIndex='available'
-                        key='available'
-                      />
-                      <Table.Column
-                        title='Currently Utilized'
-                        dataIndex='utilized'
-                        key='utilized'
-                      />
-                      <Table.Column
-                        title='Utilization'
-                        key='utilization'
-                        render={record => (
-                          <Progress
-                            percent={record.utilization}
-                            size='small'
-                            status={
-                              record.utilization < 60
-                                ? 'exception'
-                                : record.utilization > 90
-                                ? 'success'
-                                : 'active'
-                            }
-                          />
-                        )}
-                      />
-                      <Table.Column
-                        title='Status'
-                        key='status'
-                        render={record => {
-                          let status = 'Optimal'
-                          let color = 'green'
+                snap.forEach(d => {
+                    const app: any = d.data()
+                    // const appDate = getDocDate(app, 'createdAtOrAccepted')
+                    // if (!inRange(appDate)) return
 
-                          if (record.utilization < 60) {
-                            status = 'Underutilized'
-                            color = 'orange'
-                          } else if (record.utilization > 90) {
-                            status = 'Near Capacity'
-                            color = 'gold'
-                          }
+                    const required: RequiredInterventionRef[] =
+                        app?.interventions?.required || app?.interventionsRequired || app?.requiredInterventions || []
 
-                          return <Tag color={color}>{status}</Tag>
-                        }}
-                      />
-                    </Table>
-                  </Card>
-                </TabPane>
+                    if (!Array.isArray(required)) return
 
-                <TabPane
-                  tab={
-                    <span>
-                      <DollarOutlined />
-                      Financial Tracking
-                    </span>
-                  }
-                  key='financial'
-                >
-                  <Row gutter={[16, 16]}>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Total Budget'
-                          value={sampleAnalytics.totalBudget}
-                          prefix={<DollarOutlined />}
-                          formatter={value => formatCurrency(Number(value))}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Budget Utilized'
-                          value={sampleAnalytics.budgetUtilized}
-                          prefix={<DollarOutlined />}
-                          formatter={value => formatCurrency(Number(value))}
-                        />
-                        <div style={{ marginTop: 8 }}>
-                          <Progress
-                            percent={Math.round(
-                              (sampleAnalytics.budgetUtilized /
-                                sampleAnalytics.totalBudget) *
-                                100
-                            )}
-                            size='small'
-                          />
-                        </div>
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Remaining Budget'
-                          value={
-                            sampleAnalytics.totalBudget -
-                            sampleAnalytics.budgetUtilized
-                          }
-                          prefix={<DollarOutlined />}
-                          formatter={value => formatCurrency(Number(value))}
-                          valueStyle={{ color: '#3f8600' }}
-                        />
-                      </Card>
-                    </Col>
-                  </Row>
+                    required.forEach(r => {
+                        const iid = String(r?.interventionId || r?.id || '').trim()
+                        const scope = scopeOf(iid, { areaOfSupport: r?.areaOfSupport, department: r?.department })
+                        req[scope] = (req[scope] || 0) + 1
+                    })
+                })
 
-                  <Card
-                    title='Budget Allocation by Category'
-                    style={{ marginTop: 16 }}
-                  >
-                    <Table
-                      dataSource={sampleFinancialData}
-                      rowKey='category'
-                      pagination={false}
-                      summary={pageData => {
-                        let totalAllocated = 0
-                        let totalSpent = 0
-                        let totalRemaining = 0
+                setRequiredByScope(req)
+            },
+            err => message.error(err?.message || 'Failed to load required interventions')
+        )
 
-                        pageData.forEach(({ allocated, spent, remaining }) => {
-                          totalAllocated += allocated
-                          totalSpent += spent
-                          totalRemaining += remaining
-                        })
+        return () => unsub()
+    }, [companyCode, interventionMetaById, modeHasDepartments, range])
 
-                        return (
-                          <Table.Summary.Row style={{ fontWeight: 'bold' }}>
-                            <Table.Summary.Cell index={0}>
-                              Total
-                            </Table.Summary.Cell>
-                            <Table.Summary.Cell index={1}>
-                              {formatCurrency(totalAllocated)}
-                            </Table.Summary.Cell>
-                            <Table.Summary.Cell index={2}>
-                              {formatCurrency(totalSpent)}
-                            </Table.Summary.Cell>
-                            <Table.Summary.Cell index={3}>
-                              {formatCurrency(totalRemaining)}
-                            </Table.Summary.Cell>
-                            <Table.Summary.Cell index={4}>
-                              <Progress
-                                percent={Math.round(
-                                  (totalSpent / totalAllocated) * 100
-                                )}
-                                size='small'
-                              />
-                            </Table.Summary.Cell>
-                          </Table.Summary.Row>
-                        )
-                      }}
-                    >
-                      <Table.Column
-                        title='Category'
-                        dataIndex='category'
-                        key='category'
-                      />
-                      <Table.Column
-                        title='Allocated'
-                        dataIndex='allocated'
-                        key='allocated'
-                        render={value => formatCurrency(value)}
-                      />
-                      <Table.Column
-                        title='Spent'
-                        dataIndex='spent'
-                        key='spent'
-                        render={value => formatCurrency(value)}
-                      />
-                      <Table.Column
-                        title='Remaining'
-                        dataIndex='remaining'
-                        key='remaining'
-                        render={value => formatCurrency(value)}
-                      />
-                      <Table.Column
-                        title='Utilization'
-                        key='utilization'
-                        render={record => (
-                          <Progress
-                            percent={Math.round(
-                              (record.spent / record.allocated) * 100
-                            )}
-                            size='small'
-                            status={
-                              record.spent / record.allocated > 0.9
-                                ? 'exception'
-                                : 'normal'
-                            }
-                          />
-                        )}
-                      />
-                    </Table>
-                  </Card>
-                </TabPane>
-              </Tabs>
-            </Card>
-          </Col>
-        </Row>
-      </div>
-    )
-  }
+    // ----------- COMPLETED + BOTTLENECKS + RISKS (accepted SMEs only) -----------
+    useEffect(() => {
+        if (!companyCode) return
 
-  // Main Dashboard Overview
-  const renderDashboardOverview = () => {
-    return (
-      <>
-        {' '}
-        <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-          <Col xs={24} sm={12} md={8} lg={6}>
-            <Card>
-              <Statistic
-                title='Total Incubatees'
-                value={incubatees.length}
-                prefix={<TeamOutlined />}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={8} lg={6}>
-            <Card>
-              <Statistic
-                title='Active Programs'
-                value={programs.filter(p => p.status === 'Active').length}
-                prefix={<BarChartOutlined />}
-                valueStyle={{ color: '#3f8600' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={8} lg={6}>
-            <Card>
-              <Statistic
-                title='Compliance Rate'
-                value={overallCompliance()}
-                suffix='%'
-                prefix={<CheckCircleOutlined />}
-                valueStyle={{
-                  color: overallCompliance() > 80 ? '#3f8600' : '#cf1322'
-                }}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={8} lg={6}>
-            <Card>
-              <Statistic
-                title='Average Progress'
-                value={sampleAnalytics.averageProgress}
-                suffix='%'
-                prefix={<RiseOutlined />}
-              />
-            </Card>
-          </Col>
-        </Row>
-        <Spin spinning={loading}>
-          <Row gutter={[16, 16]}>
-            <Col xs={24} md={12}>
-              <Card title='🔴 Overdue Interventions'>
-                <List
-                  dataSource={overdueInterventions}
-                  renderItem={item => (
-                    <List.Item>
-                      <List.Item.Meta
-                        title={item.interventionTitle}
-                        description={`Due: ${dayjs(
-                          item.dueDate.toDate()
-                        ).format('YYYY-MM-DD')}`}
-                      />
-                      <Tag color='red'>Overdue</Tag>
-                      <Tag>{item.beneficiaryName}</Tag>
-                    </List.Item>
-                  )}
-                />
-              </Card>
-            </Col>
+        const qAssigned = query(collection(db, 'assignedInterventions'), where('companyCode', '==', companyCode))
 
-            <Col xs={24} md={12}>
-              <Card
-                title='📩 Applications Needing Review'
-                extra={
-                  <Button
-                    size='small'
-                    type='primary'
-                    icon={<BellOutlined />}
-                    onClick={remindReviewApplications}
-                  >
-                    Remind Ops
-                  </Button>
+        const unsub = onSnapshot(
+            qAssigned,
+            snap => {
+                const completed: Record<string, number> = {}
+                const counts: Record<BottleneckKey, number> = {
+                    pending_consultant: 0,
+                    pending_sme_acceptance: 0,
+                    pending: 0,
+                    awaiting_sme_completion: 0
                 }
-              >
-                <List
-                  dataSource={pendingApplications}
-                  renderItem={item => (
-                    <List.Item>
-                      <List.Item.Meta
-                        title={
-                          item.beneficiaryName ||
-                          item.participantName ||
-                          'Unnamed'
-                        }
-                        description={item.email}
-                      />
-                      <Tag color='gold'>Pending</Tag>
-                    </List.Item>
-                  )}
-                />
-              </Card>
-            </Col>
-          </Row>
-        </Spin>
-      </>
-    )
-  }
 
-  // Portfolio Management Content
-  const renderPortfolioManagement = () => {
+                // Risk derivations
+                const now = dayjs()
+                const overdue: any[] = []
+                const upcoming: any[] = []
+                const unresponsive: any[] = []
+
+                let overdueCount = 0
+                let upcoming7 = 0
+                let upcoming14 = 0
+                let unresponsiveCount = 0
+
+                snap.forEach(d => {
+                    const ai = { id: d.id, ...(d.data() as any) } as AnyAssignedIntervention
+
+                    // Filter to accepted SMEs (strict)
+                    const pid = ai.participantId ? String(ai.participantId) : ''
+                    const em = ai.email ? String(ai.email).toLowerCase() : ''
+                    const isAcceptedSme = (pid && acceptedParticipantIds.has(pid)) || (em && acceptedEmails.has(em))
+                    if (!isAcceptedSme) return
+
+                    // Date-range filter: use createdAt (best), otherwise dueDate
+                    const aiDate = tsToDayjs(ai.createdAt) || tsToDayjs(ai.dueDate) || null
+                    if (!inRange(aiDate)) return
+
+                    const iid = String(ai.interventionId || '').trim()
+                    const scope = scopeOf(iid, { areaOfSupport: ai.areaOfSupport, department: ai.department })
+                    const meta = iid ? interventionMetaById[iid] : undefined
+
+                    const consultantAccepted = norm(ai.consultantStatus) === 'accepted'
+                    const smeAccepted = norm(ai.userStatus) === 'accepted'
+                    const consultantCompleted = norm(ai.consultantCompletionStatus) === 'completed'
+                    const smeCompleted = norm(ai.userCompletionStatus) === 'completed'
+                    const isCompleted = consultantCompleted && smeCompleted
+
+                    if (isCompleted) {
+                        completed[scope] = (completed[scope] || 0) + 1
+                    } else {
+                        const b = classifyBottleneck(ai)
+                        counts[b] = (counts[b] || 0) + 1
+                    }
+
+                    // Risk signals
+                    const due = tsToDayjs(ai.dueDate)
+                    const created = tsToDayjs(ai.createdAt)
+
+                    // Overdue
+                    if (due && (due.isBefore(now, 'day') || due.isSame(now, 'day')) && !isCompleted) {
+                        overdueCount++
+                        overdue.push({
+                            id: ai.id,
+                            sme: getSmeLabel(ai),
+                            scope,
+                            area: String(meta?.areaOfSupport || ai.areaOfSupport || '—'),
+                            dept: String(meta?.department || ai.department || '—'),
+                            dueDate: due.format('YYYY-MM-DD'),
+                            reason: prettyBottleneck(classifyBottleneck(ai))
+                        })
+                    }
+
+                    // Upcoming deadlines (7 / 14 days)
+                    if (due && !isCompleted) {
+                        const diffDays = due.startOf('day').diff(now.startOf('day'), 'day')
+                        if (diffDays >= 0 && diffDays <= 7) upcoming7++
+                        if (diffDays >= 0 && diffDays <= 14) upcoming14++
+                        if (diffDays >= 0 && diffDays <= 14) {
+                            upcoming.push({
+                                id: ai.id,
+                                sme: getSmeLabel(ai),
+                                scope,
+                                dueDate: due.format('YYYY-MM-DD'),
+                                reason: prettyBottleneck(classifyBottleneck(ai))
+                            })
+                        }
+                    }
+
+                    // Unresponsive SMEs = consultant accepted but SME not accepted after 7 days
+                    if (consultantAccepted && !smeAccepted) {
+                        const ageDays = created ? now.diff(created, 'day') : 0
+                        if (ageDays >= 7) {
+                            unresponsiveCount++
+                            unresponsive.push({
+                                id: ai.id,
+                                sme: getSmeLabel(ai),
+                                scope,
+                                ageDays,
+                                dueDate: due ? due.format('YYYY-MM-DD') : '—'
+                            })
+                        }
+                    }
+                })
+
+                overdue.sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))
+                upcoming.sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))
+                unresponsive.sort((a, b) => (b.ageDays || 0) - (a.ageDays || 0))
+
+                setCompletedByScope(completed)
+                setBottlenecks(counts)
+                setRiskCounts({
+                    overdue: overdueCount,
+                    upcoming7,
+                    upcoming14,
+                    unresponsiveSMEs: unresponsiveCount
+                })
+                setRiskLists({
+                    overdue: overdue.slice(0, 20),
+                    upcoming: upcoming.slice(0, 20),
+                    unresponsive: unresponsive.slice(0, 20)
+                })
+            },
+            err => message.error(err?.message || 'Failed to load assigned interventions')
+        )
+
+        return () => unsub()
+    }, [companyCode, acceptedParticipantIds, acceptedEmails, interventionMetaById, modeHasDepartments, range])
+
+    // ----------- Totals -----------
+    const totals = useMemo(() => {
+        const totalRequiredInRange = Object.values(requiredByScope).reduce((a, b) => a + (b || 0), 0)
+        const totalCompletedInRange = Object.values(completedByScope).reduce((a, b) => a + (b || 0), 0)
+        const completionRateInRange = percent(totalCompletedInRange, totalRequiredInRange)
+        return { totalRequiredInRange, totalCompletedInRange, completionRateInRange }
+    }, [requiredByScope, completedByScope])
+
+    // ----------- Donut (variable radius) with drilldown -----------
+    const areaDonut = useMemo(() => {
+        const rows = Object.keys({ ...requiredByScope, ...completedByScope }).map(name => {
+            const required = requiredByScope[name] || 0
+            const completed = completedByScope[name] || 0
+            const remaining = Math.max(required - completed, 0)
+            const rate = percent(completed, required) // 0..100
+            return { name, required, completed, remaining, rate }
+        })
+
+        // Sort by efficiency (since angle is efficiency)
+        rows.sort((a, b) => b.rate - a.rate)
+
+        const TOP = 10
+        const top = rows.slice(0, TOP)
+        const rest = rows.slice(TOP)
+
+        // Aggregate "Other" using WEIGHTED efficiency (by required), otherwise it lies.
+        const other = rest.reduce(
+            (acc, r) => {
+                acc.required += r.required
+                acc.completed += r.completed
+                acc.remaining += r.remaining
+                return acc
+            },
+            { required: 0, completed: 0, remaining: 0 }
+        )
+        const otherRate = percent(other.completed, other.required)
+
+        const data: any[] = []
+        const drill: any[] = []
+
+        const pushPoint = (name: string, required: number, completed: number, remaining: number, rate: number) => {
+            data.push({
+                name,
+                // ✅ slice angle = efficiency
+                y: rate,
+                // ✅ radius = workload size (pick required; or use completed if you prefer)
+                z: Math.max(required, 1),
+                drilldown: name,
+                custom: { required, completed, remaining, rate }
+            })
+
+            drill.push({
+                id: name,
+                name,
+                type: 'pie',
+                data: [
+                    ['Completed', completed],
+                    ['Remaining', remaining]
+                ]
+            })
+        }
+
+        top.forEach(r => pushPoint(r.name, r.required, r.completed, r.remaining, r.rate))
+        if (other.required > 0) pushPoint('Other', other.required, other.completed, other.remaining, otherRate)
+
+        const title = modeHasDepartments ? 'Department Efficiency' : 'Area Efficiency'
+
+        return {
+            chart: { type: 'variablepie', height: 380 },
+            title: { text: title },
+            subtitle: { text: 'Angle = efficiency (%). Radius = workload size. Click to drill down.' },
+
+            tooltip: {
+                formatter: function () {
+                    const p: any = this.point
+                    const c = p?.custom || {}
+                    return `
+                <b>${p.name}</b><br/>
+                Efficiency: <b>${c.rate ?? p.y}%</b><br/>
+                Required: <b>${c.required ?? 0}</b><br/>
+                Completed: <b>${c.completed ?? 0}</b><br/>
+                Remaining: <b>${c.remaining ?? 0}</b>
+              `
+                }
+            },
+
+            plotOptions: {
+                variablepie: {
+                    innerSize: '55%',
+                    dataLabels: {
+                        enabled: true,
+                        formatter: function () {
+                            const p: any = this.point
+                            const rate = p?.custom?.rate ?? p.y ?? 0
+                            return `${p.name}: ${rate}%`
+                        }
+                    }
+                }
+            },
+
+            series: [{ name: 'Efficiency', data }],
+            drilldown: { series: drill }
+        } as Highcharts.Options
+    }, [requiredByScope, completedByScope, modeHasDepartments])
+
+
+    // ----------- Bottlenecks polar chart -----------
+    const bottleneckChart = useMemo(() => {
+        const order: BottleneckKey[] = ['pending_consultant', 'pending_sme_acceptance', 'pending', 'awaiting_sme_completion']
+        const categories = order.map(prettyBottleneck)
+        const data = order.map(k => Number(bottlenecks[k] || 0))
+        const maxVal = Math.max(...data, 0)
+        const yMax = maxVal === 0 ? 1 : maxVal < 5 ? 5 : Math.ceil(maxVal * 1.2)
+
+        return {
+            chart: { polar: true, type: 'column', height: 360, spacing: [10, 10, 10, 10] },
+            title: { text: 'Intervention Bottlenecks' },
+            pane: { size: '80%' },
+            xAxis: {
+                categories,
+                tickmarkPlacement: 'on',
+                lineWidth: 0,
+                labels: { distance: 18, style: { fontSize: '12px' } }
+            },
+            yAxis: {
+                min: 0,
+                max: yMax,
+                tickAmount: 4,
+                gridLineInterpolation: 'polygon',
+                lineWidth: 0,
+                labels: { enabled: false },
+                title: { text: null }
+            },
+            tooltip: { pointFormat: '<b>{point.y}</b> interventions' },
+            plotOptions: {
+                column: {
+                    borderWidth: 0,
+                    pointPlacement: 'on',
+                    groupPadding: 0.08,
+                    pointPadding: 0.02,
+                    borderRadius: 6,
+                    minPointLength: 6
+                },
+                series: {
+                    dataLabels: {
+                        enabled: true,
+                        distance: 8,
+                        formatter() {
+                            return (this.y ?? 0) > 0 ? String(this.y) : ''
+                        }
+                    }
+                }
+            },
+            series: [{ name: 'Bottlenecks', data: data as any }]
+        } as Highcharts.Options
+    }, [bottlenecks])
+
+    const openRiskModal = (title: string, items: any[]) => setRiskModal({ open: true, title, items })
+
     return (
-      <div>
-        <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-          <Col xs={24}>
-            <Card>
-              <Tabs
-                defaultActiveKey='companies'
-                onChange={key => console.log(key)}
-              >
-                <TabPane
-                  tab={
-                    <span>
-                      <TeamOutlined />
-                      Portfolio Companies
-                    </span>
-                  }
-                  key='companies'
-                >
-                  <Row gutter={[16, 16]}>
-                    <Col xs={24} md={6}>
-                      <Card>
-                        <Statistic
-                          title='Total Portfolio Companies'
-                          value={samplePortfolioData.length}
-                          prefix={<TeamOutlined />}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Card>
-                        <Statistic
-                          title='Total Portfolio Value'
-                          value={samplePortfolioData.reduce(
-                            (sum, company) => sum + company.valuation,
-                            0
-                          )}
-                          prefix={<DollarOutlined />}
-                          formatter={value => formatCurrency(Number(value))}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Card>
-                        <Statistic
-                          title='Avg. Growth Rate'
-                          value={Math.round(
-                            samplePortfolioData.reduce(
-                              (sum, company) =>
-                                sum + company.metrics.growthRate,
-                              0
-                            ) / samplePortfolioData.length
-                          )}
-                          suffix='%'
-                          prefix={<RiseOutlined />}
-                          valueStyle={{ color: '#3f8600' }}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Card>
-                        <Statistic
-                          title='High Risk Companies'
-                          value={
-                            samplePortfolioData.filter(
-                              company => company.risk === 'High'
-                            ).length
-                          }
-                          prefix={<WarningOutlined />}
-                          valueStyle={{ color: '#cf1322' }}
-                        />
-                      </Card>
-                    </Col>
-                  </Row>
+        <div style={{ minHeight: '100vh', padding: '24px' }}>
+            <Helmet>
+                <title>Director Dashboard | Smart Incubation</title>
+            </Helmet>
 
-                  <Card title='Portfolio Companies' style={{ marginTop: 16 }}>
-                    <Table
-                      dataSource={samplePortfolioData}
-                      rowKey='id'
-                      pagination={{ pageSize: 10 }}
-                    >
-                      <Table.Column
-                        title='Company'
-                        key='name'
-                        render={record => (
-                          <Space>
-                            <Avatar style={{ backgroundColor: '#1890ff' }}>
-                              {record.name.charAt(0)}
-                            </Avatar>
-                            <span>{record.name}</span>
-                          </Space>
-                        )}
-                        sorter={(a, b) => a.name.localeCompare(b.name)}
-                      />
-                      <Table.Column
-                        title='Sector'
-                        dataIndex='sector'
-                        key='sector'
-                        filters={[
-                          { text: 'FinTech', value: 'FinTech' },
-                          { text: 'HealthTech', value: 'HealthTech' },
-                          { text: 'CleanEnergy', value: 'CleanEnergy' },
-                          { text: 'EdTech', value: 'EdTech' },
-                          { text: 'Agriculture', value: 'Agriculture' }
-                        ]}
-                        onFilter={(value, record) => record.sector === value}
-                        render={sector => <Tag color='blue'>{sector}</Tag>}
-                      />
-                      <Table.Column
-                        title='Stage'
-                        dataIndex='stage'
-                        key='stage'
-                        filters={[
-                          { text: 'Seed', value: 'Seed' },
-                          { text: 'Early Growth', value: 'Early Growth' },
-                          { text: 'Growth', value: 'Growth' }
-                        ]}
-                        onFilter={(value, record) => record.stage === value}
-                      />
-                      <Table.Column
-                        title='Valuation'
-                        dataIndex='valuation'
-                        key='valuation'
-                        render={valuation => formatCurrency(valuation)}
-                        sorter={(a, b) => a.valuation - b.valuation}
-                      />
-                      {/* <Table.Column
-                        title='Required Funding'
-                        dataIndex='investment'
-                        key='investment'
-                        render={investment => formatCurrency(investment)}
-                        sorter={(a, b) => a.investment - b.investment}
-                      /> */}
-                      <Table.Column
-                        title='Progress'
-                        dataIndex='progress'
-                        key='progress'
-                        render={progress => (
-                          <Progress
-                            percent={progress}
-                            size='small'
-                            status={
-                              progress < 50
-                                ? 'exception'
-                                : progress < 80
-                                ? 'active'
-                                : 'success'
-                            }
-                          />
-                        )}
-                        sorter={(a, b) => a.progress - b.progress}
-                      />
-                      <Table.Column
-                        title='Risk'
-                        dataIndex='risk'
-                        key='risk'
-                        render={risk => {
-                          let color = 'green'
-                          if (risk === 'Medium') color = 'orange'
-                          if (risk === 'High') color = 'red'
+            <div style={{ padding: isMobile ? 12 : 18 }}>
+                <DashboardHeaderCard
+                    title='Director Dashboard'
+                    subtitle='Required vs completed, bottlenecks, and risk signals — without digging.'
+                    extraRight={
+                        <Space style={{ width: '100%', justifyContent: 'center' }} wrap size='middle'>
+                            <RangePicker
+                                value={range}
+                                onChange={v => {
+                                    if (!v?.[0] || !v?.[1]) return
+                                    setRange([v[0], v[1]])
+                                }}
+                                allowClear={false}
+                            />
 
-                          return <Tag color={color}>{risk}</Tag>
-                        }}
-                        filters={[
-                          { text: 'Low', value: 'Low' },
-                          { text: 'Medium', value: 'Medium' },
-                          { text: 'High', value: 'High' }
-                        ]}
-                        onFilter={(value, record) => record.risk === value}
-                      />
-                      <Table.Column
-                        title='Actions'
-                        key='actions'
-                        render={() => (
-                          <Space>
-                            <Button size='small'>Details</Button>
-                            <Button size='small' type='primary'>
-                              Metrics
+                            <Button icon={<ReloadOutlined />} onClick={resetToDefault} disabled={!defaultRange}>
+                                Reset
                             </Button>
-                          </Space>
-                        )}
-                      />
-                    </Table>
-                  </Card>
-                </TabPane>
+                        </Space>
+                    }
+                />
 
-                <TabPane
-                  tab={
-                    <span>
-                      <PieChartOutlined />
-                      Sector Analysis
-                    </span>
-                  }
-                  key='sectors'
+                {/* Metrics */}
+                <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
+                    <Col xs={24} md={6}>
+                        <MotionCard style={{ borderRadius: 16 }} bodyStyle={{ padding: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                                <div
+                                    style={{
+                                        width: 34,
+                                        height: 34,
+                                        borderRadius: 10,
+                                        display: 'grid',
+                                        placeItems: 'center',
+                                        background: 'rgba(24,144,255,0.12)'
+                                    }}
+                                >
+                                    <TeamOutlined style={{ fontSize: 16, color: '#1677ff' }} />
+                                </div>
+                                <Text strong style={{ color: 'rgba(0,0,0,.75)' }}>
+                                    Users
+                                </Text>
+                            </div>
+                            <Statistic title='Total Users' value={usersCount} />
+                        </MotionCard>
+                    </Col>
+
+                    <Col xs={24} md={6}>
+                        <MotionCard style={{ borderRadius: 16 }} bodyStyle={{ padding: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                                <div
+                                    style={{
+                                        width: 34,
+                                        height: 34,
+                                        borderRadius: 10,
+                                        display: 'grid',
+                                        placeItems: 'center',
+                                        background: 'rgba(34,197,94,0.12)'
+                                    }}
+                                >
+                                    <ShopOutlined style={{ fontSize: 16, color: '#16a34a' }} />
+                                </div>
+                                <Text strong style={{ color: 'rgba(0,0,0,.75)' }}>
+                                    SMEs
+                                </Text>
+                            </div>
+                            <Statistic title='Accepted SMEs' value={smesCount} />
+                        </MotionCard>
+                    </Col>
+
+                    <Col xs={24} md={6}>
+                        <MotionCard style={{ borderRadius: 16 }} bodyStyle={{ padding: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                                <div
+                                    style={{
+                                        width: 34,
+                                        height: 34,
+                                        borderRadius: 10,
+                                        display: 'grid',
+                                        placeItems: 'center',
+                                        background: 'rgba(168,85,247,0.12)'
+                                    }}
+                                >
+                                    <SolutionOutlined style={{ fontSize: 16, color: '#a855f7' }} />
+                                </div>
+                                <Text strong style={{ color: 'rgba(0,0,0,.75)' }}>
+                                    Required
+                                </Text>
+                            </div>
+                            <Statistic title='Total Required (All Accepted)' value={totalRequiredFromAcceptedApps} />
+                        </MotionCard>
+                    </Col>
+
+                    <Col xs={24} md={6}>
+                        <MotionCard style={{ borderRadius: 16 }} bodyStyle={{ padding: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                                <div
+                                    style={{
+                                        width: 34,
+                                        height: 34,
+                                        borderRadius: 10,
+                                        display: 'grid',
+                                        placeItems: 'center',
+                                        background: 'rgba(245,158,11,0.14)'
+                                    }}
+                                >
+                                    <CheckCircleOutlined style={{ fontSize: 16, color: '#d97706' }} />
+                                </div>
+                                <Text strong style={{ color: 'rgba(0,0,0,.75)' }}>
+                                    Completion
+                                </Text>
+                            </div>
+
+                            <Statistic title='Completion Rate (In Range)' value={totals.completionRateInRange} suffix='%' />
+                        </MotionCard>
+                    </Col>
+                </Row>
+
+                {/* Risk Assessment (replaces overdue table) */}
+                <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
+                    <Col xs={24} lg={10}>
+                        <Card style={{ borderRadius: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                                <div>
+                                    <Text strong style={{ fontSize: 16 }}>Risk Assessment</Text>
+                                    <div style={{ marginTop: 4 }}>
+                                        <Text type='secondary'>Fast signals: overdue, unresponsive SMEs, upcoming deadlines.</Text>
+                                    </div>
+                                </div>
+                                <Button
+                                    type='default'
+                                    icon={<ArrowRightOutlined />}
+                                    onClick={() => navigate('/director')}
+                                >
+                                    View
+                                </Button>
+                            </div>
+
+                            <Row gutter={[10, 10]} style={{ marginTop: 14 }}>
+                                <Col span={12}>
+                                    <div style={{ padding: 12, borderRadius: 12, background: 'rgba(255,77,79,0.08)', border: '1px solid rgba(255,77,79,0.18)' }}>
+                                        <Space align="start">
+                                            <WarningOutlined style={{ color: '#ff4d4f', marginTop: 2 }} />
+                                            <div>
+                                                <Text strong>Overdue</Text>
+                                                <div style={{ fontSize: 22, fontWeight: 700 }}>{riskCounts.overdue}</div>
+                                                <Button
+                                                    size='small'
+                                                    type='link'
+                                                    style={{ padding: 0 }}
+                                                    onClick={() => openRiskModal('Overdue Interventions', riskLists.overdue)}
+                                                >
+                                                    View list
+                                                </Button>
+                                            </div>
+                                        </Space>
+                                    </div>
+                                </Col>
+
+                                <Col span={12}>
+                                    <div style={{ padding: 12, borderRadius: 12, background: 'rgba(250,173,20,0.10)', border: '1px solid rgba(250,173,20,0.22)' }}>
+                                        <Space align="start">
+                                            <ExclamationCircleOutlined style={{ color: '#faad14', marginTop: 2 }} />
+                                            <div>
+                                                <Text strong>Unresponsive SMEs</Text>
+                                                <div style={{ fontSize: 22, fontWeight: 700 }}>{riskCounts.unresponsiveSMEs}</div>
+                                                <Button
+                                                    size='small'
+                                                    type='link'
+                                                    style={{ padding: 0 }}
+                                                    onClick={() => openRiskModal('Unresponsive SMEs (≥7 days pending acceptance)', riskLists.unresponsive)}
+                                                >
+                                                    View list
+                                                </Button>
+                                            </div>
+                                        </Space>
+                                    </div>
+                                </Col>
+
+                                <Col span={12}>
+                                    <div style={{ padding: 12, borderRadius: 12, background: 'rgba(24,144,255,0.08)', border: '1px solid rgba(24,144,255,0.18)' }}>
+                                        <Space align="start">
+                                            <ClockCircleOutlined style={{ color: '#1677ff', marginTop: 2 }} />
+                                            <div>
+                                                <Text strong>Due in 7 days</Text>
+                                                <div style={{ fontSize: 22, fontWeight: 700 }}>{riskCounts.upcoming7}</div>
+                                                <Button
+                                                    size='small'
+                                                    type='link'
+                                                    style={{ padding: 0 }}
+                                                    onClick={() => openRiskModal('Upcoming Deadlines (≤14 days)', riskLists.upcoming)}
+                                                >
+                                                    View list
+                                                </Button>
+                                            </div>
+                                        </Space>
+                                    </div>
+                                </Col>
+
+                                <Col span={12}>
+                                    <div style={{ padding: 12, borderRadius: 12, background: 'rgba(82,196,26,0.10)', border: '1px solid rgba(82,196,26,0.18)' }}>
+                                        <Space align="start">
+                                            <ClockCircleOutlined style={{ color: '#52c41a', marginTop: 2 }} />
+                                            <div>
+                                                <Text strong>Due in 14 days</Text>
+                                                <div style={{ fontSize: 22, fontWeight: 700 }}>{riskCounts.upcoming14}</div>
+                                                <div style={{ marginTop: 2 }}>
+                                                    <Text type='secondary' style={{ fontSize: 12 }}>Includes 7-day count</Text>
+                                                </div>
+                                            </div>
+                                        </Space>
+                                    </div>
+                                </Col>
+                            </Row>
+                        </Card>
+                    </Col>
+
+                    <Col xs={24} lg={14}>
+                        <Card style={{ borderRadius: 16 }}>
+                            {Object.keys(requiredByScope).length || Object.keys(completedByScope).length ? (
+                                <HighchartsReact highcharts={Highcharts} options={areaDonut} />
+                            ) : (
+                                <Empty description='No required/completed data found in this date range' />
+                            )}
+                        </Card>
+                    </Col>
+                </Row>
+
+                {/* Bottlenecks */}
+                <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
+                    <Col xs={24}>
+                        <Card style={{ borderRadius: 16 }}>
+                            <HighchartsReact highcharts={Highcharts} options={bottleneckChart} />
+                        </Card>
+                    </Col>
+                </Row>
+
+                <Modal
+                    open={riskModal.open}
+                    title={riskModal.title}
+                    onCancel={() => setRiskModal(s => ({ ...s, open: false }))}
+                    footer={[
+                        <Button danger shape='round' key="close" onClick={() => setRiskModal(s => ({ ...s, open: false }))}>
+                            Close
+                        </Button>
+                    ]}
                 >
-                  <Row gutter={[16, 16]}>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Total Sectors'
-                          value={sampleSectorData.length}
-                          prefix={<ApartmentOutlined />}
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Best Performing Sector'
-                          value='EdTech'
-                          prefix={<RiseOutlined />}
-                          valueStyle={{ color: '#3f8600' }}
-                        />
-                        <div style={{ fontSize: '12px', marginTop: '8px' }}>
-                          Performance Score: 81%
-                        </div>
-                      </Card>
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <Card>
-                        <Statistic
-                          title='Strategic Focus Recommendation'
-                          value='FinTech & EdTech'
-                          prefix={<FundOutlined />}
-                        />
-                      </Card>
-                    </Col>
-                  </Row>
-
-                  <Card title='Sector Performance' style={{ marginTop: 16 }}>
-                    <Table
-                      dataSource={sampleSectorData}
-                      rowKey='sector'
-                      pagination={false}
-                    >
-                      <Table.Column
-                        title='Sector'
-                        dataIndex='sector'
-                        key='sector'
-                        render={sector => <Tag color='blue'>{sector}</Tag>}
-                      />
-                      <Table.Column
-                        title='Companies'
-                        dataIndex='companies'
-                        key='companies'
-                        sorter={(a, b) => a.companies - b.companies}
-                      />
-                      <Table.Column
-                        title='Total Funding Received'
-                        dataIndex='totalInvestment'
-                        key='totalInvestment'
-                        render={value => formatCurrency(value)}
-                        sorter={(a, b) => a.totalInvestment - b.totalInvestment}
-                      />
-                      <Table.Column
-                        title='Average Valuation'
-                        dataIndex='averageValuation'
-                        key='averageValuation'
-                        render={value => formatCurrency(value)}
-                        sorter={(a, b) =>
-                          a.averageValuation - b.averageValuation
-                        }
-                      />
-                      <Table.Column
-                        title='Performance Score'
-                        dataIndex='performance'
-                        key='performance'
-                        render={performance => (
-                          <Progress
-                            percent={performance}
-                            size='small'
-                            status={
-                              performance < 50
-                                ? 'exception'
-                                : performance < 70
-                                ? 'active'
-                                : 'success'
-                            }
-                          />
+                    <List
+                        dataSource={riskModal.items}
+                        locale={{ emptyText: 'Nothing to show 🎉' }}
+                        renderItem={(item: any) => (
+                            <List.Item>
+                                <List.Item.Meta
+                                    title={<Text strong>{item.sme || item.name || '—'}</Text>}
+                                    description={
+                                        <Space wrap>
+                                            {item.scope && <Tag>{item.scope}</Tag>}
+                                            {item.dueDate && <Tag color="blue">Due: {item.dueDate}</Tag>}
+                                            {typeof item.ageDays === 'number' && <Tag color="orange">{item.ageDays} days</Tag>}
+                                            {item.reason && <Tag color="volcano">{item.reason}</Tag>}
+                                        </Space>
+                                    }
+                                />
+                            </List.Item>
                         )}
-                        sorter={(a, b) => a.performance - b.performance}
-                      />
-                      <Table.Column
-                        title='Status'
-                        key='status'
-                        render={record => {
-                          let status = 'Average'
-                          let color = 'blue'
-
-                          if (record.performance < 50) {
-                            status = 'Underperforming'
-                            color = 'red'
-                          } else if (record.performance >= 75) {
-                            status = 'High Performing'
-                            color = 'green'
-                          }
-
-                          return <Tag color={color}>{status}</Tag>
-                        }}
-                      />
-                    </Table>
-                  </Card>
-                </TabPane>
-              </Tabs>
-            </Card>
-          </Col>
-        </Row>
-      </div>
+                    />
+                </Modal>
+            </div>
+        </div>
     )
-  }
-
-  return (
-    <>
-      <Helmet>
-        <title>Director Dashboard | Incubation Platform</title>
-      </Helmet>
-      <div style={{ padding: '20px', minHeight: '100vh' }}>
-        <Tabs activeKey={activeTab} onChange={setActiveTab}>
-          <TabPane
-            tab={
-              <span>
-                <BarChartOutlined />
-                Overview
-              </span>
-            }
-            key='overview'
-          >
-            {renderDashboardOverview()}
-          </TabPane>
-
-          <TabPane
-            tab={
-              <span>
-                <FundOutlined />
-                Strategic Dashboard
-              </span>
-            }
-            key='strategic'
-          >
-            {renderStrategicDashboard()}
-          </TabPane>
-
-          <TabPane
-            tab={
-              <span>
-                <ProjectOutlined />
-                Portfolio Management
-              </span>
-            }
-            key='portfolio'
-          >
-            {renderPortfolioManagement()}
-          </TabPane>
-        </Tabs>
-      </div>
-      <Drawer
-        title='Director Notifications'
-        placement='right'
-        width={400}
-        onClose={() => setNotificationDrawerVisible(false)}
-        open={notificationDrawerVisible}
-      >
-        <List
-          itemLayout='horizontal'
-          dataSource={notifications}
-          renderItem={item => (
-            <List.Item>
-              <List.Item.Meta
-                title={item.message?.director || 'Untitled'}
-                description={new Date(
-                  item.createdAt?.seconds * 1000
-                ).toLocaleString()}
-              />
-            </List.Item>
-          )}
-        />
-      </Drawer>
-
-      <Drawer
-        title='Details'
-        placement='bottom'
-        height={320}
-        onClose={() => setDrawerVisible(false)}
-        open={drawerVisible}
-      >
-        {drawerContent}
-      </Drawer>
-    </>
-  )
 }
+
+export default DirectorDashboard
