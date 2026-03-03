@@ -207,47 +207,6 @@ export const CustomLayout: React.FC = () => {
         return String(chosen || 'Consultant')
     }, [getSetting, settingsOverride.consultantLabel])
 
-    // Debug logging (you asked for logs)
-    useEffect(() => {
-        const rawConsultantLabel = getSetting<string>('consultantLabel', undefined)
-        const rawAssignmentModel = getSetting<AssignmentModel>('assignmentModel', undefined)
-        const rawSmeDivisionModel = getSetting<SmeDivisionModel>('smeDivisionModel', undefined)
-
-        // eslint-disable-next-line no-console
-        console.group('⚙️ System Settings Debug')
-        // eslint-disable-next-line no-console
-        console.log('consultantLabel (raw):', rawConsultantLabel)
-        // eslint-disable-next-line no-console
-        console.log('consultantLabel (override):', settingsOverride.consultantLabel)
-        // eslint-disable-next-line no-console
-        console.log('consultantLabel (final):', consultantLabelSingular)
-        // eslint-disable-next-line no-console
-        console.log('assignmentModel (raw):', rawAssignmentModel)
-        // eslint-disable-next-line no-console
-        console.log('assignmentModel (override):', settingsOverride.assignmentModel)
-        // eslint-disable-next-line no-console
-        console.log('assignmentModel (final):', assignmentModel)
-        // eslint-disable-next-line no-console
-        console.log('smeDivisionModel (raw):', rawSmeDivisionModel)
-        // eslint-disable-next-line no-console
-        console.log('smeDivisionModel (override):', settingsOverride.smeDivisionModel)
-        // eslint-disable-next-line no-console
-        console.log('smeDivisionModel (final):', smeDivisionModel)
-        // eslint-disable-next-line no-console
-        console.log('companyCode:', user?.companyCode)
-        // eslint-disable-next-line no-console
-        console.groupEnd()
-    }, [
-        getSetting,
-        settingsOverride.consultantLabel,
-        settingsOverride.assignmentModel,
-        settingsOverride.smeDivisionModel,
-        consultantLabelSingular,
-        assignmentModel,
-        smeDivisionModel,
-        user?.companyCode
-    ])
-
     const consultantLabelPlural = useMemo(
         () => pluralize(consultantLabelSingular),
         [consultantLabelSingular]
@@ -463,13 +422,16 @@ export const CustomLayout: React.FC = () => {
                 },
                 { key: 'impact', to: '/projectadmin/impact', label: 'Impact Analytics', icon: <FundProjectionScreenOutlined /> },
                 {
-                    key: 'consultants',
-                    label: 'Consultants',
+                    key: 'taks',
+                    label: 'Tasks',
                     icon: <SolutionOutlined />,
-                    children: [
-                        { key: 'consultants-db', to: '/operations/consultants', label: 'Manage', icon: <DatabaseOutlined /> },
-                        { key: 'consultants-tasks', to: '/operations/tasks', label: 'Tasks', icon: <OneToOneOutlined /> }
-                    ]
+                    to: '/operations/tasks'
+                },
+                {
+                    key: 'users',
+                    label: 'System Users',
+                    icon: <SolutionOutlined />,
+                    to: '/operations/users',
                 },
                 {
                     key: 'interventions',
