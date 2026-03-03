@@ -1,819 +1,920 @@
-import React, { useState, useEffect } from 'react'
+// src/pages/project-admin/ProjectAdminReports.tsx
+import React, { useEffect, useMemo, useState } from 'react'
 import {
-  Card,
-  Typography,
-  Table,
-  Space,
-  Button,
-  Tabs,
-  Statistic,
-  Row,
-  Col,
-  DatePicker,
-  Select,
-  Form,
-  Input,
-  Divider,
-  Drawer,
-  Modal,
-  Spin,
+    Card,
+    Typography,
+    Table,
+    Space,
+    Button,
+    Tabs,
+    Row,
+    Col,
+    DatePicker,
+    Form,
+    Divider,
+    Modal,
+    Spin,
+    Segmented,
+    message,
+    Alert,
+    Tag,
+    Empty
 } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 import {
-  BarChartOutlined,
-  FilterOutlined,
-  FileExcelOutlined,
-  FilePdfOutlined,
-  TeamOutlined,
-  ApartmentOutlined,
-  DollarOutlined,
-  AuditOutlined
+    BarChartOutlined,
+    FilterOutlined,
+    FileExcelOutlined,
+    FilePdfOutlined,
+    TeamOutlined,
+    ApartmentOutlined,
+    DollarOutlined,
+    AuditOutlined,
+    CheckCircleOutlined
 } from '@ant-design/icons'
-import dayjs from 'dayjs'
+import dayjs, { Dayjs } from 'dayjs'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import { Helmet } from 'react-helmet'
-import { auth, db } from '@/firebase'
-import { doc, getDoc } from 'firebase/firestore'
+import { collection, onSnapshot, query, where } from 'firebase/firestore'
+import { db } from '@/firebase'
+import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { MotionCard } from '@/components/shared/Header'
+import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 
-const { Title, Text, Paragraph } = Typography
+const { Title, Text } = Typography
 const { RangePicker } = DatePicker
-const { Option } = Select
 const { TabPane } = Tabs
 
-// Chart options factory functions
-const emptySeries = (type: 'bar' | 'column' | 'pie', length = 5) =>
-  type === 'pie'
-    ? []
-    : Array(length).fill(0)
+Highcharts.setOptions({ credits: { enabled: false } })
 
-const emptyPieData = () => []
+type AnyDoc = Record<string, any>
 
-const makeChartOption = (original: Highcharts.Options, empty: boolean) => {
-  const option = { ...original }
-  if (!option.series) return option
-  option.series = option.series.map(s => {
-    if ('type' in s && (s.type === 'bar' || s.type === 'column')) {
-      return {
-        ...s,
-        data: empty
-          ? emptySeries(s.type, Array.isArray(s.data) ? s.data.length : 5)
-          : s.data
-      }
-    }
-    if ('type' in s && s.type === 'pie') {
-      return {
-        ...s,
-        data: empty ? emptyPieData() : s.data
-      }
-    }
-    return s
-  })
-  return option
+type Participant = {
+    id: string
+    companyCode: string
+    beneficiaryName?: string
+    enterpriseName?: string
+    participantName?: string
+    province?: string
+    businessAddressProvince?: string
+    gender?: string
+    age?: number
+    ageGroup?: string
+    complianceScore?: number
+    createdAt?: any
+} & AnyDoc
+
+type Application = {
+    id: string
+    companyCode: string
+    status?: string
+    applicationStatus?: string
+    participantId?: string
+    acceptedAt?: any
+    submittedAt?: any
+    interventions?: { required?: Array<string | { title?: string; area?: string; id?: string }> }
+} & AnyDoc
+
+type AssignedIntervention = {
+    id: string
+    companyCode: string
+    participantId?: string
+    beneficiaryName?: string
+    interventionTitle?: string
+    areaOfSupport?: string
+    status?: string
+    assigneeName?: string
+    assigneeEmail?: string
+    programId?: string
+    activeProgramId?: string
+    createdAt?: any
+    confirmedAt?: any
+    dueDate?: any
+} & AnyDoc
+
+const norm = (v: any) => String(v ?? '').trim()
+const normLower = (v: any) => norm(v).toLowerCase()
+
+const toDate = (v: any): Date | null => {
+    if (!v) return null
+    if (typeof v?.toDate === 'function') return v.toDate()
+    if (typeof v === 'object' && typeof v?.seconds === 'number') return new Date(v.seconds * 1000)
+    const d = new Date(v)
+    return isNaN(+d) ? null : d
 }
 
-const reportTypes = [
-  { value: 'participant', label: 'Participant Reports' },
-  { value: 'resource', label: 'Resource Utilization' },
-  { value: 'compliance', label: 'Compliance Status' },
-  { value: 'mentorship', label: 'Mentorship Progress' },
-  { value: 'financials', label: 'Financial Reports' }
-];
+const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
-const timePeriods = [
-  { value: 'week', label: 'Weekly' },
-  { value: 'month', label: 'Monthly' },
-  { value: 'quarter', label: 'Quarterly' },
-  { value: 'year', label: 'Yearly' },
-  { value: 'custom', label: 'Custom Range' }
-];
+const isCompleted = (x: AssignedIntervention) => {
+    const s = normLower(x.status)
+    return ['completed', 'complete', 'done', 'finished', 'closed'].includes(s)
+}
 
-// Mock data for participant metrics
-const participantMetrics = [
-  { month: 'Jan', active: 35, new: 12, graduated: 5 },
-  { month: 'Feb', active: 40, new: 15, graduated: 3 },
-  { month: 'Mar', active: 48, new: 18, graduated: 2 },
-  { month: 'Apr', active: 58, new: 22, graduated: 4 },
-  { month: 'May', active: 70, new: 25, graduated: 6 },
-  { month: 'Jun', active: 85, new: 28, graduated: 7 }
-]
-
-const getTopParticipantsOptions = (empty: boolean) => ({
-  chart: { type: 'bar' },
-  title: { text: 'Top 5 Participants by Completed Interventions' },
-  xAxis: {
-    categories: [
-      'Thandi M.',
-      'Peter K.',
-      'Bongani T.',
-      'Zanele L.',
-      'David O.'
-    ],
-    title: { text: 'Participant' }
-  },
-  yAxis: {
-    min: 0,
-    title: { text: 'Completed Interventions' }
-  },
-  series: [
-    {
-      name: 'Interventions',
-      data: empty ? [] : [12, 9, 8, 7, 6],
-      type: 'bar'
-    }
-  ]
-})
-
-const getProvinceReachOptions = (empty: boolean) => ({
-  chart: { type: 'column' },
-  title: { text: 'Program Reach by Province' },
-  xAxis: {
-    categories: ['Gauteng', 'Limpopo', 'KZN', 'WC', 'EC'],
-    title: { text: 'Province' }
-  },
-  yAxis: {
-    title: { text: 'Participants Supported' }
-  },
-  plotOptions: {
-    series: {
-      dataLabels: {
-        enabled: true,
-        format: '{point.y}'
-      }
-    }
-  },
-  series: [
-    {
-      name: 'Participants',
-      data: empty ? [] : [32, 24, 18, 12, 7],
-      type: 'column'
-    }
-  ]
-})
-
-const getGenderDistOptions = (empty: boolean) => ({
-  chart: { type: 'pie' },
-  title: { text: 'Gender Distribution of Participants' },
-  plotOptions: {
-    series: {
-      dataLabels: {
-        enabled: true,
-        format: '{point.y}'
-      }
-    }
-  },
-  series: [
-    {
-      name: 'Participants',
-      colorByPoint: true,
-      type: 'pie',
-      data: empty
-        ? []
-        : [
-            { name: 'Female', y: 58 },
-            { name: 'Male', y: 42 }
-          ]
-    }
-  ]
-})
-
-const getAgeDistOptions = (empty: boolean) => ({
-  chart: { type: 'column' },
-  title: { text: 'Age Distribution of Participants' },
-  xAxis: {
-    categories: ['18-24', '25-34', '35-44', '45-54', '55+'],
-    title: { text: 'Age Group' }
-  },
-  yAxis: {
-    min: 0,
-    title: { text: 'Number of Participants' }
-  },
-  plotOptions: {
-    series: {
-      dataLabels: {
-        enabled: true,
-        format: '{point.y}'
-      }
-    }
-  },
-  series: [
-    {
-      name: 'Participants',
-      data: empty ? [] : [12, 35, 25, 10, 3],
-      type: 'column'
-    }
-  ]
-})
-
-const getGenderCompletionOptions = (empty: boolean) => ({
-  chart: { type: 'column' },
-  title: { text: 'Intervention Completion by Gender' },
-  xAxis: {
-    categories: ['Male', 'Female'],
-    title: { text: 'Gender' }
-  },
-  yAxis: {
-    min: 0,
-    title: { text: 'Completed Interventions' }
-  },
-  plotOptions: {
-    series: {
-      dataLabels: {
-        enabled: true,
-        format: '{point.y}'
-      }
-    }
-  },
-  series: [
-    {
-      name: 'Completed',
-      data: empty ? [] : [40, 60],
-      type: 'column'
-    },
-    {
-      name: 'Incomplete',
-      data: empty ? [] : [10, 5],
-      type: 'column'
-    }
-  ]
-})
-
-const getParticipantRatingOptions = (empty: boolean) => ({
-  chart: { type: 'bar' },
-  title: { text: 'Participant Ratings Distribution' },
-  xAxis: {
-    categories: ['1★', '2★', '3★', '4★', '5★'],
-    title: { text: 'Rating' }
-  },
-  yAxis: {
-    min: 0,
-    title: { text: 'Number of Ratings' }
-  },
-  plotOptions: {
-    series: {
-      dataLabels: {
-        enabled: true,
-        format: '{point.y}'
-      }
-    }
-  },
-  series: [
-    {
-      name: 'Participants',
-      data: empty ? [] : [1, 2, 10, 25, 45],
-      type: 'bar'
-    }
-  ]
-})
-
-const getSectorComparativeOptions = (empty: boolean) => ({
-  chart: { type: 'column' },
-  title: { text: 'Interventions: Completed vs Needed by Sector' },
-  xAxis: {
-    categories: ['Marketing', 'Finance', 'Compliance'],
-    title: { text: 'Sector' }
-  },
-  yAxis: {
-    min: 0,
-    title: { text: 'Number of Interventions' }
-  },
-  plotOptions: {
-    series: {
-      dataLabels: {
-        enabled: true,
-        format: '{point.y}'
-      }
-    }
-  },
-  series: [
-    {
-      name: 'Completed',
-      data: empty ? [] : [28, 14, 8],
-      type: 'column'
-    },
-    {
-      name: 'Outstanding',
-      data: empty ? [] : [5, 10, 3],
-      type: 'column'
-    }
-  ]
-})
+const isInProgress = (x: AssignedIntervention) => {
+    const s = normLower(x.status)
+    if (isCompleted(x)) return false
+    return ['in-progress', 'in_progress', 'in progress', 'ongoing', 'active', 'started', 'assigned'].includes(s) || !s
+}
 
 const ProjectAdminReports: React.FC = () => {
-  // Company check state
-  const [companyCode, setCompanyCode] = useState<string | null>(null)
-  const [loadingCompany, setLoadingCompany] = useState(true)
-  // Page state
-  const [loading, setLoading] = useState(false)
-  const [reportType, setReportType] = useState('participant')
-  const [timePeriod, setTimePeriod] = useState('month')
-  const [customDateRange, setCustomDateRange] = useState<
-    [dayjs.Dayjs, dayjs.Dayjs] | null
-  >(null)
-  const [form] = Form.useForm()
-  const [insightsVisible, setInsightsVisible] = useState(false)
-  const [aiInsight, setAiInsight] = useState<string | null>(null)
-  const [insightLoading, setInsightLoading] = useState(false)
-  const [expandedChart, setExpandedChart] = useState<null | string>(null)
+    const { user } = useFullIdentity()
+    const companyCode = user?.companyCode ? String(user.companyCode) : null
+    const activeProgramId =
+        (user as any)?.activeProgramId || (user as any)?.programId || (user as any)?.currentProgramId || null
 
-  // Company check effect
-  useEffect(() => {
-    const fetchCompanyCode = async () => {
-      setLoadingCompany(true)
-      try {
-        const user = auth.currentUser
-        if (!user) {
-          setCompanyCode(null)
-          setLoadingCompany(false)
-          return
+    const [loading, setLoading] = useState(true)
+
+    const [timePeriod, setTimePeriod] = useState<'week' | 'month' | 'quarter' | 'year' | 'custom'>('month')
+    const [customDateRange, setCustomDateRange] = useState<[Dayjs, Dayjs] | null>(null)
+
+    const [participants, setParticipants] = useState<Participant[]>([])
+    const [applications, setApplications] = useState<Application[]>([])
+    const [assigned, setAssigned] = useState<AssignedIntervention[]>([])
+
+    const [expandedChart, setExpandedChart] = useState<null | string>(null)
+    const [insightsOpen, setInsightsOpen] = useState(false)
+
+    const [form] = Form.useForm()
+
+    // -------------------------
+    // Date range
+    // -------------------------
+    const dateRange = useMemo(() => {
+        const fallbackEnd = dayjs().endOf('day')
+        const fallbackStart = fallbackEnd.subtract(1, 'month').startOf('day')
+
+        if (customDateRange?.[0] && customDateRange?.[1]) {
+            return {
+                start: customDateRange[0].startOf('day'),
+                end: customDateRange[1].endOf('day')
+            }
         }
-        const userRef = doc(db, 'users', user.uid)
-        const userSnap = await getDoc(userRef)
-        if (!userSnap.exists()) {
-          setCompanyCode(null)
-          setLoadingCompany(false)
-          return
+
+        return { start: fallbackStart, end: fallbackEnd }
+    }, [customDateRange])
+
+    // -------------------------
+    // Firestore
+    // -------------------------
+    useEffect(() => {
+        if (!companyCode) {
+            setParticipants([])
+            setApplications([])
+            setAssigned([])
+            setLoading(false)
+            return
         }
-        setCompanyCode(userSnap.data().companyCode)
-      } catch {
-        setCompanyCode(null)
-      }
-      setLoadingCompany(false)
-    }
-    fetchCompanyCode()
-  }, [])
 
-  const isQTX = companyCode === 'QTX'
+        setLoading(true)
 
-  const chartOptions: Highcharts.Options = {
-    chart: { type: 'column' },
-    title: { text: 'Participant Growth Over Time' },
-    xAxis: {
-      categories: participantMetrics.map(p => p.month),
-      title: { text: 'Month' }
-    },
-    yAxis: {
-      min: 0,
-      title: { text: 'Number of Participants' }
-    },
-    tooltip: {
-      shared: true,
-      valueSuffix: ' participants'
-    },
-    series: isQTX
-      ? [
-          {
-            name: 'Active',
-            data: participantMetrics.map(p => p.active),
-            type: 'column'
-          },
-          {
-            name: 'New',
-            data: participantMetrics.map(p => p.new),
-            type: 'column'
-          },
-          {
-            name: 'Graduated',
-            data: participantMetrics.map(p => p.graduated),
-            type: 'column'
-          }
-        ]
-      : [
-          { name: 'Active', data: [], type: 'column' },
-          { name: 'New', data: [], type: 'column' },
-          { name: 'Graduated', data: [], type: 'column' }
-        ]
-  }
+        const base: any[] = [where('companyCode', '==', companyCode)]
 
-  const topParticipants = getTopParticipantsOptions(isQTX)
-  const provinceReach = getProvinceReachOptions(isQTX)
-  const genderDist = getGenderDistOptions(isQTX)
-  const ageDist = getAgeDistOptions(isQTX)
-  const genderCompletion = getGenderCompletionOptions(isQTX)
-  const participantRating = getParticipantRatingOptions(isQTX)
-  const sectorComparative = getSectorComparativeOptions(isQTX)
+        const unsubParticipants = onSnapshot(
+            query(collection(db, 'participants'), ...base),
+            snap => {
+                const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as AnyDoc) })) as Participant[]
+                setParticipants(rows)
+                setLoading(false)
+            },
+            err => {
+                console.error(err)
+                setParticipants([])
+                setLoading(false)
+            }
+        )
 
-  useEffect(() => {
-    setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
-    }, 500)
-  }, [reportType, timePeriod, customDateRange, companyCode])
+        // accepted applications (support both schemas)
+        const qAccepted1 = query(collection(db, 'applications'), ...base, where('status', '==', 'accepted'))
+        const qAccepted2 = query(collection(db, 'applications'), ...base, where('applicationStatus', '==', 'accepted'))
 
-  const handleGenerateInsight = () => {
-    setInsightLoading(true)
-    setTimeout(() => {
-      setAiInsight(
-        `AI Insight: Notable increase in new participants in ${participantMetrics[3]?.month}. Graduation rate stable, suggesting effective retention strategies.`
-      )
-      setInsightLoading(false)
-    }, 1200)
-  }
+        const mergeAccepted = (incoming: Application[]) => {
+            setApplications(prev => {
+                const map = new Map<string, Application>()
+                    ;[...prev, ...incoming].forEach(a => map.set(a.id, a))
+                return Array.from(map.values())
+            })
+        }
 
-  // --- rest unchanged ---
+        const unsubApps1 = onSnapshot(
+            qAccepted1,
+            snap => mergeAccepted(snap.docs.map(d => ({ id: d.id, ...(d.data() as AnyDoc) })) as Application[]),
+            err => {
+                console.error(err)
+                setApplications([])
+            }
+        )
 
-  return (
-    <>
-      <Helmet>
-        <title>Project Reports & Analytics</title>
-        <meta
-          name='description'
-          content='Generate and analyze incubation program reports, participant growth, and compliance status.'
-        />
-      </Helmet>
-      {loadingCompany ? (
-        <div style={{ minHeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Spin tip="Loading company info..." size="large" />
-        </div>
-      ) : (
-        <div style={{ padding: '20px' }}>
-          <Title level={2}>Reports & Analytics</Title>
-          <Text>Generate and analyze reports for operations management.</Text>
+        const unsubApps2 = onSnapshot(
+            qAccepted2,
+            snap => mergeAccepted(snap.docs.map(d => ({ id: d.id, ...(d.data() as AnyDoc) })) as Application[]),
+            err => {
+                console.error(err)
+                setApplications([])
+            }
+        )
 
-          {/* Report Filters */}
-          <Card style={{ marginTop: '20px', marginBottom: '20px' }}>
-            <Form
-              form={form}
-              layout='vertical'
-              onFinish={() => {}}
-              initialValues={{
-                reportType: 'participant',
-                timePeriod: 'month'
-              }}
-            >
-              <Row gutter={16}>
-                <Col span={8}>
-                  <Form.Item
-                    name='reportType'
-                    label='Report Type'
-                    rules={[
-                      { required: true, message: 'Please select a report type' }
-                    ]}
-                  >
-                    <Select
-                      placeholder='Select report type'
-                      onChange={setReportType}
-                    >
-                      {reportTypes.map(type => (
-                        <Option key={type.value} value={type.value}>
-                          {type.label}
-                        </Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item
-                    name='timePeriod'
-                    label='Time Period'
-                    rules={[
-                      { required: true, message: 'Please select a time period' }
-                    ]}
-                  >
-                    <Select
-                      placeholder='Select time period'
-                      onChange={setTimePeriod}
-                    >
-                      {timePeriods.map(period => (
-                        <Option key={period.value} value={period.value}>
-                          {period.label}
-                        </Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  {timePeriod === 'custom' && (
-                    <Form.Item
-                      name='dateRange'
-                      label='Date Range'
-                      rules={[
-                        { required: true, message: 'Please select date range' }
-                      ]}
-                    >
-                      <RangePicker
-                        style={{ width: '100%' }}
-                        onChange={dates => setCustomDateRange(dates)}
-                      />
-                    </Form.Item>
-                  )}
-                </Col>
-              </Row>
-              <Row>
-                <Col span={24} style={{ textAlign: 'right' }}>
-                  <Space>
-                    <Button
-                      icon={<FilterOutlined />}
-                      type='primary'
-                      htmlType='submit'
-                    >
-                      Generate Report
-                    </Button>
-                    <Button icon={<FileExcelOutlined />}>Export Excel</Button>
-                    <Button icon={<FilePdfOutlined />}>Export PDF</Button>
-                  </Space>
-                </Col>
-              </Row>
-            </Form>
-          </Card>
+        // assigned interventions (delivery records)
+        const unsubAssigned = onSnapshot(
+            query(collection(db, 'assignedInterventions'), ...base),
+            snap => {
+                const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as AnyDoc) })) as AssignedIntervention[]
+                setAssigned(rows)
+            },
+            err => {
+                console.error(err)
+                setAssigned([])
+            }
+        )
 
-          {/* Dashboard Stats */}
-          <Row gutter={[16, 16]} style={{ marginBottom: '20px' }}>
-            <Col span={6}>
-              <Card>
-                <Statistic
-                  title='Total Participants'
-                  value={isQTX ? 85 : 0}
-                  prefix={<TeamOutlined />}
-                  valueStyle={{ color: '#1890ff' }}
-                />
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card>
-                <Statistic
-                  title='Resources Allocated'
-                  value={isQTX ? 68 : 0}
-                  prefix={<ApartmentOutlined />}
-                  suffix='%'
-                  valueStyle={{ color: '#52c41a' }}
-                />
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card>
-                <Statistic
-                  title='Funding Utilized'
-                  value={isQTX ? 2450000 : 0}
-                  prefix={<DollarOutlined />}
-                  valueStyle={{ color: '#faad14' }}
-                />
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card>
-                <Statistic
-                  title='Compliance Rate'
-                  value={isQTX ? 92 : 0}
-                  prefix={<AuditOutlined />}
-                  suffix='%'
-                  valueStyle={{ color: '#52c41a' }}
-                />
-              </Card>
-            </Col>
-          </Row>
+        return () => {
+            unsubParticipants()
+            unsubApps1()
+            unsubApps2()
+            unsubAssigned()
+        }
+    }, [companyCode])
 
-          {/* Report Content */}
-          <Card>
-            <Tabs defaultActiveKey='1'>
-              <TabPane
-                tab={
-                  <span>
-                    <BarChartOutlined />
-                    Participant Statistics
-                  </span>
+    // Only ever show accepted SMEs
+    const acceptedSmeIds = useMemo(() => {
+        return new Set(
+            applications
+                .map(a => norm(a.participantId || a.id))
+                .filter(Boolean)
+        )
+    }, [applications])
+
+    const participantsMap = useMemo(() => {
+        const m: Record<string, Participant> = {}
+        participants.forEach(p => (m[p.id] = p))
+        return m
+    }, [participants])
+
+    const acceptedParticipants = useMemo(() => {
+        const list: Participant[] = []
+        acceptedSmeIds.forEach(id => {
+            const p = participantsMap[id]
+            if (p) list.push(p)
+        })
+        return list
+    }, [acceptedSmeIds, participantsMap])
+
+    // optional: program scoping (don’t drop data if docs don’t have program linkage)
+    const assignedScoped = useMemo(() => {
+        return assigned.filter(a => {
+            const pid = norm(a.participantId)
+            if (!pid || !acceptedSmeIds.has(pid)) return false
+            if (!activeProgramId) return true
+            const docProg = a.programId || a.activeProgramId
+            if (!docProg) return true
+            return String(docProg) === String(activeProgramId)
+        })
+    }, [assigned, acceptedSmeIds, activeProgramId])
+
+    // filter by date range (use best-available timestamp)
+    const assignedInRange = useMemo(() => {
+        const start = dateRange.start.toDate()
+        const end = dateRange.end.toDate()
+        return assignedScoped.filter(a => {
+            const d = toDate(a.confirmedAt) || toDate(a.createdAt) || toDate(a.dueDate)
+            if (!d) return true
+            return d >= start && d <= end
+        })
+    }, [assignedScoped, dateRange])
+
+    // -------------------------
+    // KPIs
+    // -------------------------
+    const kpis = useMemo(() => {
+        const totalAccepted = acceptedSmeIds.size
+        const totalAssigned = assignedInRange.length
+        const completed = assignedInRange.filter(isCompleted).length
+        const inProgress = assignedInRange.filter(isInProgress).length
+        const completionRate = totalAssigned > 0 ? Math.round((completed / totalAssigned) * 100) : 0
+
+        const complianceScores = acceptedParticipants
+            .map(p => Number(p.complianceScore ?? 0))
+            .filter(n => Number.isFinite(n))
+
+        const avgCompliance =
+            complianceScores.length > 0
+                ? Math.round(complianceScores.reduce((a, b) => a + b, 0) / complianceScores.length)
+                : 0
+
+        return {
+            totalAccepted,
+            totalAssigned,
+            completed,
+            inProgress,
+            completionRate,
+            avgCompliance
+        }
+    }, [acceptedSmeIds, assignedInRange, acceptedParticipants])
+
+    // -------------------------
+    // Charts
+    // -------------------------
+    const participantGrowthOptions = useMemo<Highcharts.Options>(() => {
+        // count accepted SMEs by acceptedAt/submittedAt month within range
+        const start = dateRange.start.toDate()
+        const end = dateRange.end.toDate()
+
+        const counts: Record<string, number> = {}
+        applications.forEach(a => {
+            const pid = norm(a.participantId || a.id)
+            if (!pid || !acceptedSmeIds.has(pid)) return
+
+            const d =
+                toDate(a.acceptedAt) ||
+                toDate(a.submittedAt) ||
+                toDate((participantsMap[pid] as any)?.createdAt)
+
+            if (!d) return
+            if (d < start || d > end) return
+
+            const k = monthKey(d)
+            counts[k] = (counts[k] || 0) + 1
+        })
+
+        const keys = Object.keys(counts).sort()
+        const categories = keys.map(k => {
+            const [y, m] = k.split('-')
+            return dayjs(`${y}-${m}-01`).format('MMM YY')
+        })
+        const data = keys.map(k => counts[k] || 0)
+
+        return {
+            chart: { type: 'column', height: 360 },
+            title: { text: 'SMEs Over Time' },
+            xAxis: { categories, title: { text: 'Month' } },
+            yAxis: { min: 0, title: { text: 'SMEs' } },
+            plotOptions: {
+                series: {
+                    dataLabels: {
+                        enabled: true,
+                        formatter: function () {
+                            // @ts-ignore
+                            const y = this.y as number
+                            if (!y) return null
+                            return String(y)
+                        }
+                    },
+                    borderRadius: 8
                 }
-                key='1'
-              >
-                <Row gutter={[16, 16]}>
-                  <Col xs={24} md={12}>
-                    <Card
-                      title='Participant Growth Over Time'
-                      extra={
-                        <Button
-                          size='small'
-                          onClick={() => setExpandedChart('participantGrowth')}
+            },
+            series: [{ name: 'Accepted', type: 'column', data }]
+        }
+    }, [applications, acceptedSmeIds, participantsMap, dateRange])
+
+    const topParticipantsOptions = useMemo<Highcharts.Options>(() => {
+        const completedByParticipant: Record<string, number> = {}
+        assignedInRange.forEach(a => {
+            if (!isCompleted(a)) return
+            const pid = norm(a.participantId)
+            if (!pid) return
+            completedByParticipant[pid] = (completedByParticipant[pid] || 0) + 1
+        })
+
+        const top = Object.entries(completedByParticipant)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+
+        const categories = top.map(([pid]) => {
+            const p = participantsMap[pid]
+            return norm(p?.beneficiaryName || p?.enterpriseName || p?.participantName) || pid
+        })
+        const data = top.map(([, v]) => v)
+
+        return {
+            chart: { type: 'bar', height: 360 },
+            title: { text: 'Top 5 SMEs by Completed Interventions' },
+            xAxis: { categories, title: { text: 'SME' }, labels: { style: { fontSize: '11px' } } },
+            yAxis: { min: 0, title: { text: 'Completed' } },
+            plotOptions: {
+                series: {
+                    dataLabels: {
+                        enabled: true,
+                        formatter: function () {
+                            // @ts-ignore
+                            const y = this.y as number
+                            if (!y) return null
+                            return String(y)
+                        }
+                    },
+                    borderRadius: 6
+                }
+            },
+            series: [{ name: 'Completed', type: 'bar', data }]
+        }
+    }, [assignedInRange, participantsMap])
+
+    const provinceReachOptions = useMemo<Highcharts.Options>(() => {
+        const counts: Record<string, number> = {}
+        acceptedParticipants.forEach(p => {
+            const prov = norm(p.province || p.businessAddressProvince) || 'Unknown'
+            counts[prov] = (counts[prov] || 0) + 1
+        })
+
+        const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10)
+        const categories = entries.map(([k]) => k)
+        const data = entries.map(([, v]) => v)
+
+        return {
+            chart: { type: 'column', height: 360 },
+            title: { text: 'SMEs by Province' },
+            xAxis: { categories, title: { text: 'Province' } },
+            yAxis: { min: 0, title: { text: 'SMEs' } },
+            plotOptions: {
+                series: {
+                    dataLabels: {
+                        enabled: true,
+                        formatter: function () {
+                            // @ts-ignore
+                            const y = this.y as number
+                            if (!y) return null
+                            return String(y)
+                        }
+                    },
+                    borderRadius: 8
+                }
+            },
+            series: [{ name: 'SMEs', type: 'column', data }]
+        }
+    }, [acceptedParticipants])
+
+    const genderDistOptions = useMemo<Highcharts.Options>(() => {
+        const counts: Record<string, number> = {}
+        acceptedParticipants.forEach(p => {
+            const g = norm(p.gender) || 'Unknown'
+            counts[g] = (counts[g] || 0) + 1
+        })
+
+        const data = Object.entries(counts).map(([name, y]) => ({ name, y }))
+
+        return {
+            chart: { type: 'pie', height: 360 },
+            title: { text: 'Gender Distribution' },
+            plotOptions: {
+                pie: {
+                    allowPointSelect: true,
+                    cursor: 'pointer',
+                    dataLabels: {
+                        enabled: true,
+                        formatter: function () {
+                            // @ts-ignore
+                            const y = this.y as number
+                            if (!y) return null
+                            // @ts-ignore
+                            return `${this.point?.name}: ${y}`
+                        }
+                    }
+                }
+            },
+            series: [{ name: 'SMEs', type: 'pie', colorByPoint: true, data }]
+        }
+    }, [acceptedParticipants])
+
+    const completionByGenderOptions = useMemo<Highcharts.Options>(() => {
+        const completedByGender: Record<string, number> = {}
+        const incompleteByGender: Record<string, number> = {}
+
+        assignedInRange.forEach(a => {
+            const pid = norm(a.participantId)
+            const g = norm(participantsMap[pid]?.gender) || 'Unknown'
+            if (isCompleted(a)) completedByGender[g] = (completedByGender[g] || 0) + 1
+            else incompleteByGender[g] = (incompleteByGender[g] || 0) + 1
+        })
+
+        const genders = Array.from(new Set([...Object.keys(completedByGender), ...Object.keys(incompleteByGender)])).sort()
+
+        return {
+            chart: { type: 'column', height: 360 },
+            title: { text: 'Intervention Delivery by Gender' },
+            xAxis: { categories: genders, title: { text: 'Gender' } },
+            yAxis: { min: 0, title: { text: 'Interventions' } },
+            plotOptions: {
+                series: {
+                    dataLabels: {
+                        enabled: true,
+                        formatter: function () {
+                            // @ts-ignore
+                            const y = this.y as number
+                            if (!y) return null
+                            return String(y)
+                        }
+                    },
+                    borderRadius: 8
+                }
+            },
+            series: [
+                { name: 'Completed', type: 'column', data: genders.map(g => completedByGender[g] || 0) },
+                { name: 'In Progress/Other', type: 'column', data: genders.map(g => incompleteByGender[g] || 0) }
+            ]
+        }
+    }, [assignedInRange, participantsMap])
+
+    const requiredVsMetOptions = useMemo<Highcharts.Options>(() => {
+        // required by area from accepted applications
+        const requiredByArea: Record<string, number> = {}
+        applications.forEach(a => {
+            const pid = norm(a.participantId || a.id)
+            if (!pid || !acceptedSmeIds.has(pid)) return
+            const req = a.interventions?.required
+            if (!Array.isArray(req)) return
+            req.forEach(x => {
+                const area = typeof x === 'object' ? norm((x as any).area) : 'Unknown'
+                const key = area || 'Unknown'
+                requiredByArea[key] = (requiredByArea[key] || 0) + 1
+            })
+        })
+
+        // completed by area from assigned interventions
+        const completedByArea: Record<string, number> = {}
+        assignedInRange.forEach(a => {
+            if (!isCompleted(a)) return
+            const area = norm(a.areaOfSupport) || 'Unknown'
+            completedByArea[area] = (completedByArea[area] || 0) + 1
+        })
+
+        const areas = Array.from(new Set([...Object.keys(requiredByArea), ...Object.keys(completedByArea)])).sort()
+
+        return {
+            chart: { type: 'column', height: Math.max(360, areas.length * 26) },
+            title: { text: 'Required vs Met (by Area of Support)' },
+            xAxis: { categories: areas, labels: { style: { fontSize: '11px' } } },
+            yAxis: { min: 0, title: { text: 'Count' } },
+            tooltip: { shared: true },
+            plotOptions: {
+                series: {
+                    dataLabels: {
+                        enabled: true,
+                        formatter: function () {
+                            // @ts-ignore
+                            const y = this.y as number
+                            if (!y) return null
+                            return String(y)
+                        }
+                    },
+                    borderRadius: 8
+                }
+            },
+            series: [
+                { name: 'Required', type: 'column', data: areas.map(a => requiredByArea[a] || 0) },
+                { name: 'Met (Completed)', type: 'column', data: areas.map(a => completedByArea[a] || 0) }
+            ]
+        }
+    }, [applications, acceptedSmeIds, assignedInRange])
+
+    // -------------------------
+    // Table
+    // -------------------------
+    const overviewRows = useMemo(() => {
+        return assignedInRange
+            .map(a => {
+                const pid = norm(a.participantId)
+                const p = participantsMap[pid]
+                return {
+                    key: a.id,
+                    interventionTitle: norm(a.interventionTitle) || 'Untitled',
+                    areaOfSupport: norm(a.areaOfSupport) || 'Unknown',
+                    incubatee: norm(a.beneficiaryName) || norm(p?.beneficiaryName || p?.enterpriseName || p?.participantName) || pid || '—',
+                    assigneeName: norm(a.assigneeName) || '—',
+                    assigneeEmail: norm(a.assigneeEmail) || '—',
+                    status: norm(a.status) || 'assigned',
+                    due: toDate(a.dueDate)?.toLocaleDateString() || '—'
+                }
+            })
+            .sort((x, y) => x.interventionTitle.localeCompare(y.interventionTitle))
+            .slice(0, 50)
+    }, [assignedInRange, participantsMap])
+
+    const columns: ColumnsType<any> = [
+        {
+            title: 'Intervention',
+            dataIndex: 'interventionTitle',
+            key: 'interventionTitle',
+            render: (_, r) => (
+                <div>
+                    <div style={{ fontWeight: 600 }}>{r.interventionTitle}</div>
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>{r.areaOfSupport}</div>
+                </div>
+            )
+        },
+        { title: 'Incubatee (SME)', dataIndex: 'incubatee', key: 'incubatee' },
+        {
+            title: 'Assignee',
+            key: 'assignee',
+            render: (_, r) => (
+                <div>
+                    <div style={{ fontWeight: 600 }}>{r.assigneeName}</div>
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>{r.assigneeEmail}</div>
+                </div>
+            )
+        },
+        {
+            title: 'Status',
+            dataIndex: 'status',
+            key: 'status',
+            render: v => {
+                const s = normLower(v)
+                const color = ['completed', 'done', 'finished'].includes(s) ? 'green' : ['in-progress', 'assigned', 'active'].includes(s) ? 'gold' : 'default'
+                return <Tag color={color}>{v}</Tag>
+            }
+        },
+        { title: 'Due', dataIndex: 'due', key: 'due' }
+    ]
+
+    // -------------------------
+    // Actions (per your ask)
+    // -------------------------
+    const onGenerateReport = () => message.warning('Insufficient Data for now')
+
+    const onExportExcel = () => message.warning('Insufficient Data for now')
+    const onExportPdf = () => message.warning('Insufficient Data for now')
+
+    // -------------------------
+    // Expanded chart picker
+    // -------------------------
+    const chartByKey = (key: string): Highcharts.Options => {
+        switch (key) {
+            case 'participantGrowth':
+                return participantGrowthOptions
+            case 'topParticipants':
+                return topParticipantsOptions
+            case 'provinceReach':
+                return provinceReachOptions
+            case 'genderDist':
+                return genderDistOptions
+            case 'genderCompletion':
+                return completionByGenderOptions
+            case 'requiredVsMet':
+                return requiredVsMetOptions
+            default:
+                return { title: { text: 'Insufficient Data for now' }, series: [] }
+        }
+    }
+
+    return (
+        <>
+            <Helmet>
+                <title>Analytics | Smart Incubation</title>
+                <meta name="description" content="Generate and analyze incubation program reports and analytics." />
+            </Helmet>
+
+            {!companyCode ? (
+                <div style={{ padding: 20 }}>
+                    <Alert type="warning" showIcon message="No companyCode found for the logged-in user." />
+                </div>
+            ) : (
+                <div style={{ padding: 20 }}>
+                    <Card style={{ marginTop: 16, marginBottom: 16 }}>
+                        <Form
+                            form={form}
+                            layout="inline"
+                            onFinish={onGenerateReport}
+                            style={{ width: '100%' }}
                         >
-                          Expand
-                        </Button>
-                      }
-                    >
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={chartOptions}
-                      />
+                            <Row gutter={[12, 12]} align="middle" style={{ width: '100%' }}>
+                                <Col flex="auto">
+                                    <Space wrap size={10}>
+                                        <Form.Item label="Date Range" style={{ marginBottom: 0 }}>
+                                            <RangePicker
+                                                allowClear={false}
+                                                value={customDateRange as any}
+                                                onChange={dates => {
+                                                    if (!dates || !dates[0] || !dates[1]) return
+                                                    setCustomDateRange(dates as any)
+                                                }}
+                                            />
+                                        </Form.Item>
+
+                                        <Button icon={<FilterOutlined />} type="primary" htmlType="submit">
+                                            Generate Report
+                                        </Button>
+
+                                        <Button icon={<FileExcelOutlined />} onClick={onExportExcel}>
+                                            Export Excel
+                                        </Button>
+
+                                        <Button icon={<FilePdfOutlined />} onClick={onExportPdf}>
+                                            Export PDF
+                                        </Button>
+                                    </Space>
+                                </Col>
+                            </Row>
+                        </Form>
                     </Card>
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Card
-                      title='Top Performing Participants'
-                      extra={
-                        <Button
-                          size='small'
-                          onClick={() =>
-                            setExpandedChart('topPerformingParticipants')
-                          }
-                        >
-                          Expand
-                        </Button>
-                      }
-                    >
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={topParticipants}
-                      />
-                    </Card>
-                  </Col>
 
-                  <Col xs={24} md={12}>
-                    <Card
-                      title='Gender Distribution'
-                      extra={
-                        <Button
-                          size='small'
-                          onClick={() => setExpandedChart('genderDist')}
-                        >
-                          Expand
-                        </Button>
-                      }
-                    >
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={genderDist}
-                      />
-                    </Card>
-                  </Col>
+                    {loading ? (
+                        <div style={{ minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <LoadingOverlay tip='Loading data...' />
+                        </div>
+                    ) : (
+                        <>
+                            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                                {[
+                                    {
+                                        title: 'Accepted SMEs',
+                                        value: kpis.totalAccepted,
+                                        icon: <TeamOutlined style={{ color: '#1890ff', fontSize: 18 }} />,
+                                        iconBg: 'rgba(24,144,255,.12)'
+                                    },
+                                    {
+                                        title: 'Assigned Interventions',
+                                        value: kpis.totalAssigned,
+                                        icon: <ApartmentOutlined style={{ color: '#722ed1', fontSize: 18 }} />,
+                                        iconBg: 'rgba(114,46,209,.12)'
+                                    },
+                                    {
+                                        title: 'Completed',
+                                        value: kpis.completed,
+                                        icon: <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />,
+                                        iconBg: 'rgba(82,196,26,.12)'
+                                    },
+                                    {
+                                        title: 'Avg Compliance',
+                                        value: `${kpis.avgCompliance}%`,
+                                        icon: <AuditOutlined style={{ color: '#fa8c16', fontSize: 18 }} />,
+                                        iconBg: 'rgba(250,140,22,.12)'
+                                    }
+                                ].map((metric, index) => (
+                                    <Col xs={24} sm={12} md={6} key={metric.title}>
 
-                  <Col xs={24} md={12}>
-                    <Card
-                      title='Age Distribution'
-                      extra={
-                        <Button
-                          size='small'
-                          onClick={() => setExpandedChart('ageDist')}
-                        >
-                          Expand
-                        </Button>
-                      }
-                    >
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={ageDist}
-                      />
-                    </Card>
-                  </Col>
+                                        <MotionCard bodyStyle={{ padding: 14 }} style={{ height: '100%' }}>
+                                            <MotionCard.Metric
+                                                icon={metric.icon}
+                                                iconBg={metric.iconBg}
+                                                title={metric.title}
+                                                value={metric.value}
+                                            />
+                                        </MotionCard>
+                                    </Col>
+                                ))}
+                            </Row>
 
-                  <Col xs={24} md={12}>
-                    <Card
-                      title='Completion by Gender'
-                      extra={
-                        <Button
-                          size='small'
-                          onClick={() => setExpandedChart('genderCompletion')}
-                        >
-                          Expand
-                        </Button>
-                      }
-                    >
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={genderCompletion}
-                      />
-                    </Card>
-                  </Col>
+                            <Card style={{ marginBottom: 16 }}>
+                                <Row justify="space-between" align="middle">
+                                    <Col>
+                                        <Text type="secondary">
+                                            Completion Rate: <b>{kpis.completionRate}%</b>
+                                        </Text>
+                                    </Col>
+                                    <Col>
+                                        {activeProgramId ? <Tag color="blue">Program: {String(activeProgramId)}</Tag> : null}
+                                    </Col>
+                                </Row>
+                            </Card>
 
-                  <Col xs={24} md={12}>
-                    <Card
-                      title='Participant Ratings'
-                      extra={
-                        <Button
-                          size='small'
-                          onClick={() => setExpandedChart('participantRating')}
-                        >
-                          Expand
-                        </Button>
-                      }
-                    >
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={participantRating}
-                      />
-                    </Card>
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Card
-                      title='Intervention Fulfillment'
-                      extra={
-                        <Button
-                          size='small'
-                          onClick={() =>
-                            setExpandedChart('interventionFulfillment')
-                          }
-                        >
-                          Expand
-                        </Button>
-                      }
-                    >
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={sectorComparative}
-                      />
-                    </Card>
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Card
-                      title='Program Reach'
-                      extra={
-                        <Button
-                          size='small'
-                          onClick={() => setExpandedChart('programReach')}
-                        >
-                          Expand
-                        </Button>
-                      }
-                    >
-                      <HighchartsReact
-                        highcharts={Highcharts}
-                        options={provinceReach}
-                      />
-                    </Card>
-                  </Col>
-                </Row>
+                            <>
+                                <Row gutter={[16, 16]}>
+                                    <Col xs={24} md={12}>
+                                        <Card
+                                            title="Accepted SMEs Over Time"
+                                            extra={
+                                                <Button size="small" onClick={() => setExpandedChart('participantGrowth')}>
+                                                    Expand
+                                                </Button>
+                                            }
+                                        >
+                                            <HighchartsReact highcharts={Highcharts} options={participantGrowthOptions} />
+                                        </Card>
+                                    </Col>
 
-                <Button type='primary' onClick={() => setInsightsVisible(true)}>
-                  View AI Insights
-                </Button>
+                                    <Col xs={24} md={12}>
+                                        <Card
+                                            title="Top SMEs by Completed Interventions"
+                                            extra={
+                                                <Button size="small" onClick={() => setExpandedChart('topParticipants')}>
+                                                    Expand
+                                                </Button>
+                                            }
+                                        >
+                                            <HighchartsReact highcharts={Highcharts} options={topParticipantsOptions} />
+                                        </Card>
+                                    </Col>
 
-                <Drawer
-                  title='AI Insights on Participant Metrics'
-                  placement='bottom'
-                  height={220}
-                  onClose={() => setInsightsVisible(false)}
-                  open={insightsVisible}
-                >
-                  <Button
-                    loading={insightLoading}
-                    onClick={handleGenerateInsight}
-                    type='dashed'
-                  >
-                    Generate Insight
-                  </Button>
-                  <Divider />
-                  <Text>
-                    {aiInsight || 'Click generate to analyze this chart.'}
-                  </Text>
-                </Drawer>
-              </TabPane>
+                                    <Col xs={24} md={12}>
+                                        <Card
+                                            title="Accepted SMEs by Province"
+                                            extra={
+                                                <Button size="small" onClick={() => setExpandedChart('provinceReach')}>
+                                                    Expand
+                                                </Button>
+                                            }
+                                        >
+                                            <HighchartsReact highcharts={Highcharts} options={provinceReachOptions} />
+                                        </Card>
+                                    </Col>
 
-              {/* Other tabs... */}
-              {/* (leave unchanged for brevity, add empty data logic if needed) */}
+                                    <Col xs={24} md={12}>
+                                        <Card
+                                            title="Gender Distribution"
+                                            extra={
+                                                <Button size="small" onClick={() => setExpandedChart('genderDist')}>
+                                                    Expand
+                                                </Button>
+                                            }
+                                        >
+                                            <HighchartsReact highcharts={Highcharts} options={genderDistOptions} />
+                                        </Card>
+                                    </Col>
 
-            </Tabs>
-          </Card>
-          <Modal
-            open={!!expandedChart}
-            footer={null}
-            onCancel={() => setExpandedChart(null)}
-            width={900}
-            title={`Expanded View: ${expandedChart?.replace(/([A-Z])/g, ' $1')}`}
-          >
-            {expandedChart === 'participantGrowth' && (
-              <HighchartsReact highcharts={Highcharts} options={chartOptions} />
+                                    <Col xs={24} md={12}>
+                                        <Card
+                                            title="Intervention Delivery by Gender"
+                                            extra={
+                                                <Button size="small" onClick={() => setExpandedChart('genderCompletion')}>
+                                                    Expand
+                                                </Button>
+                                            }
+                                        >
+                                            <HighchartsReact highcharts={Highcharts} options={completionByGenderOptions} />
+                                        </Card>
+                                    </Col>
+
+                                    <Col xs={24} md={12}>
+                                        <Card
+                                            title="Required vs Met (by Area of Support)"
+                                            extra={
+                                                <Button size="small" onClick={() => setExpandedChart('requiredVsMet')}>
+                                                    Expand
+                                                </Button>
+                                            }
+                                        >
+                                            <HighchartsReact highcharts={Highcharts} options={requiredVsMetOptions} />
+                                        </Card>
+                                    </Col>
+                                </Row>
+
+                                <Divider />
+
+                                <Space>
+                                    <Button type="primary" onClick={() => setInsightsOpen(true)}>
+                                        View AI Insights
+                                    </Button>
+                                </Space>
+
+                                <Divider />
+
+                                <Card title="Live Intervention Overview">
+                                    {overviewRows.length ? (
+                                        <Table
+                                            columns={columns}
+                                            dataSource={overviewRows}
+                                            size="small"
+                                            pagination={{ pageSize: 10 }}
+                                            rowKey="key"
+                                        />
+                                    ) : (
+                                        <Empty description="No interventions found in the selected range." />
+                                    )}
+                                </Card>
+                            </>
+
+
+
+                            <Modal
+                                open={insightsOpen}
+                                onCancel={() => setInsightsOpen(false)}
+                                footer={[
+                                    <Button key="close" onClick={() => setInsightsOpen(false)}>
+                                        Close
+                                    </Button>,
+                                    <Button
+                                        key="gen"
+                                        type="primary"
+                                        onClick={() => message.warning('Insufficient Data for now')}
+                                    >
+                                        Generate Insight
+                                    </Button>
+                                ]}
+                                title="AI Insights"
+                            >
+                                <Alert
+                                    type="warning"
+                                    showIcon
+                                    message="Insufficient Data for now"
+                                    description="We will enable insights once the reporting dataset is finalized and validated."
+                                />
+                            </Modal>
+
+                            <Modal
+                                open={!!expandedChart}
+                                footer={null}
+                                onCancel={() => setExpandedChart(null)}
+                                width={980}
+                                title={expandedChart ? `Expanded View` : undefined}
+                            >
+                                {expandedChart ? (
+                                    <HighchartsReact highcharts={Highcharts} options={chartByKey(expandedChart)} />
+                                ) : null}
+                            </Modal>
+                        </>
+                    )}
+                </div >
             )}
-
-            {expandedChart === 'topPerformingParticipants' && (
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={topParticipants}
-              />
-            )}
-            {expandedChart === 'genderDist' && (
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={genderDist}
-              />
-            )}
-            {expandedChart === 'ageDist' && (
-              <HighchartsReact highcharts={Highcharts} options={ageDist} />
-            )}
-            {expandedChart === 'genderCompletion' && (
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={genderCompletion}
-              />
-            )}
-            {expandedChart === 'participantRating' && (
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={participantRating}
-              />
-            )}
-            {expandedChart === 'programReach' && (
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={provinceReach}
-              />
-            )}
-            {expandedChart === 'interventionFulfillment' && (
-              <HighchartsReact
-                highcharts={Highcharts}
-                options={sectorComparative}
-              />
-            )}
-          </Modal>
-        </div>
-      )}
-    </>
-  )
+        </>
+    )
 }
 
 export default ProjectAdminReports
