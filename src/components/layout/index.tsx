@@ -348,6 +348,7 @@ export const CustomLayout: React.FC = () => {
                 { key: 'programs', to: '/programs', label: 'Programs Onboarding', icon: <LaptopOutlined /> },
                 { key: 'analytics', to: '/projectadmin/monitoring', label: 'M & E Monitoring', icon: <PieChartOutlined /> },
                 { key: 'impact', to: '/projectadmin/impact', label: 'Impact Analytics', icon: <FundProjectionScreenOutlined /> },
+                { key: 'poes', to: '/projectadmin/poes', label: 'POE Tracking', icon: <BarChartOutlined /> },
                 { key: 'reports', to: '/projectadmin/reports', label: 'Reports', icon: <ReadOutlined /> }
             ],
             funder: [
