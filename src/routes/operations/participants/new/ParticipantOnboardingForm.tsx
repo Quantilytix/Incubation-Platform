@@ -304,6 +304,43 @@ export const ParticipantOnboardingForm: React.FC = () => {
         [last3Months, last2Years]
     )
 
+    type AiEvalResult = any
+
+    const removeUndefinedDeep = (obj: any): any => {
+        if (Array.isArray(obj)) return obj.map(removeUndefinedDeep)
+        if (obj && typeof obj === 'object') {
+            return Object.fromEntries(
+                Object.entries(obj)
+                    .filter(([, v]) => v !== undefined)
+                    .map(([k, v]) => [k, removeUndefinedDeep(v)])
+            )
+        }
+        return obj
+    }
+
+    const evaluateWithAI = async (payload: any): Promise<AiEvalResult> => {
+        const currentUser = auth.currentUser
+        if (!currentUser) throw new Error('Not authenticated')
+
+        const token = await currentUser.getIdToken()
+
+        const res = await fetch(
+            'https://us-central1-incubation-platform-61610.cloudfunctions.net/evaluateWithAI',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify(removeUndefinedDeep(payload))
+            }
+        )
+
+        const data = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(data?.error || 'AI evaluation failed')
+        return data
+    }
+
     const createParticipantAccount = async (payload: {
         email: string
         name: string
@@ -659,30 +696,71 @@ export const ParticipantOnboardingForm: React.FC = () => {
                 updatedAt: Timestamp.now()
             }
 
+
             // 1) Save participant (capture id)
             const participantRef = await addDoc(collection(db, 'participants'), participant)
             const participantId = participantRef.id
 
+            //  Build an AI payload
+            const aiPayload = {
+                participantId,
+                companyCode,
+                profile: {
+                    participantName: participant.participantName,
+                    beneficiaryName: participant.beneficiaryName,
+                    email: participant.email,
+                    gender: participant.gender,
+                    age: participant.age,
+                    ageGroup: participant.ageGroup,
+                    sector: participant.sector,
+                    stage: participant.stage,
+                    developmentType: participant.developmentType,
+                    province: participant.province,
+                    city: participant.city,
+                    hub: participant.hub,
+                    locationType: participant.locationType
+                },
+                swot: participant.swot || swot,
+                compliance: {
+                    score: participant.complianceScore,
+                    documents: participant.complianceDocuments // urls + expiry + status
+                },
+                histories: {
+                    revenueHistory: participant.revenueHistory,
+                    headcountHistory: participant.headcountHistory
+                },
+                selectedInterventions: requiredInterventions // what they picked
+            }
+
+            let aiEvaluation: any = null
+            try {
+                aiEvaluation = await evaluateWithAI(aiPayload)
+            } catch (e: any) {
+                console.error('AI evaluation failed:', e)
+                // Decide your rule:
+                // 1) block submission: throw e
+                // 2) allow submission without AI:
+                aiEvaluation = { error: e?.message || 'AI evaluation failed' }
+            }
+
             // 2) Save manual application (this is where required interventions belong)
+
             const manualApplication = {
                 participantId,
                 companyCode,
-
                 registeredBy,
 
-                // if you later add activeProgramId/programName, plug them in here
                 programId: null,
                 programName: null,
 
                 applicationStatus: 'accepted',
                 manuallyCreated: true,
 
-                swot: form.getFieldValue('swot') || swot,
+                swot: participant.swot || swot,
 
                 submittedAt: Timestamp.now(),
                 acceptedAt: Timestamp.now(),
 
-                // fields commonly used by applications views
                 beneficiaryName: participant.beneficiaryName,
                 participantName: participant.participantName,
                 email: participant.email,
@@ -696,14 +774,13 @@ export const ParticipantOnboardingForm: React.FC = () => {
                 complianceDocuments: participant.complianceDocuments,
 
                 interventions: {
-                    required: requiredInterventions, // moved here
+                    required: requiredInterventions,
                     assigned: [],
                     completed: [],
                     participationRate: 0
                 },
 
-                // no AI
-                aiEvaluation: null,
+                aiEvaluation,
                 growthPlanDocUrl: null,
 
                 createdAt: Timestamp.now(),
@@ -712,6 +789,14 @@ export const ParticipantOnboardingForm: React.FC = () => {
 
             // deterministic ID prevents duplicates
             await setDoc(doc(db, 'applications', participantId), manualApplication)
+
+            // OPTIONAL: also store AI on participant doc (if you want)
+            await setDoc(
+                doc(db, 'participants', participantId),
+                { aiEvaluation, updatedAt: Timestamp.now() },
+                { merge: true }
+            )
+
 
             message.success('Participant successfully onboarded!')
             navigate('/operations/participants')
@@ -1202,7 +1287,7 @@ export const ParticipantOnboardingForm: React.FC = () => {
                             <Empty description="No interventions found" />
                         ) : (
                             <Checkbox.Group
-                                style={{ width: '100%' }}
+                                style={{ width: '100%', display: 'block' }}
                                 value={selectedInterventions.map(i => i.id)}
                                 onChange={(ids) => {
                                     const idSet = new Set(ids as string[])
@@ -1210,22 +1295,24 @@ export const ParticipantOnboardingForm: React.FC = () => {
                                     setSelectedInterventions(next)
                                 }}
                             >
-                                <Collapse>
-                                    {groupedByArea.map(group => (
-                                        <Collapse.Panel
-                                            key={group.area}
-                                            header={`${group.area} (${group.items.length})`}
-                                        >
-                                            <Row gutter={[12, 12]}>
-                                                {group.items.map(it => (
-                                                    <Col span={12} key={it.id}>
-                                                        <Checkbox value={it.id}>{it.title}</Checkbox>
-                                                    </Col>
-                                                ))}
-                                            </Row>
-                                        </Collapse.Panel>
-                                    ))}
-                                </Collapse>
+                                <div style={{ width: '100%' }}>
+                                    <Collapse style={{ width: '100%' }}>
+                                        {groupedByArea.map(group => (
+                                            <Collapse.Panel
+                                                key={group.area}
+                                                header={`${group.area} (${group.items.length})`}
+                                            >
+                                                <Row gutter={[12, 12]} style={{ width: '100%' }}>
+                                                    {group.items.map(it => (
+                                                        <Col xs={24} sm={12} key={it.id}>
+                                                            <Checkbox value={it.id}>{it.title}</Checkbox>
+                                                        </Col>
+                                                    ))}
+                                                </Row>
+                                            </Collapse.Panel>
+                                        ))}
+                                    </Collapse>
+                                </div>
                             </Checkbox.Group>
                         )}
 
@@ -1337,28 +1424,34 @@ export const ParticipantOnboardingForm: React.FC = () => {
                 <Form form={form} layout="vertical" onFinish={handleFinish}>
                     {steps[currentStep].content}
 
-                    <div style={{ marginTop: 24 }}>
+                    <div style={{ marginTop: 24, display: 'flex', gap: 8 }}>
+                        {currentStep === 0 && (
+                            <Button danger shape='round' onClick={() => navigate(-1)}>
+                                Cancel
+                            </Button>
+                        )}
+
                         {currentStep > 0 && (
-                            <Button onClick={handlePrev} style={{ marginRight: 8 }}>
+                            <Button shape='round' onClick={handlePrev}>
                                 Previous
                             </Button>
                         )}
 
                         {currentStep < steps.length - 1 && (
-                            <Button type="primary" onClick={handleNext}>
+                            <Button shape='round' type="primary" onClick={handleNext}>
                                 Next
                             </Button>
                         )}
 
                         {currentStep === steps.length - 1 && (
-                            <Button type="primary" htmlType="submit" loading={loading}>
+                            <Button shape='round' type="primary" htmlType="submit" loading={loading}>
                                 Submit
                             </Button>
                         )}
                     </div>
                 </Form>
             </Card>
-        </div>
+        </div >
     )
 }
 

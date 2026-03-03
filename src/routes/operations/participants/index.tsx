@@ -495,11 +495,6 @@ const OperationsParticipantsManagement: React.FC = () => {
                         </Col>
 
                         <Col xs={24} md={12} style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                            {activeProgramName ? (
-                                <Tag color="blue" style={{ borderRadius: 999, padding: '2px 10px' }}>
-                                    {loadingPrograms ? 'Loading program...' : activeProgramName}
-                                </Tag>
-                            ) : null}
 
                             <Button
                                 shape="round"
