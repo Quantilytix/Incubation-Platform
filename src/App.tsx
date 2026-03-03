@@ -179,6 +179,7 @@ import SMEsMasterPage from './routes/shared/incubatees/SMEsMasterPage'
 import AllocatedInterventions from './routes/shared/allocated/AllocatedInterventions'
 import InterventionTracker from './routes/shared/allocated/[id]/InterventionTracker'
 import UsersPage from './routes/operations/users/UsersPage'
+import POEValidationPage from './routes/projectadmin/poe'
 
 
 type FullIdentity = {
@@ -322,6 +323,7 @@ const App = () => {
                                                         <Route path='projectadmin'>
                                                             <Route index element={<ProjectAdminDashboard />} />
                                                             <Route path='impact' element={<ImpactAnalysisForm />} />
+                                                            <Route path='poes' element={<POEValidationPage />} />
                                                             <Route path='indicative' element={<InterventionSuggestions />} />
                                                             <Route path='monitoring' element={<MonitoringEvaluationSection />} />
                                                             <Route path='reports' element={<ProjectAdminReports />} />
